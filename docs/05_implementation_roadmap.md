@@ -135,7 +135,8 @@ template<> Dual<double> sin(Dual<double> x) {
 
 ### Deliverables
 - Complete evolution loop (mutation, selection, population management)
-- Self-implemented constant optimization (LM/Gauss-Newton on Eigen)
+- Constant optimization via a measured backend choice (header-only Eigen-based LM is
+  the leading candidate; see task 2.1 and `07_constant_optimization_options.md`)
 - Basic rule-based simplifier (~40 rules)
 - Hall of Fame / Pareto front
 - Adaptive parsimony pressure
@@ -143,25 +144,27 @@ template<> Dual<double> sin(Dual<double> x) {
 
 ### Key Implementation Tasks
 
-**2.1 Self-implemented constant optimizer (weeks 1–5)**
+**2.1 Constant optimizer — measure candidates, then decide (weeks 1–5)**
 ```cpp
-// Compact Levenberg-Marquardt on Eigen; residuals = (prediction - target) per row.
-// Jacobian columns = d(residual)/d(constant_k), supplied by forward-mode dual numbers.
-struct LMSolver {
+// Backend interface; residuals = (prediction - target) per row.
+// Jacobian columns = d(residual)/d(constant_k), from forward-mode dual numbers.
+struct ConstantOptimizer {
     bool solve(Tree& tree, const Eigen::MatrixXd& X, const Eigen::VectorXd& y);
 };
 ```
-- No external optimizer dependency. Gradients from `evaluate_typed<Dual>()`.
-- Test on 10 known functions; verify optimizer converges to correct constants
-- Implement restart logic: N_restarts with 50% perturbation, retain best
-- **Measure both convergence quality and execution speed** (per-call time and
-  in-loop overhead). The decision criterion is the *maintenance cost of a small
-  self-built LM* versus its measured adequacy — not Ceres's peak performance, since
-  this problem is low-dimensional.
-- **Only if** the self-implemented LM is empirically shown to be insufficient
-  (convergence or speed), re-evaluate Ceres as an *optional* dependency behind a
-  CMake option, and record the measurement that justified it. Note: in an R/MinGW
-  context this also means accepting the Abseil/UCRT maintenance cost knowingly
+- **This is a measurement task, not a foregone choice.** Candidates (none header-only
+  except where noted): Eigen MINPACK LM (`unsupported/Eigen/NonLinearOptimization`,
+  shipped in RcppEigen, used by Operon); Ceres TinySolver (vendorable single header);
+  full Ceres (reference quality ceiling); random-restart-only baseline.
+- Leading candidate is a **header-only Eigen-based LM** (avoids the R/MinGW/UCRT
+  distribution cost) — but its adequacy is unverified.
+- Gradients from `evaluate_typed<Dual>()`. Add restart logic (N_restarts, 50%
+  perturbation, retain best) and NaN/Inf guards around the chosen backend.
+- **Measure convergence quality, execution speed, and ill-conditioning robustness**
+  per the plan in `07_constant_optimization_options.md`, on Feynman/Nguyen/Keijzer.
+- **Gate decision:** "header-only LM sufficient" / "adopt full Ceres" / "support both",
+  by the pre-registered decision rule. Full Ceres is adopted only on a material,
+  measured advantage, accepting its Abseil/UCRT R-distribution cost knowingly
   (see `06_windows_dependency_risk.md`).
 
 **2.2 PopMember and Population (weeks 3–6)**

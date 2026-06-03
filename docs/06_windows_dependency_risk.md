@@ -30,11 +30,14 @@ overstated) analysis that follows; where they differ, this section governs.
   sound first choice for rsymbolic2.
 - **The constant-optimization problem here is low-dimensional.** The real question is
   therefore *not* "how good is Ceres's performance?" but "what is the maintenance cost
-  of implementing a small LM ourselves?"
-- **Decision:** In Phase 2, implement a self-contained LM using **Eigen only**, and
-  **measure both convergence quality and execution speed.** Re-evaluate Ceres as an
-  *optional* dependency **only if** the self-implemented LM is empirically shown to be
-  insufficient.
+  of using a small Eigen-based LM versus full Ceres?"
+- **Not a decision — a measurement plan.** Neither avoiding Ceres nor adopting a
+  particular LM is decided. The realistic options are not a dichotomy: header-only
+  middle paths exist (Eigen's MINPACK LM, shipped in RcppEigen and used by Operon; and
+  Ceres TinySolver, a vendorable single header). Phase 2 measures candidates on
+  convergence, speed, and robustness, then the gate decides among "header-only LM
+  sufficient," "adopt full Ceres," or "support both." See
+  `07_constant_optimization_options.md` for the feature analysis and measurement plan.
 
 ---
 
