@@ -6,49 +6,64 @@
 
 ## 1. Core C++ Library Dependencies
 
-### 1.1 Required (No Alternative)
+**Guiding rule (from CLAUDE.md):** the default answer to "add a dependency?" is no.
+Portability and simplicity outrank performance. A dependency that raises Windows
+maintenance cost is a major penalty. This analysis is revised accordingly: the
+earlier draft listed Ceres Solver and Intel TBB as required; both are now demoted
+to conditional fallbacks adopted only on measured evidence.
 
-#### Ceres Solver 2.x
-- **Purpose:** Nonlinear least-squares optimization for constant fitting
-- **Algorithm used:** Levenberg-Marquardt (DENSE_QR or DENSE_NORMAL_CHOLESKY for small parameter counts)
-- **Why Ceres over alternatives:**
-  - Benchmarked as best solver on NIST nonlinear regression problems
-  - Built-in automatic differentiation (AutoDiff cost functions) as backup to our dual-number approach
-  - Handles rank-deficient Jacobians robustly (common when tree has redundant constants)
-  - Production-grade: maintained by Google, used in Google Maps, ARCore
-- **Dependencies of Ceres:** Eigen 3.3+, glog (optional), gflags (optional)
-- **License:** BSD 3-Clause
-- **Build:** CMake `FetchContent` or system package
+### 1.1 Required (Minimal, dependency-light core)
 
 #### Eigen 3.4+
-- **Purpose:** Linear algebra primitives used by Ceres; also used for batch evaluation matrix operations
+- **Purpose:** Dense linear algebra for the self-implemented Levenberg-Marquardt
+  constant optimizer and for batch evaluation matrix operations
+- **Why acceptable:** header-only, no build step, widely packaged on both Windows
+  and Ubuntu, stable ABI — minimal Windows maintenance cost
 - **License:** MPL2
-- **Header-only:** Yes (no separate build step)
-- **Note:** Already required by Ceres; no additional cost
 
-#### Intel TBB (oneTBB) 2021+
-- **Purpose:** Work-stealing thread pool for island-parallel evolution
-- **Why TBB over OpenMP:**
-  - Dynamic load balancing handles uneven tree evaluation times
-  - Nested parallelism without deadlock risk
-  - `parallel_for` with `blocked_range` maps naturally to island populations
-  - OpenMP has no work-stealing; thread imbalance degrades scaling efficiency
-- **License:** Apache 2.0
-- **Build:** CMake `find_package(TBB)` or `FetchContent`
+#### OpenMP (compiler feature, not a library dependency)
+- **Purpose:** Island-parallel evolution via `#pragma omp parallel for`
+- **Why:** built into GCC, Clang, and MSVC; adds no external dependency and no
+  Windows toolchain work. Always degradable to serial (compile without `-fopenmp`).
+- **License:** N/A (compiler runtime)
 
 #### PCG Random (pcg-cpp)
 - **Purpose:** Thread-safe, high-quality pseudo-random number generation
 - **Why over std::mt19937:**
   - Faster than Mersenne Twister for small state operations
   - Supports independent streams per thread (seeded by master + thread_id)
-  - Header-only, single file
+  - Header-only, single file — negligible maintenance cost
 - **License:** Apache 2.0 / MIT
+- **Note:** `std::mt19937_64` from the standard library is an acceptable
+  zero-dependency fallback if pcg-cpp ever becomes a burden.
 
-### 1.2 Optional (Phase-Gated)
+### 1.2 Conditional fallbacks (adopt only on measured evidence)
+
+These are NOT adopted up front. Each is justified only if the dependency-light
+default is *measured* to be insufficient. Record the measurement before adopting.
+
+#### Ceres Solver 2.x — fallback for constant optimization
+- **Adopt only if:** the self-implemented LM solver shows poor convergence or
+  robustness on degenerate (rank-deficient) Jacobians that cannot be fixed simply.
+- **Strengths:** NIST nonlinear-regression benchmark winner; built-in AD; robust
+- **Cost:** pulls in Eigen + glog + gflags; raises Windows build/maintenance cost
+- **License:** BSD 3-Clause
+
+#### Intel TBB (oneTBB) 2021+ — fallback for parallelism
+- **Adopt only if:** OpenMP is measured to scale below the 0.7 efficiency target
+  due to island load imbalance (considered unlikely for a coarse-grained, roughly
+  uniform island model).
+- **Strengths:** work-stealing for uneven loads; nested parallelism
+- **Cost:** external dependency; additional Windows build configuration
+- **License:** Apache 2.0
+
+### 1.3 Optional (Phase-Gated)
 
 #### NLopt 2.7+
 - **Purpose:** Alternative optimizer for non-sum-of-squares loss functions (MAE, Huber, custom)
-- **Phase:** Phase 3 (custom loss support)
+- **Phase:** Phase 4 (custom loss support). Whether NLopt earns its dependency cost
+  is itself deferred until custom losses are actually built; a derivative-free
+  method on top of the existing solver may suffice.
 - **Algorithms used:** L-BFGS-B (gradient-based), Nelder-Mead (derivative-free fallback)
 - **License:** MIT/LGPL (algorithm-dependent)
 - **Build:** CMake, or `nlopt-dev` system package
@@ -78,7 +93,10 @@
 | cpp11      | ≥0.4.0   | R/C++ bridge; wraps C++ types for R     | MIT     |
 | BH         | ≥1.81    | Boost headers (used by Ceres indirectly)| BSL-1.0 |
 
-**Note:** Ceres and TBB must be available as system libraries or bundled as source. Bundling source is recommended for CRAN compatibility, but increases build time significantly.
+**Note:** The dependency-light default (Eigen header-only + OpenMP + pcg-cpp) keeps
+the R build simple on both platforms. Heavy fallbacks (Ceres, TBB) are only a build
+concern if measurement forces their adoption; deferring them is itself a
+portability decision.
 
 ### 2.2 Runtime R Dependencies
 
@@ -110,7 +128,7 @@ project(rsymbolic2_core VERSION 0.1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Fetch dependencies
+# Fetch dependencies (default core: header-only + OpenMP)
 include(FetchContent)
 
 FetchContent_Declare(
@@ -123,28 +141,36 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/imneme/pcg-cpp.git
     GIT_TAG        master
 )
-# Ceres and TBB: prefer system packages, fallback to FetchContent
-find_package(Ceres REQUIRED)
-find_package(TBB REQUIRED)
+find_package(OpenMP)  # optional; serial build if absent
 
 add_library(rsymbolic2_core STATIC src/...)
-target_link_libraries(rsymbolic2_core PUBLIC Ceres::ceres TBB::tbb)
+target_link_libraries(rsymbolic2_core PUBLIC Eigen3::Eigen)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(rsymbolic2_core PUBLIC OpenMP::OpenMP_CXX)
+endif()
+# Ceres / TBB are NOT linked by default. They appear only behind a CMake option
+# (e.g. -DRSYMBOLIC2_USE_CERES=ON) enabled after measurement justifies them.
 ```
 
 ### 3.2 R Package: R CMD build with configure.ac
 
-For cross-platform compilation of C++ with external dependencies in an R package, a `configure` script (or `Makevars.win` / `Makevars`) is needed. Key challenge: Ceres and TBB are not available via CRAN.
+With the dependency-light default, the R package compiles header-only Eigen +
+pcg-cpp and uses the compiler's OpenMP. No external system library is strictly
+required, which is the simplest cross-platform path and the most CRAN-friendly.
+A `configure` script (or `Makevars.win` / `Makevars`) handles OpenMP flag
+detection per platform.
 
-**Strategy options:**
+**If a heavy fallback (Ceres/TBB) is later adopted**, it complicates distribution:
 
 | Option | Description | CRAN Compatible |
 |--------|-------------|-----------------|
-| Bundle source | Include Ceres+TBB source in `src/` | Yes (slow build) |
+| Bundle source | Include fallback source in `src/` | Yes (slow build) |
 | System library | Require user to install via apt/brew | No |
-| CMake + wrapper | Build C++ via CMake, wrap as shared lib | Partially |
 | r-universe only | Distribute via r-universe, not CRAN | Yes |
 
-**Recommendation for Phase 3:** Distribute via r-universe with system library requirement (Ceres, TBB). Provide install instructions for Ubuntu/macOS/Windows. CRAN submission is a Phase 5 goal requiring full source bundling.
+**Recommendation for Phase 3:** Ship the dependency-light core. This keeps both
+Windows and Ubuntu builds simple and defers the CRAN-distribution complications
+that heavy fallbacks would introduce.
 
 ### 3.3 Python Bindings (Phase 5): pybind11
 
@@ -159,13 +185,15 @@ target_link_libraries(rsymbolic2_python PRIVATE rsymbolic2_core)
 ## 4. System Requirements Summary
 
 ### Minimum (Phase 1–3)
-- C++17 compiler: GCC 9+, Clang 10+, MSVC 2019+
+- C++17 compiler with OpenMP: GCC 9+, Clang 10+, MSVC 2019+
 - CMake 3.20+
-- Eigen 3.4+
-- Ceres Solver 2.1+
-- Intel TBB 2021.3+
+- Eigen 3.4+ (header-only)
+- pcg-cpp (header-only)
 - R 4.1+ (for R package)
 - cpp11 0.4+ (for R package)
+
+(Ceres Solver and Intel TBB are explicitly NOT in the minimum set; they are
+conditional fallbacks behind CMake options, adopted only on measured evidence.)
 
 ### Extended (Phase 4–5)
 - Rust toolchain 1.70+ (for egglog integration)
@@ -176,15 +204,17 @@ target_link_libraries(rsymbolic2_python PRIVATE rsymbolic2_core)
 
 ## 5. Dependency Risk Assessment
 
-| Dependency   | Maintenance | Risk Level | Mitigation                                      |
+| Dependency   | Status      | Risk Level | Mitigation / Notes                              |
 |--------------|-------------|------------|-------------------------------------------------|
-| Eigen        | Active      | LOW        | Widely used; headers only; stable ABI           |
-| Ceres Solver | Active      | LOW        | Google-maintained; stable API; fallback to NLopt|
-| Intel TBB    | Active      | LOW        | Open-source since 2020; std::execution backend  |
-| cpp11        | Active      | LOW        | RStudio/Posit-maintained                        |
-| NLopt        | Moderate    | MEDIUM     | Less active; fallback: custom gradient descent  |
-| egglog       | Active      | HIGH       | Rust FFI complexity; API stability uncertain    |
-| Adept-2      | Low         | MEDIUM     | Last release 2020; fallback: forward-mode dual  |
-| pybind11     | Active      | LOW        | De facto standard; stable                       |
+| Eigen        | Required    | LOW        | Widely used; headers only; stable ABI           |
+| OpenMP       | Required    | LOW        | Compiler built-in; degradable to serial         |
+| pcg-cpp      | Required    | LOW        | Header-only; fallback std::mt19937_64           |
+| cpp11        | Required    | LOW        | RStudio/Posit-maintained                        |
+| Ceres Solver | Fallback    | MEDIUM     | Adopt only on measured need; Windows build cost |
+| Intel TBB    | Fallback    | MEDIUM     | Adopt only if OpenMP scaling measured poor      |
+| NLopt        | Optional    | MEDIUM     | Less active; fallback: derivative-free on own LM|
+| egglog       | Optional    | HIGH       | Rust FFI complexity; API stability uncertain    |
+| Adept-2      | Optional    | MEDIUM     | Last release 2020; fallback: forward-mode dual  |
+| pybind11     | Optional    | LOW        | De facto standard; stable                       |
 
 **Note:** The egglog dependency is the highest risk item due to the Rust FFI requirement. An alternative is to implement a minimal C++ e-graph from scratch (union-find + rule engine), which is feasible at ~2000 lines of C++ but requires careful implementation.

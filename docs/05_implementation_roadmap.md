@@ -1,21 +1,70 @@
 # Phased Implementation Roadmap: rsymbolic2
 
 **Date:** 2026-06-03  
-**Total estimated duration:** 18–24 months (solo developer)
+**Estimated duration:** highly uncertain (see note below)
 
 ---
+
+## Estimation Uncertainty (read first)
+
+The month ranges below are rough planning aids, not commitments. For a solo
+developer, the largest unknowns — correctness of postfix mutation operators,
+automatic-differentiation verification, and whether the search actually recovers
+equations — are easy to underestimate. Treat every duration as a hypothesis and
+revise it as real data arrives. Progress is governed by the milestones and
+decision points, not by the calendar.
+
+## Sequencing Philosophy: Vertical Slice First
+
+This roadmap is revised from an earlier strictly layered ("finish each layer before
+the next") plan. The risk of the layered approach is that the end-to-end search is
+not exercised until late, so a fundamental flaw surfaces only after months of work.
+
+Instead, build a **walking skeleton** early: the thinnest possible end-to-end path
+(data in → minimal operator set → one population → simple constant fit → expression
+out) is made to run during Phase 1–2. Each later phase widens and deepens this slice
+rather than adding a previously untested layer. This front-loads the riskiest
+question — "does the search work at all?" — and keeps a runnable artifact at every
+step.
+
+## Decision Points (gates between phases)
+
+Each phase ends not with an automatic hand-off but with an explicit
+**continue / redesign** decision. At each gate, review whether the approach is
+working against evidence, and revise the design (and these docs) before proceeding.
+A gate may conclude "redesign" rather than "advance"; that is a success of the
+process, not a failure.
 
 ## Overview
 
 ```
-Phase 1: C++ Expression Engine          (months 1–4)
-Phase 2: Evolutionary Search Core       (months 5–9)
-Phase 3: R Interface + Parallelism      (months 10–14)
-Phase 4: Advanced Features              (months 15–20)
-Phase 5: Python Interface + Publication (months 21–24)
+Phase 0: Walking skeleton (thin end-to-end path)
+Phase 1: C++ Expression Engine
+Phase 2: Evolutionary Search Core
+Phase 3: R Interface + Parallelism
+Phase 4: Advanced Features
+Phase 5: Python Interface + Publication
 ```
 
-Each phase ends with a deployable artifact and a defined benchmark milestone.
+Each phase ends with a runnable artifact, a milestone, and a continue/redesign gate.
+
+---
+
+## Phase 0: Walking Skeleton
+**Goal:** Prove the end-to-end path runs before investing in any layer's depth.
+
+### Deliverables
+- Minimal postfix tree + scalar evaluator (operators: `+`, `-`, `*`, `/` only)
+- One population, tournament selection, two mutations (`mutate_constant`,
+  `mutate_operator`), no crossover
+- Trivial constant handling (random perturbation only — no optimizer yet)
+- A single hard-coded target (e.g. `y = 2*x1 + 1`) recovered from clean data
+- A CLI that runs the loop and prints the best expression
+
+### Milestone / Gate
+- The loop recovers `y = 2*x1 + 1` from clean data within seconds.
+- **Gate:** if the thin path cannot recover a linear target, stop and fix the core
+  loop before building Phase 1 depth. This is the cheapest place to find a flaw.
 
 ---
 
@@ -82,12 +131,11 @@ template<> Dual<double> sin(Dual<double> x) {
 ---
 
 ## Phase 2: Evolutionary Search Core
-**Duration:** 5 months  
-**Goal:** A working single-threaded symbolic regression engine that finds equations on small problems.
+**Goal:** A working single-threaded symbolic regression engine that finds equations on small problems. This phase widens the Phase 0 skeleton; it does not start from scratch.
 
 ### Deliverables
 - Complete evolution loop (mutation, selection, population management)
-- Ceres-based constant optimization
+- Self-implemented constant optimization (LM/Gauss-Newton on Eigen)
 - Basic rule-based simplifier (~40 rules)
 - Hall of Fame / Pareto front
 - Adaptive parsimony pressure
@@ -95,16 +143,19 @@ template<> Dual<double> sin(Dual<double> x) {
 
 ### Key Implementation Tasks
 
-**2.1 Ceres Solver integration (weeks 1–5)**
+**2.1 Self-implemented constant optimizer (weeks 1–5)**
 ```cpp
-// CostFunction wrapping expression evaluation
-struct ExpressionCost : ceres::SizedCostFunction<N_RESIDUALS, N_PARAMS> {
-    bool Evaluate(double const* const* params, double* residuals, double** jacobians) const override;
+// Compact Levenberg-Marquardt on Eigen; residuals = (prediction - target) per row.
+// Jacobian columns = d(residual)/d(constant_k), supplied by forward-mode dual numbers.
+struct LMSolver {
+    bool solve(Tree& tree, const Eigen::MatrixXd& X, const Eigen::VectorXd& y);
 };
-// Use AutoDiffCostFunction wrapping our evaluate_typed<Dual>
 ```
+- No external optimizer dependency. Gradients from `evaluate_typed<Dual>()`.
 - Test on 10 known functions; verify optimizer converges to correct constants
 - Implement restart logic: N_restarts with 50% perturbation, retain best
+- **Only if** measured convergence/robustness is inadequate, evaluate Ceres as a
+  fallback (behind a CMake option) and record the measurement that justified it.
 
 **2.2 PopMember and Population (weeks 3–6)**
 - `PopMember`: tree + loss + birth_time + complexity
@@ -175,21 +226,23 @@ HallOfFame equation_search(
 - Iteration loop with convergence check and time limit
 - Progress logging to stderr
 
-### Phase 2 Benchmark Milestone
+### Phase 2 Benchmark Milestone / Gate
 - Recover `y = sin(x1) + x2^2` from noisy data (σ=0.01) in < 30 seconds
 - Recover 10/20 equations from internal regression suite (60-second limit each)
 - Constant optimizer: converges on 90%+ of test functions with correct gradient
+- **Gate:** if recovery is far below this, decide between tuning the search and
+  reconsidering core design choices (representation, mutation set) before adding the
+  R interface. Record the decision.
 
 ---
 
 ## Phase 3: R Interface + Parallelism
-**Duration:** 5 months  
-**Goal:** An installable R package with multi-island parallel search. Match PySR's quality on the 20-equation regression suite.
+**Goal:** An installable R package with multi-island parallel search. Target quality is defined in relative terms (see milestone), not as a fixed "match PySR" claim.
 
 ### Deliverables
 - R package `rsymbolic2` installable via `install.packages()` from r-universe
 - `sr_fit()`, `predict.rsymbolic2()`, `print.rsymbolic2()`, `plot.rsymbolic2()` functions
-- TBB-parallel island model (N islands, configurable)
+- OpenMP-parallel island model (N islands, configurable)
 - Inter-island migration
 - Full SRBench protocol runner (R script)
 
@@ -217,11 +270,14 @@ result <- sr_fit(
 )
 ```
 
-**3.3 TBB island parallelism (weeks 4–8)**
-- `N_islands` `Population` objects, each evolved by one TBB task
+**3.3 OpenMP island parallelism (weeks 4–8)**
+- `N_islands` `Population` objects, each evolved in one `#pragma omp parallel for`
+  iteration (`schedule(dynamic)` for modest load imbalance)
 - Per-island RNG (seeded from master + island_id)
 - Synchronization barrier every `migration_interval` outer iterations
 - `migrate()`: copy top-k members from each island to a random other island
+- Measure parallel efficiency. **Only if** it falls below 0.7× and the cause is
+  load imbalance, evaluate TBB as a fallback and record the measurement.
 
 **3.4 Thread-safety audit (weeks 7–10)**
 - Review all shared mutable state: `RunningSearchStats`, `HallOfFame`, progress counters
@@ -230,7 +286,8 @@ result <- sr_fit(
 
 **3.5 R package structure (weeks 8–12)**
 - `DESCRIPTION`, `NAMESPACE`, `configure.ac`
-- `Makevars.in` for linking Ceres and TBB
+- `Makevars.in` / `Makevars.win` for OpenMP flag detection per platform (no heavy
+  external library to link in the default build)
 - `testthat` unit tests covering: data input validation, output format, reproducibility (fixed seed)
 - `pkgdown` documentation site
 
@@ -243,16 +300,18 @@ result <- sr_fit(
 - `plot.rsymbolic2()`: Pareto front (loss vs. complexity), ggplot2
 - `print.rsymbolic2()`: equation table with loss and complexity
 
-### Phase 3 Benchmark Milestone
+### Phase 3 Benchmark Milestone / Gate
 - Parallel speedup ≥ 0.7 × n_threads (measured on 8-thread machine)
-- Match PySR recovery on internal 20-equation set (within 10% of PySR at same time budget)
+- Builds and tests pass on **both Windows 11 and Ubuntu LTS** (mandatory)
 - R package passes `R CMD check --as-cran` (no ERRORs, no WARNINGs)
+- PySR comparison is **recorded as a reference point**, not a pass/fail gate. The
+  primary internal gate is "no regression versus the previous rsymbolic2 release."
+  The gap to PySR (whatever it is) informs whether Phase 4 work is warranted.
 
 ---
 
 ## Phase 4: Advanced Features
-**Duration:** 6 months  
-**Goal:** Close the quality gap with PySR; add features required for scientific use cases.
+**Goal:** Improve search quality and add features for scientific use cases. Whether to pursue each feature is decided at the Phase 3 gate, based on where the measured gap actually is — not assumed in advance.
 
 ### Key Features
 
@@ -292,15 +351,21 @@ result <- sr_fit(
 - `MultitargetSR`: search for equations for multiple output variables simultaneously
 - Shared population (expressions can be shared across outputs)
 
-### Phase 4 Benchmark Milestone
-- Feynman recovery rate ≥ 65% (matching PySR) at equivalent time budget
-- Dimensional analysis: reduces search time by ≥ 20% on dimensioned Feynman problems
-- SRBench median R² ≥ PySR (Phase 3 gap closed)
+### Phase 4 Benchmark Milestone / Gate
+- Feynman recovery rate improves measurably over the Phase 3 baseline (the absolute
+  figure is an outcome to be measured, not a number promised in advance)
+- Dimensional analysis demonstrably narrows the search on dimensioned problems
+  (report the measured effect, whatever it is)
+- PySR remains a recorded reference point for context, not a pass/fail target
+
+**Uncertainty note:** earlier drafts stated fixed targets such as "≥ 65% Feynman
+recovery, matching PySR." Those were extrapolations from the literature with no
+evidence that this implementation will reach them. They are removed in favor of
+relative, regression-based goals.
 
 ---
 
 ## Phase 5: Python Interface + Publication
-**Duration:** 4 months  
 **Goal:** Python package; reproducible benchmark results for publication or public release.
 
 ### Key Tasks
@@ -325,8 +390,9 @@ print(result.best_equation)   # string: "sin(x1) + x2^2"
 
 **5.2 Performance profiling + optimization (months 21–23)**
 - Profile full search with perf/VTune on the Feynman benchmark
-- Identify top-3 hotspots; optimize
-- Expected hotspots: evaluation batch loop, Ceres solver call overhead, memory allocation in mutation
+- Identify top-3 hotspots; optimize only what is measured (no speculative tuning)
+- Likely hotspots to confirm: evaluation batch loop, constant-optimizer calls,
+  memory allocation in mutation
 
 **5.3 Full SRBench++ evaluation (months 23–24)**
 - 30 runs × 252 PMLB datasets × 30-minute limit
@@ -337,7 +403,8 @@ print(result.best_equation)   # string: "sin(x1) + x2^2"
 **5.4 Documentation and packaging (month 24)**
 - pkgdown site for R package
 - MkDocs or Sphinx site for Python package
-- CRAN submission (requires bundled Ceres + TBB source)
+- CRAN submission (simpler with the dependency-light core; heavy fallbacks, if
+  adopted, would require bundling their source)
 - PyPI submission
 
 ### Phase 5 Benchmark Milestone
@@ -348,23 +415,29 @@ print(result.best_equation)   # string: "sin(x1) + x2^2"
 
 ## Risk Register
 
-| Risk                              | Probability | Impact | Mitigation                                          |
-|-----------------------------------|-------------|--------|-----------------------------------------------------|
-| Ceres not installable on Windows  | MEDIUM      | HIGH   | Bundle source; test on GitHub Actions Windows runner |
-| egglog C FFI unstable             | HIGH        | MEDIUM | Implement minimal C++ e-graph as fallback           |
-| Postfix mutation bugs             | MEDIUM      | HIGH   | Fuzz testing; compare against pointer-tree impl     |
-| TBB not available on all R targets| MEDIUM      | MEDIUM | Fallback: OpenMP; serial mode always available      |
-| Performance gap vs PySR (Julia JIT)| MEDIUM     | MEDIUM | Profile early (Phase 2); SIMD intrinsics if needed  |
-| Constant optimizer divergence     | LOW         | MEDIUM | Multiple restarts + NaN guards; fallback to Nelder-Mead |
+| Risk                               | Probability | Impact | Mitigation                                          |
+|------------------------------------|-------------|--------|-----------------------------------------------------|
+| Walking skeleton reveals broken loop| MEDIUM     | HIGH   | Intended: caught cheaply in Phase 0 before depth    |
+| Postfix mutation bugs              | MEDIUM      | HIGH   | Fuzz testing; round-trip serialize checks           |
+| Self-implemented LM converges poorly| MEDIUM     | MEDIUM | Restarts + NaN guards; Ceres as measured fallback   |
+| OpenMP scaling below target        | LOW         | MEDIUM | TBB as measured fallback; serial always available   |
+| egglog C FFI unstable              | HIGH        | MEDIUM | Implement minimal C++ e-graph as fallback           |
+| Performance gap vs PySR            | MEDIUM      | LOW    | Performance is lowest priority; gap is informational|
+| Schedule overrun (solo developer)  | HIGH        | LOW    | Milestone-driven, not date-driven; gates allow stop |
 
 ---
 
 ## Milestone Summary
 
-| Phase | End Month | Deliverable                                   | Quality Gate                              |
-|-------|-----------|-----------------------------------------------|-------------------------------------------|
-| 1     | M4        | C++ expression library + tests                | 90% unit test coverage; eval speed target |
-| 2     | M9        | Single-threaded SR engine; CLI demo           | 10/20 equations recovered < 60s each     |
-| 3     | M14       | R package on r-universe; parallel search      | R² matches PySR within 10%; parallel speedup ≥ 0.7× |
-| 4     | M20       | E-graph simplification; dimensional analysis  | Feynman recovery ≥ 65%                    |
-| 5     | M24       | Python package; full SRBench++ results        | scikit-learn API; public results available|
+Months are removed deliberately; gates, not dates, govern progress.
+
+| Phase | Deliverable                                   | Gate (continue / redesign decision)             |
+|-------|-----------------------------------------------|-------------------------------------------------|
+| 0     | Walking skeleton (thin end-to-end path)       | Linear target recovered; loop demonstrably works|
+| 1     | C++ expression library + tests                | High unit-test coverage; AD verified vs finite diff |
+| 2     | Single-threaded SR engine; CLI demo           | 10/20 internal equations recovered < 60s each   |
+| 3     | R package on r-universe; parallel search      | Builds+tests on both OSes; speedup ≥ 0.7×; no regression vs prior release |
+| 4     | Simplification + dimensional analysis (as warranted) | Measured improvement over Phase 3 baseline |
+| 5     | Python package; full SRBench++ results        | scikit-learn API; public, reproducible results  |
+
+The PySR comparison is reported at Phases 3–5 as context, not as a pass/fail gate.

@@ -236,14 +236,31 @@ T evaluate_typed(const Tree& tree, const T* row, const T* constants);
 
 ### 2.4 Constant Optimization
 
-**Primary:** Ceres Solver with Levenberg-Marquardt algorithm
-- Chosen for: best performance on nonlinear least-squares (NIST benchmark winner), built-in automatic differentiation, handles degenerate cases robustly
-- Parameter count: typically 1–10 constants; LM excels in this regime
-- Integration: custom `CostFunction` wrapping `evaluate_typed<Dual>()`
+This decision is deliberately revised from an earlier draft that named Ceres
+Solver as the primary optimizer. Per the project priorities (portability and
+simplicity outrank performance), the default is now a self-contained
+implementation with no heavy external dependency.
 
-**Fallback for non-sum-of-squares losses:** NLopt with L-BFGS-B
-- Handles user-defined loss functions (MAE, Huber, etc.)
-- No gradient required in derivative-free mode
+**Primary:** A self-implemented Levenberg-Marquardt / Gauss-Newton solver built on
+Eigen (already a required, header-only dependency).
+- Rationale: SR expressions typically contain 1–5 constants. This is a very small,
+  dense nonlinear least-squares problem. A compact LM implementation (a few hundred
+  lines) is sufficient, adds zero new dependencies, and avoids the per-call setup
+  overhead of a general-purpose solver invoked millions of times in the inner loop.
+- Gradients: forward-mode dual numbers via `evaluate_typed<Dual>()` (see 2.5).
+- This aligns with "pursue performance only with measured evidence": a heavy solver
+  is not justified before measurement.
+
+**Conditional fallback — Ceres Solver:** Considered only if the self-implemented LM
+is *measured* to be insufficient (poor convergence or robustness on degenerate
+Jacobians). Ceres is a strong solver (NIST nonlinear-regression benchmark winner)
+but pulls in Eigen + glog + gflags and raises Windows maintenance cost, so it is a
+fallback, not the default. The decision must be evidence-driven.
+
+**Fallback for non-sum-of-squares losses:** NLopt with L-BFGS-B, or a
+derivative-free method (Nelder-Mead), for user-defined losses (MAE, Huber, etc.).
+Whether NLopt is worth its dependency cost is itself deferred until custom losses
+are actually implemented (Phase 4).
 
 **Restart strategy:** Identical to SymbolicRegression.jl — N restarts with 50% perturbation, retain best.
 
@@ -266,22 +283,33 @@ For k > 10 (rare), a reverse-mode tape (Adept-2) would be more efficient. This c
 
 ### 2.6 Parallelism Architecture
 
-**Population-level:** Intel TBB `parallel_for` over island populations.
-Each island runs its evolutionary cycle independently; migration is synchronized at fixed intervals.
+This decision is also revised from an earlier draft that assumed Intel TBB. The
+island model is coarse-grained and its per-island load is approximately uniform, so
+TBB's main advantage (work-stealing for uneven loads) is largely unused. A simpler,
+dependency-free mechanism is preferred.
+
+**Primary:** OpenMP `parallel for` over island populations. OpenMP is built into
+GCC, Clang, and MSVC, so it adds no external dependency and no Windows maintenance
+cost. Each island runs its evolutionary cycle independently; migration is
+synchronized at fixed intervals.
 
 ```cpp
-// Parallel island evolution
-tbb::parallel_for(
-    tbb::blocked_range<int>(0, num_islands),
-    [&](const tbb::blocked_range<int>& range) {
-        for (int i = range.begin(); i < range.end(); ++i) {
-            run_evolution_cycle(islands[i], options, rng_per_thread[i]);
-        }
-    }
-);
+// Parallel island evolution (OpenMP)
+#pragma omp parallel for schedule(dynamic)
+for (int i = 0; i < num_islands; ++i) {
+    run_evolution_cycle(islands[i], options, rng_per_thread[i]);
+}
 // Synchronization point: migrate top members between islands
 migrate(islands, options.migration_rate);
 ```
+
+`schedule(dynamic)` covers the modest load imbalance from islands converging to
+different tree sizes. C++17 `std::thread` with a small thread pool is an equally
+acceptable dependency-free alternative.
+
+**Conditional fallback — Intel TBB:** Considered only if OpenMP is *measured* to
+scale poorly (load imbalance below the 0.7 efficiency target). Not adopted
+speculatively.
 
 **Within-population:** Each island's cycle is single-threaded (mutation + evaluation are fast for small trees). SIMD vectorization within `evaluate_batch()` via auto-vectorization hints or explicit intrinsics.
 
@@ -342,10 +370,10 @@ predict(result, newX)   # prediction with best equation
 | Language                | Julia (JIT)                  | C++17 (AOT compiled)               |
 | Tree representation     | Linked heap nodes (pointer)  | Contiguous vector (postfix order)  |
 | Evaluation performance  | ~25% slower than hand SIMD   | Target: ≤20% slower than hand SIMD |
-| Constant optimizer      | Optim.jl (BFGS/Newton)       | Ceres LM + NLopt L-BFGS-B          |
+| Constant optimizer      | Optim.jl (BFGS/Newton)       | Self-implemented LM on Eigen; Ceres as measured fallback |
 | AD for constants        | Enzyme/Mooncake/Zygote       | Forward-mode dual numbers (k≤10)   |
 | Simplification          | SymbolicUtils.jl (greedy)    | Phase1: rules; Phase4: e-graphs    |
-| Parallelism             | Julia Distributed / Threads  | TBB parallel_for (islands)         |
+| Parallelism             | Julia Distributed / Threads  | OpenMP over islands; TBB as measured fallback |
 | Startup time            | 10–30s (JIT)                 | <1s (no JIT)                       |
 | R interface             | Via Python (PySR → juliacall)| Direct cpp11 binding               |
 | Dimensional analysis    | DynamicQuantities.jl         | Phase 4 (unit type system)         |
