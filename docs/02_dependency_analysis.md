@@ -218,3 +218,13 @@ conditional fallbacks behind CMake options, adopted only on measured evidence.)
 | pybind11     | Optional    | LOW        | De facto standard; stable                       |
 
 **Note:** The egglog dependency is the highest risk item due to the Rust FFI requirement. An alternative is to implement a minimal C++ e-graph from scratch (union-find + rule engine), which is feasible at ~2000 lines of C++ but requires careful implementation.
+
+**Windows + R operational risk:** The "Fallback" rating for Ceres and TBB above is
+backed by primary-source evidence in `06_windows_dependency_risk.md`. The key facts:
+R on Windows builds with Rtools (MinGW/GCC + UCRT), not MSVC; Ceres officially
+targets only MSVC on Windows and now requires the ABI-unstable Abseil library, with
+no CRAN distribution precedent; TBB is shippable on CRAN/Windows but only via the
+sustained maintenance embodied in RcppParallel; OpenMP is R's official,
+dependency-free parallelism mechanism (`SHLIB_OPENMP_CXXFLAGS`) and works on Windows
+via Rtools' libgomp. These are maintainability/portability findings, not performance
+claims.

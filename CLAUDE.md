@@ -29,10 +29,18 @@ portability for speed unless a benchmark shows the speed matters and the user ag
 
 - **Windows 11 and Ubuntu LTS are both mandatory.** Neither is a second-class target.
 - A change is not "done" until it builds and its tests pass on **both** platforms.
+- **R on Windows is built with Rtools (MinGW/GCC + UCRT), not MSVC.** A library being
+  "fine on Windows via MSVC/vcpkg" does NOT mean it is usable from an R package; judge
+  dependencies against the Rtools/MinGW/UCRT toolchain the R package actually uses.
 - A dependency that raises Windows build or maintenance cost is a **major
   architectural penalty**, weighed against its benefit before adoption — not after.
 - Prefer dependencies that are header-only, widely packaged, or easily bundled
-  over those requiring per-platform toolchain work.
+  over those requiring per-platform toolchain work. Prefer the R-official mechanism
+  (e.g. `SHLIB_OPENMP_CXXFLAGS`, `LinkingTo:` header packages) over hand-rolled
+  linking. See `docs/06_windows_dependency_risk.md` for the evidence behind the
+  current optimizer/parallelism choices.
+- Parallel code must remain correct and complete when OpenMP is absent (CRAN
+  binaries, notably macOS, may have it disabled): always provide a serial fallback.
 
 ## Dependency Policy
 
