@@ -154,8 +154,15 @@ struct LMSolver {
 - No external optimizer dependency. Gradients from `evaluate_typed<Dual>()`.
 - Test on 10 known functions; verify optimizer converges to correct constants
 - Implement restart logic: N_restarts with 50% perturbation, retain best
-- **Only if** measured convergence/robustness is inadequate, evaluate Ceres as a
-  fallback (behind a CMake option) and record the measurement that justified it.
+- **Measure both convergence quality and execution speed** (per-call time and
+  in-loop overhead). The decision criterion is the *maintenance cost of a small
+  self-built LM* versus its measured adequacy — not Ceres's peak performance, since
+  this problem is low-dimensional.
+- **Only if** the self-implemented LM is empirically shown to be insufficient
+  (convergence or speed), re-evaluate Ceres as an *optional* dependency behind a
+  CMake option, and record the measurement that justified it. Note: in an R/MinGW
+  context this also means accepting the Abseil/UCRT maintenance cost knowingly
+  (see `06_windows_dependency_risk.md`).
 
 **2.2 PopMember and Population (weeks 3–6)**
 - `PopMember`: tree + loss + birth_time + complexity

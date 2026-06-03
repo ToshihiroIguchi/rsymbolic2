@@ -12,6 +12,32 @@ manuals). Where evidence is weak or absent, this is stated explicitly.
 
 ---
 
+## Authoritative Conclusion (calibrated, 2026-06-03)
+
+This is the decision of record. It calibrates the more detailed (and in places
+overstated) analysis that follows; where they differ, this section governs.
+
+- **Ceres has a sufficient track record on Windows itself.** The concern is narrower:
+  in an **R-package environment built with Rtools/MinGW**, its maintenance cost *may*
+  be high. This is a possibility supported by evidence (toolchain mismatch, no CRAN
+  precedent), not a certainty.
+- **Ceres 2.2+'s Abseil dependency is a long-term maintenance risk factor**, because
+  Abseil makes no ABI promise and follows "Live at Head."
+- **TBB is not "dangerous."** Via RcppParallel it has a solid CRAN operational record.
+  The reason to avoid it is weaker than risk: if OpenMP meets the performance
+  requirement, there is simply little reason to add TBB.
+- **OpenMP is R's official support mechanism** (`SHLIB_OPENMP_CXXFLAGS`) and is a
+  sound first choice for rsymbolic2.
+- **The constant-optimization problem here is low-dimensional.** The real question is
+  therefore *not* "how good is Ceres's performance?" but "what is the maintenance cost
+  of implementing a small LM ourselves?"
+- **Decision:** In Phase 2, implement a self-contained LM using **Eigen only**, and
+  **measure both convergence quality and execution speed.** Re-evaluate Ceres as an
+  *optional* dependency **only if** the self-implemented LM is empirically shown to be
+  insufficient.
+
+---
+
 ## 0. The decisive fact: R on Windows does NOT use MSVC
 
 This single fact reframes the entire assessment and is easy to miss.
@@ -74,12 +100,15 @@ This is why "does it build on Windows?" must be re-asked as "does it build under
   well-trodden path is itself a maintenance risk: there is no reference recipe to
   copy, and the builder would be solving Abseil-under-MinGW-UCRT essentially alone.
 
-### 1.5 Assessment
-For **Windows 11 + R distribution specifically**, Ceres is **high risk**: the
-supported toolchain mismatch (MSVC vs MinGW), a required ABI-unstable Abseil
-dependency, and the lack of any CRAN precedent combine into substantial and ongoing
-maintenance cost. The risk is about **portability/maintainability, not performance** —
-exactly the axis the project ranks above performance.
+### 1.5 Assessment (calibrated)
+Ceres is a strong, well-supported solver on Windows **in general** (its MSVC build is
+mature and widely used). The concern is **specific to the R-package environment**:
+because R on Windows builds with Rtools/MinGW + UCRT, Ceres's officially supported
+MSVC path does not match the R toolchain, the required Abseil dependency is
+ABI-unstable, and no CRAN precedent exists to copy. In that narrow context the
+maintenance cost **may** be high. This is an evidence-supported possibility on the
+**portability/maintainability** axis — not a claim that Ceres is generally risky, and
+not a performance objection.
 
 ---
 
