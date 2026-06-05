@@ -30,4 +30,16 @@ if(RSYMBOLIC2_BUILD_TESTS)
         PRIVATE rsymbolic2_core)
     add_test(NAME eigen_lm_optimizer
         COMMAND test_eigen_lm_optimizer)
+
+    add_executable(test_dual tests/test_dual.cpp)
+    target_link_libraries(test_dual PRIVATE rsymbolic2_core)
+    add_test(NAME dual COMMAND test_dual)
+
+    add_executable(test_tree_eval tests/test_tree_eval.cpp)
+    target_link_libraries(test_tree_eval PRIVATE rsymbolic2_core)
+    add_test(NAME tree_eval COMMAND test_tree_eval)
+
+    add_executable(test_constant_fitting tests/test_constant_fitting.cpp)
+    target_link_libraries(test_constant_fitting PRIVATE rsymbolic2_core)
+    add_test(NAME constant_fitting COMMAND test_constant_fitting)
 endif()

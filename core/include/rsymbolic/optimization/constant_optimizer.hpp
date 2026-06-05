@@ -24,11 +24,20 @@ using ResidualFunction =
     std::function<void(const std::vector<double>& params,
                        std::vector<double>& residuals)>;
 
+// Optional analytic Jacobian: given the constants, fill `jacobian` (size m*k) in
+// row-major order with d r_i / d c_j at jacobian[i*k + j]. When supplied (e.g. from
+// forward-mode dual numbers), a least-squares backend can use it instead of numerical
+// differentiation. When left null, backends fall back to numerical differentiation.
+using JacobianFunction =
+    std::function<void(const std::vector<double>& params,
+                       std::vector<double>& jacobian)>;
+
 // A constant-optimization problem. `num_residuals` (m) is the number of residuals the
 // function fills; `initial_constants` size (k) defines the dimensionality. k == 0 is
 // valid (an expression with no tunable constants).
 struct OptimizationProblem {
     ResidualFunction residuals;             // required; must not be null
+    JacobianFunction jacobian;              // optional; null => numerical Jacobian
     std::size_t num_residuals = 0;          // m
     std::vector<double> initial_constants;  // x0; size defines k
 };
