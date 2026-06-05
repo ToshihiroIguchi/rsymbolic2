@@ -7,6 +7,7 @@
 #include "rsymbolic/evolution/mutation.hpp"
 #include "rsymbolic/evolution/random_tree.hpp"
 #include "rsymbolic/expression/least_squares_problem.hpp"
+#include "rsymbolic/simplification/simplify.hpp"
 
 namespace rsymbolic {
 
@@ -74,6 +75,9 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
     for (std::size_t i = 0; i < options.population_size; ++i) {
         Tree tree = generate_random_tree(options.space, rng);
         const double loss = fit(tree, X, y, *optimizer);
+        // Simplify after fitting: folding is value-preserving, so the loss still
+        // holds while the reported complexity shrinks.
+        if (options.simplify_expressions) tree = simplify(tree);
         PopMember member{std::move(tree), loss, 0};
         member.complexity = static_cast<int>(member.tree.size());
         hall_of_fame.update(member);
@@ -94,6 +98,7 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
             mutate(child_tree, options.space, rng, options.const_perturb_scale);
 
             const double loss = fit(child_tree, X, y, *optimizer);
+            if (options.simplify_expressions) child_tree = simplify(child_tree);
             PopMember child{std::move(child_tree), loss, 0};
             child.complexity = static_cast<int>(child.tree.size());
             hall_of_fame.update(child);

@@ -25,6 +25,7 @@ struct SearchOptions {
     std::uint64_t seed = 0;
     double target_loss = 1e-10;       // early stop once the best loss is below this
     double const_perturb_scale = 0.5;
+    bool simplify_expressions = true;  // algebraically simplify fitted candidates
 };
 
 // The outcome of a search: the best expression found (with constants fitted) plus the

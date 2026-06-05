@@ -8,6 +8,7 @@ add_library(rsymbolic2_core
     src/evolution/random_tree.cpp
     src/evolution/mutation.cpp
     src/evolution/hall_of_fame.cpp
+    src/simplification/simplify.cpp
     src/search/evolutionary_search.cpp
 )
 
@@ -58,4 +59,8 @@ if(RSYMBOLIC2_BUILD_TESTS)
     add_executable(test_evolutionary_search tests/test_evolutionary_search.cpp)
     target_link_libraries(test_evolutionary_search PRIVATE rsymbolic2_core)
     add_test(NAME evolutionary_search COMMAND test_evolutionary_search)
+
+    add_executable(test_simplify tests/test_simplify.cpp)
+    target_link_libraries(test_simplify PRIVATE rsymbolic2_core)
+    add_test(NAME simplify COMMAND test_simplify)
 endif()
