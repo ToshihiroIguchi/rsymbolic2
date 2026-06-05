@@ -7,6 +7,7 @@ add_library(rsymbolic2_core
     src/optimization/optimizer_factory.cpp
     src/evolution/random_tree.cpp
     src/evolution/mutation.cpp
+    src/evolution/crossover.cpp
     src/evolution/hall_of_fame.cpp
     src/simplification/simplify.cpp
     src/search/evolutionary_search.cpp
@@ -68,6 +69,10 @@ if(RSYMBOLIC2_BUILD_TESTS)
     add_executable(test_structural_mutation tests/test_structural_mutation.cpp)
     target_link_libraries(test_structural_mutation PRIVATE rsymbolic2_core)
     add_test(NAME structural_mutation COMMAND test_structural_mutation)
+
+    add_executable(test_crossover tests/test_crossover.cpp)
+    target_link_libraries(test_crossover PRIVATE rsymbolic2_core)
+    add_test(NAME crossover COMMAND test_crossover)
 
     add_executable(test_benchmark_quick tests/test_benchmark_quick.cpp)
     target_link_libraries(test_benchmark_quick PRIVATE rsymbolic2_core)

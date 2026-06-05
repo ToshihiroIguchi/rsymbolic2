@@ -23,9 +23,12 @@ struct SearchOptions {
     OptimizerType optimizer_type = OptimizerType::EigenLM;
     OptimizerConfig optimizer_config{};
     std::uint64_t seed = 0;
-    double target_loss = 1e-10;       // early stop once the best loss is below this
+    double target_loss = 1e-10;         // early stop once the best loss is below this
     double const_perturb_scale = 0.5;
-    bool simplify_expressions = true;  // algebraically simplify fitted candidates
+    bool simplify_expressions = true;   // algebraically simplify fitted candidates
+    // Fraction of evolution steps that perform subtree crossover instead of mutation.
+    // 0.0 = mutation only (original behaviour); 0.5 = equal chance of each.
+    double crossover_probability = 0.5;
 };
 
 // The outcome of a search: the best expression found (with constants fitted) plus the

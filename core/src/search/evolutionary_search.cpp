@@ -4,6 +4,7 @@
 #include <limits>
 #include <random>
 
+#include "rsymbolic/evolution/crossover.hpp"
 #include "rsymbolic/evolution/mutation.hpp"
 #include "rsymbolic/evolution/random_tree.hpp"
 #include "rsymbolic/expression/least_squares_problem.hpp"
@@ -86,6 +87,7 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
 
     const std::size_t tournament =
         options.tournament_size == 0 ? 1 : options.tournament_size;
+    std::uniform_real_distribution<double> unit(0.0, 1.0);
 
     // Steady-state evolution.
     for (std::size_t gen = 0; gen < options.generations; ++gen) {
@@ -94,8 +96,19 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
         }
         for (std::size_t step = 0; step < options.population_size; ++step) {
             const std::size_t parent = tournament_best(population, tournament, rng);
-            Tree child_tree = population[parent].tree;
-            mutate(child_tree, options.space, rng, options.const_perturb_scale);
+            Tree child_tree;
+            if (options.crossover_probability > 0.0 &&
+                unit(rng) < options.crossover_probability) {
+                // Subtree crossover: combine genetic material from two parents.
+                const std::size_t parent2 = tournament_best(population, tournament, rng);
+                child_tree = subtree_crossover(
+                    population[parent].tree, population[parent2].tree,
+                    rng, options.space.max_nodes);
+            } else {
+                // Mutation: derive one offspring from a single parent.
+                child_tree = population[parent].tree;
+                mutate(child_tree, options.space, rng, options.const_perturb_scale);
+            }
 
             const double loss = fit(child_tree, X, y, *optimizer);
             if (options.simplify_expressions) child_tree = simplify(child_tree);
