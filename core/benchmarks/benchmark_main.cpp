@@ -3,9 +3,12 @@
 //
 // Usage (from build directory):
 //   ./core/benchmark_main
-//   ./core/benchmark_main 600 100  # pop_size generations
+//   ./core/benchmark_main 600 100        # pop_size generations (n_runs=5)
+//   ./core/benchmark_main 600 100 5      # pop_size generations n_runs
 //
-// Output: a recovery table comparable to those reported for PySR / Operon.
+// Output: a recovery table (k/n recovery rate + median/spread of test error) comparable
+// to tables reported for PySR / Operon. Judgment is on held-out + extrapolation points,
+// not training loss, so over-fitted approximations are classified as "failed".
 
 #include <cstdlib>
 #include <cstdio>
@@ -19,17 +22,21 @@ int main(int argc, char* argv[]) {
         argc > 1 ? static_cast<std::size_t>(std::atoi(argv[1])) : 600;
     options.generations =
         argc > 2 ? static_cast<std::size_t>(std::atoi(argv[2])) : 100;
+    const std::size_t n_runs =
+        argc > 3 ? static_cast<std::size_t>(std::atoi(argv[3])) : 5;
+    const std::uint64_t base_seed = 42;
+
     options.tournament_size = 5;
-    options.seed = 42;
     options.target_loss = 1e-10;
     options.simplify_expressions = true;
 
-    std::printf("rsymbolic2 benchmark  (pop=%zu  gen=%zu  seed=%llu)\n",
-                options.population_size, options.generations,
-                static_cast<unsigned long long>(options.seed));
+    std::printf("rsymbolic2 benchmark  (pop=%zu  gen=%zu  n_runs=%zu  base_seed=%llu)\n",
+                options.population_size, options.generations, n_runs,
+                static_cast<unsigned long long>(base_seed));
+    std::printf("Recovery judged on held-out + extrapolation points (not training loss).\n");
 
     const auto problems = rsymbolic::standard_problems();
-    const auto results = rsymbolic::run_suite(problems, options);
+    const auto results = rsymbolic::run_suite(problems, options, n_runs, base_seed);
     rsymbolic::print_results(results);
     return 0;
 }

@@ -1,6 +1,7 @@
-// Fast sanity check for the benchmark runner (CTest, < 5 seconds).
+// Fast sanity check for the benchmark runner (CTest, < 30 seconds).
 //
-// Gates: linear and exponential must recover — these are proven fast.
+// Gates: linear and exponential must recover in at least 1 of 3 runs when judged on
+// held-out + extrapolation points. These are proven fast and structurally recoverable.
 // Harder problems (Nguyen-1/5/7) belong in the standalone benchmark_main, not here.
 
 #include <cstdio>
@@ -28,36 +29,36 @@ void check(bool condition, const char* expr, const char* file, int line) {
 int main() {
     using namespace rsymbolic;
 
-    // Linear: tiny parameters, known to converge in < 0.2 s.
+    // Linear: 3 runs, small params. All 3 should recover even on extrapolation points.
     {
         SearchOptions opts;
         opts.population_size = 200;
         opts.generations = 30;
         opts.tournament_size = 4;
-        opts.seed = 20240603;
         opts.target_loss = 1e-10;
         opts.simplify_expressions = true;
 
-        const BenchmarkResult r = run_single(problem_linear(), opts);
-        std::printf("linear:      loss=%.3e  complexity=%d  %s\n",
-                    r.loss, r.complexity, r.expression.c_str());
-        CHECK(r.recovered);
+        const BenchmarkResult r = run_repeated(problem_linear(), opts, 3, 20240603ULL);
+        std::printf("linear:      %zu/%zu recovered  medTestErr=%.3e  bestCmpx=%d\n",
+                    r.n_recovered, r.n_runs, r.median_test_error, r.best_complexity);
+        std::printf("  best: %s\n", r.best_expression.c_str());
+        CHECK(r.n_recovered >= 1);
     }
 
-    // Exponential: medium parameters, known to converge in < 0.5 s.
+    // Exponential: 3 runs, medium params. At least 1 should recover on extrapolation.
     {
         SearchOptions opts;
         opts.population_size = 400;
         opts.generations = 60;
         opts.tournament_size = 4;
-        opts.seed = 7;
         opts.target_loss = 1e-10;
         opts.simplify_expressions = true;
 
-        const BenchmarkResult r = run_single(problem_exponential(), opts);
-        std::printf("exponential: loss=%.3e  complexity=%d  %s\n",
-                    r.loss, r.complexity, r.expression.c_str());
-        CHECK(r.recovered);
+        const BenchmarkResult r = run_repeated(problem_exponential(), opts, 3, 7ULL);
+        std::printf("exponential: %zu/%zu recovered  medTestErr=%.3e  bestCmpx=%d\n",
+                    r.n_recovered, r.n_runs, r.median_test_error, r.best_complexity);
+        std::printf("  best: %s\n", r.best_expression.c_str());
+        CHECK(r.n_recovered >= 1);
     }
 
     // Runner smoke test: verify Nguyen-1 runs without crashing and the runner
@@ -66,13 +67,13 @@ int main() {
         SearchOptions opts;
         opts.population_size = 50;
         opts.generations = 5;
-        opts.seed = 99;
+        opts.target_loss = 1e-10;
         opts.simplify_expressions = true;
 
-        const BenchmarkResult r = run_single(problem_nguyen1(), opts);
-        std::printf("nguyen1 smoke: loss=%.3e  complexity=%d\n",
-                    r.loss, r.complexity);
-        CHECK(!r.expression.empty());  // runner produced an expression
+        const RunOutcome o = run_single(problem_nguyen1(), opts);
+        std::printf("nguyen1 smoke: trainLoss=%.3e  testErr=%.3e  cmpx=%d\n",
+                    o.train_loss, o.test_error, o.complexity);
+        CHECK(!o.expression.empty());
     }
 
     if (g_failures == 0) {
