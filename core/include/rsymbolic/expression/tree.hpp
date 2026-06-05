@@ -2,6 +2,8 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdio>
+#include <string>
 #include <vector>
 
 #include "rsymbolic/expression/dual.hpp"
@@ -111,6 +113,73 @@ inline std::vector<double> initial_constants(const Tree& tree) {
         }
     }
     return values;
+}
+
+// Write the constant values back into the tree's Constant nodes (e.g. after fitting).
+inline void set_constants(Tree& tree, const std::vector<double>& constants) {
+    for (Node& node : tree) {
+        if (node.kind == NodeKind::Constant) {
+            node.value = constants[static_cast<std::size_t>(node.index)];
+        }
+    }
+}
+
+namespace detail {
+
+inline const char* unary_name(UnaryOp op) {
+    switch (op) {
+        case UnaryOp::Neg: return "neg";
+        case UnaryOp::Exp: return "exp";
+        case UnaryOp::Log: return "log";
+        case UnaryOp::Sin: return "sin";
+        case UnaryOp::Cos: return "cos";
+    }
+    return "?";
+}
+
+inline char binary_symbol(BinaryOp op) {
+    switch (op) {
+        case BinaryOp::Add: return '+';
+        case BinaryOp::Sub: return '-';
+        case BinaryOp::Mul: return '*';
+        case BinaryOp::Div: return '/';
+    }
+    return '?';
+}
+
+}  // namespace detail
+
+// Render a tree as a human-readable infix string (for logging / debugging).
+inline std::string to_string(const Tree& tree) {
+    std::vector<std::string> stack;
+    stack.reserve(tree.size());
+    char buf[32];
+    for (const Node& node : tree) {
+        switch (node.kind) {
+            case NodeKind::Constant:
+                std::snprintf(buf, sizeof(buf), "%.6g", node.value);
+                stack.emplace_back(buf);
+                break;
+            case NodeKind::Variable:
+                std::snprintf(buf, sizeof(buf), "x%d", node.index);
+                stack.emplace_back(buf);
+                break;
+            case NodeKind::Unary: {
+                const std::string a = stack.back();
+                stack.back() = std::string(detail::unary_name(node.uop)) + "(" + a + ")";
+                break;
+            }
+            case NodeKind::Binary: {
+                const std::string b = stack.back();
+                stack.pop_back();
+                const std::string a = stack.back();
+                stack.back() =
+                    "(" + a + " " + detail::binary_symbol(node.bop) + " " + b + ")";
+                break;
+            }
+        }
+    }
+    return stack.empty() ? std::string() : stack.back();
 }
 
 }  // namespace rsymbolic
