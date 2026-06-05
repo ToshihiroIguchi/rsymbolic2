@@ -10,6 +10,7 @@ add_library(rsymbolic2_core
     src/evolution/hall_of_fame.cpp
     src/simplification/simplify.cpp
     src/search/evolutionary_search.cpp
+    src/benchmark/runner.cpp
 )
 
 target_include_directories(rsymbolic2_core
@@ -67,4 +68,15 @@ if(RSYMBOLIC2_BUILD_TESTS)
     add_executable(test_structural_mutation tests/test_structural_mutation.cpp)
     target_link_libraries(test_structural_mutation PRIVATE rsymbolic2_core)
     add_test(NAME structural_mutation COMMAND test_structural_mutation)
+
+    add_executable(test_benchmark_quick tests/test_benchmark_quick.cpp)
+    target_link_libraries(test_benchmark_quick PRIVATE rsymbolic2_core)
+    add_test(NAME benchmark_quick COMMAND test_benchmark_quick)
+    set_tests_properties(benchmark_quick PROPERTIES TIMEOUT 30)
+endif()
+
+option(RSYMBOLIC2_BUILD_BENCHMARKS "Build the standalone benchmark executable" ON)
+if(RSYMBOLIC2_BUILD_BENCHMARKS)
+    add_executable(benchmark_main benchmarks/benchmark_main.cpp)
+    target_link_libraries(benchmark_main PRIVATE rsymbolic2_core)
 endif()
