@@ -17,6 +17,7 @@ struct SearchSpace {
     double const_min = -2.0;     // range for randomly generated constants
     double const_max = 2.0;
     int max_depth = 3;           // maximum tree depth when generating
+    int max_nodes = 40;          // soft cap on tree size (limits structural growth)
     double terminal_prob = 0.3;  // probability of stopping at a leaf before max_depth
     double const_prob = 0.5;     // probability a leaf is a constant (vs a variable)
 };

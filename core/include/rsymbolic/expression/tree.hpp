@@ -93,6 +93,54 @@ T evaluate(const Tree& tree, const double* row, const T* constants) {
     return stack.back();
 }
 
+// Number of operands a node consumes.
+inline int arity(const Node& node) {
+    switch (node.kind) {
+        case NodeKind::Constant:
+        case NodeKind::Variable:
+            return 0;
+        case NodeKind::Unary:
+            return 1;
+        case NodeKind::Binary:
+            return 2;
+    }
+    return 0;
+}
+
+// True if the node sequence is a well-formed postfix expression: a stack evaluation
+// never underflows and finishes with exactly one value.
+inline bool is_valid_postfix(const Tree& tree) {
+    long depth = 0;
+    for (const Node& node : tree) {
+        depth -= arity(node);
+        if (depth < 0) return false;
+        depth += 1;
+    }
+    return depth == 1;
+}
+
+// Start index of the subtree whose root (last node) is at position `end`. The subtree
+// occupies the contiguous range [start, end] in postfix order.
+inline std::size_t subtree_start(const Tree& tree, std::size_t end) {
+    int slots = 1;
+    std::size_t j = end;
+    while (true) {
+        slots += arity(tree[j]) - 1;  // node fills one slot, needs `arity` more
+        if (slots == 0 || j == 0) break;
+        --j;
+    }
+    return j;
+}
+
+// Reassign constant parameter indices to a contiguous 0..k-1 range (left to right).
+// Call this after any structural edit that may have disturbed the indices.
+inline void reindex_constants(Tree& tree) {
+    int index = 0;
+    for (Node& node : tree) {
+        if (node.kind == NodeKind::Constant) node.index = index++;
+    }
+}
+
 // Number of distinct tunable constants (assumes parameter indices are 0..k-1).
 inline int count_constants(const Tree& tree) {
     int max_index = -1;

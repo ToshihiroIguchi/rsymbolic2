@@ -7,6 +7,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <string>
 #include <vector>
 
 #include "rsymbolic/search/evolutionary_search.hpp"
@@ -63,10 +64,46 @@ void test_recovers_linear() {
     CHECK(!result.pareto_front.empty());
 }
 
+// Discover a genuinely nonlinear structure: y = a*exp(b*x). Unlike the linear case,
+// this cannot be fit without the exp operator, so reaching a near-exact loss requires
+// the search to actually build an exponential structure (we also assert it uses exp).
+void test_recovers_exponential() {
+    const double true_a = 2.0;
+    const double true_b = 0.3;
+    std::vector<std::vector<double>> X;
+    std::vector<double> y;
+    for (int i = 0; i < 20; ++i) {
+        const double x = 0.15 * static_cast<double>(i);  // 0 .. 2.85
+        X.push_back({x});
+        y.push_back(true_a * std::exp(true_b * x));
+    }
+
+    SearchOptions options;
+    options.space.binary_ops = {BinaryOp::Add, BinaryOp::Sub, BinaryOp::Mul};
+    options.space.unary_ops = {UnaryOp::Exp};
+    options.space.num_features = 1;
+    options.space.max_depth = 4;
+    options.space.max_nodes = 30;
+    options.population_size = 400;
+    options.generations = 60;
+    options.tournament_size = 4;
+    options.seed = 7;
+    options.target_loss = 1e-10;
+
+    const SearchResult result = run_evolution(X, y, options);
+
+    std::printf("exp: best expression: %s  (loss=%.3e, complexity=%d)\n",
+                result.expression.c_str(), result.loss, result.complexity);
+
+    CHECK(result.loss < 1e-6);
+    CHECK(result.expression.find("exp") != std::string::npos);  // used exp structurally
+}
+
 }  // namespace
 
 int main() {
     test_recovers_linear();
+    test_recovers_exponential();
 
     if (g_failures == 0) {
         std::printf("All %d checks passed\n", g_checks);

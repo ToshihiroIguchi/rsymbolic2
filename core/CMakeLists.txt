@@ -63,4 +63,8 @@ if(RSYMBOLIC2_BUILD_TESTS)
     add_executable(test_simplify tests/test_simplify.cpp)
     target_link_libraries(test_simplify PRIVATE rsymbolic2_core)
     add_test(NAME simplify COMMAND test_simplify)
+
+    add_executable(test_structural_mutation tests/test_structural_mutation.cpp)
+    target_link_libraries(test_structural_mutation PRIVATE rsymbolic2_core)
+    add_test(NAME structural_mutation COMMAND test_structural_mutation)
 endif()
