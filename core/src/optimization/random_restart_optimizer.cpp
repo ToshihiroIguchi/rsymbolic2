@@ -4,6 +4,7 @@
 #include <limits>
 #include <random>
 #include <stdexcept>
+#include <utility>
 
 namespace rsymbolic {
 
@@ -11,14 +12,23 @@ namespace {
 
 constexpr double kInf = std::numeric_limits<double>::infinity();
 
-// Evaluate the objective, mapping non-finite results to +Inf so they are never
-// accepted as an improvement. Increments the evaluation counter.
-double evaluate(const ObjectiveFunction& objective,
+// Evaluate the sum of squared residuals at `x`, mapping any non-finite residual to
+// +Inf so it is never accepted as an improvement. Reuses `scratch` to avoid
+// reallocating the residual buffer on every call. Increments the evaluation counter.
+double evaluate(const OptimizationProblem& problem,
                 const std::vector<double>& x,
+                std::vector<double>& scratch,
                 std::size_t& eval_count) {
     ++eval_count;
-    const double value = objective(x);
-    return std::isfinite(value) ? value : kInf;
+    problem.residuals(x, scratch);
+    double sse = 0.0;
+    for (const double r : scratch) {
+        if (!std::isfinite(r)) {
+            return kInf;
+        }
+        sse += r * r;
+    }
+    return sse;
 }
 
 }  // namespace
@@ -32,9 +42,9 @@ std::string RandomRestartOptimizer::name() const {
 
 OptimizationResult RandomRestartOptimizer::optimize(
     const OptimizationProblem& problem) const {
-    if (!problem.objective) {
+    if (!problem.residuals) {
         throw std::invalid_argument(
-            "RandomRestartOptimizer: problem.objective must not be null");
+            "RandomRestartOptimizer: problem.residuals must not be null");
     }
 
     const std::vector<double>& x0 = problem.initial_constants;
@@ -42,6 +52,7 @@ OptimizationResult RandomRestartOptimizer::optimize(
 
     std::mt19937_64 rng(config_.seed);
     std::normal_distribution<double> gaussian(0.0, 1.0);
+    std::vector<double> scratch(problem.num_residuals, 0.0);
 
     OptimizationResult result;
     result.constants = x0;
@@ -66,7 +77,8 @@ OptimizationResult RandomRestartOptimizer::optimize(
         // x0 so the search explores different basins.
         std::vector<double> current =
             (restart == 0) ? x0 : perturb(x0, config_.perturbation_scale);
-        double current_loss = evaluate(problem.objective, current, result.evaluations);
+        double current_loss =
+            evaluate(problem, current, scratch, result.evaluations);
 
         if (current_loss < result.loss) {
             result.loss = current_loss;
@@ -85,7 +97,7 @@ OptimizationResult RandomRestartOptimizer::optimize(
 
             std::vector<double> candidate = perturb(current, step_scale);
             const double candidate_loss =
-                evaluate(problem.objective, candidate, result.evaluations);
+                evaluate(problem, candidate, scratch, result.evaluations);
 
             if (candidate_loss < current_loss) {
                 current = std::move(candidate);

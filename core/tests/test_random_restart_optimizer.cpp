@@ -37,15 +37,15 @@ rsymbolic::OptimizerConfig test_config() {
     return cfg;
 }
 
-// 1D convex quadratic with optimum at x = 3.
+// 1D problem: residual r0 = c0 - 3, so SSE is minimized at c0 = 3.
 void test_quadratic_1d() {
     using namespace rsymbolic;
     RandomRestartOptimizer opt(test_config());
 
     OptimizationProblem problem;
-    problem.objective = [](const std::vector<double>& c) {
-        const double d = c[0] - 3.0;
-        return d * d;
+    problem.num_residuals = 1;
+    problem.residuals = [](const std::vector<double>& c, std::vector<double>& r) {
+        r[0] = c[0] - 3.0;
     };
     problem.initial_constants = {0.0};
 
@@ -57,16 +57,16 @@ void test_quadratic_1d() {
     CHECK(res.evaluations > 0);
 }
 
-// 2D convex quadratic with optimum at (2, -1).
+// 2D problem: residuals (c0 - 2, c1 + 1), minimized at (2, -1).
 void test_quadratic_2d() {
     using namespace rsymbolic;
     RandomRestartOptimizer opt(test_config());
 
     OptimizationProblem problem;
-    problem.objective = [](const std::vector<double>& c) {
-        const double a = c[0] - 2.0;
-        const double b = c[1] + 1.0;
-        return a * a + b * b;
+    problem.num_residuals = 2;
+    problem.residuals = [](const std::vector<double>& c, std::vector<double>& r) {
+        r[0] = c[0] - 2.0;
+        r[1] = c[1] + 1.0;
     };
     problem.initial_constants = {0.0, 0.0};
 
@@ -83,9 +83,9 @@ void test_reproducibility() {
     using namespace rsymbolic;
     auto make_problem = []() {
         OptimizationProblem p;
-        p.objective = [](const std::vector<double>& c) {
-            const double d = c[0] - 1.5;
-            return d * d;
+        p.num_residuals = 1;
+        p.residuals = [](const std::vector<double>& c, std::vector<double>& r) {
+            r[0] = c[0] - 1.5;
         };
         p.initial_constants = {0.0};
         return p;
@@ -101,16 +101,19 @@ void test_reproducibility() {
     CHECK(a.evaluations == b.evaluations);
 }
 
-// Non-finite objective regions must be rejected (treated as +Inf).
+// Non-finite residual regions must be rejected (treated as +Inf loss).
 void test_non_finite_rejected() {
     using namespace rsymbolic;
     RandomRestartOptimizer opt(test_config());
 
     OptimizationProblem problem;
-    problem.objective = [](const std::vector<double>& c) {
-        if (c[0] < 0.0) return std::numeric_limits<double>::infinity();
-        const double d = c[0] - 2.0;
-        return d * d;
+    problem.num_residuals = 1;
+    problem.residuals = [](const std::vector<double>& c, std::vector<double>& r) {
+        if (c[0] < 0.0) {
+            r[0] = std::numeric_limits<double>::infinity();
+        } else {
+            r[0] = c[0] - 2.0;
+        }
     };
     problem.initial_constants = {5.0};  // start inside the finite region
 
@@ -121,22 +124,24 @@ void test_non_finite_rejected() {
     CHECK(res.loss < 0.1);
 }
 
-// k == 0: an expression with no tunable constants.
+// k == 0: an expression with no tunable constants. Residual is a constant sqrt(5),
+// so SSE == 5 regardless of (empty) parameters.
 void test_zero_dimension() {
     using namespace rsymbolic;
     RandomRestartOptimizer opt(test_config());
 
     OptimizationProblem problem;
-    problem.objective = [](const std::vector<double>& c) {
+    problem.num_residuals = 1;
+    problem.residuals = [](const std::vector<double>& c, std::vector<double>& r) {
         (void)c;
-        return 5.0;
+        r[0] = std::sqrt(5.0);
     };
     problem.initial_constants = {};
 
     const OptimizationResult res = opt.optimize(problem);
     CHECK(res.success);
     CHECK(res.constants.empty());
-    CHECK(res.loss == 5.0);
+    CHECK(std::fabs(res.loss - 5.0) < 1e-9);
     CHECK(res.evaluations > 0);
 }
 
@@ -145,32 +150,36 @@ void test_name() {
     CHECK(opt.name() == "RandomRestartOptimizer");
 }
 
-// The factory builds the implemented backend, throws for unimplemented ones, and
-// parses names. This is the swappability seam.
+// The factory builds the implemented backends, parses names, and throws for the
+// backends that are not yet implemented. This is the swappability seam.
 void test_factory() {
     using namespace rsymbolic;
 
-    auto opt = OptimizerFactory::create(OptimizerType::RandomRestart, test_config());
-    CHECK(opt != nullptr);
-    CHECK(opt->name() == "RandomRestartOptimizer");
+    auto rr = OptimizerFactory::create(OptimizerType::RandomRestart, test_config());
+    CHECK(rr != nullptr);
+    CHECK(rr->name() == "RandomRestartOptimizer");
 
-    OptimizationProblem problem;
-    problem.objective = [](const std::vector<double>& c) {
-        const double d = c[0] - 3.0;
-        return d * d;
-    };
-    problem.initial_constants = {0.0};
-    const OptimizationResult res = opt->optimize(problem);
-    CHECK(res.success);
-    CHECK(std::fabs(res.constants[0] - 3.0) < 0.25);
+    // EigenLM is now implemented and must be constructible via the factory.
+    auto lm = OptimizerFactory::create(OptimizerType::EigenLM, test_config());
+    CHECK(lm != nullptr);
+    CHECK(lm->name() == "EigenLMOptimizer");
 
-    bool threw = false;
+    // Not-yet-implemented backends still throw.
+    bool tiny_threw = false;
     try {
-        OptimizerFactory::create(OptimizerType::EigenLM, test_config());
+        OptimizerFactory::create(OptimizerType::CeresTinySolver, test_config());
     } catch (const std::exception&) {
-        threw = true;
+        tiny_threw = true;
     }
-    CHECK(threw);
+    CHECK(tiny_threw);
+
+    bool ceres_threw = false;
+    try {
+        OptimizerFactory::create(OptimizerType::Ceres, test_config());
+    } catch (const std::exception&) {
+        ceres_threw = true;
+    }
+    CHECK(ceres_threw);
 
     CHECK(OptimizerFactory::from_string("random_restart") ==
           OptimizerType::RandomRestart);

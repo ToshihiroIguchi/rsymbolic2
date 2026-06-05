@@ -3,6 +3,7 @@
 # source files to this target.
 add_library(rsymbolic2_core
     src/optimization/random_restart_optimizer.cpp
+    src/optimization/eigen_lm_optimizer.cpp
     src/optimization/optimizer_factory.cpp
 )
 
@@ -11,6 +12,10 @@ target_include_directories(rsymbolic2_core
 
 target_compile_features(rsymbolic2_core PUBLIC cxx_std_17)
 
+# Eigen is used only inside eigen_lm_optimizer.cpp, so it is a PRIVATE dependency and
+# does not leak into the public interface or onto consumers of rsymbolic2_core.
+target_link_libraries(rsymbolic2_core PRIVATE Eigen3::Eigen)
+
 if(RSYMBOLIC2_BUILD_TESTS)
     add_executable(test_random_restart_optimizer
         tests/test_random_restart_optimizer.cpp)
@@ -18,4 +23,11 @@ if(RSYMBOLIC2_BUILD_TESTS)
         PRIVATE rsymbolic2_core)
     add_test(NAME random_restart_optimizer
         COMMAND test_random_restart_optimizer)
+
+    add_executable(test_eigen_lm_optimizer
+        tests/test_eigen_lm_optimizer.cpp)
+    target_link_libraries(test_eigen_lm_optimizer
+        PRIVATE rsymbolic2_core)
+    add_test(NAME eigen_lm_optimizer
+        COMMAND test_eigen_lm_optimizer)
 endif()

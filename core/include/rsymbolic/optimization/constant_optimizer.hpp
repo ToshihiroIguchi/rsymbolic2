@@ -1,62 +1,84 @@
 #pragma once
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <string>
 #include <vector>
 
 namespace rsymbolic {
 
-// Objective: maps a vector of constant values to a scalar loss (lower is better).
+// Residual function: given a vector of constant values, fill `residuals` with the
+// per-data-point residuals r_i (size must equal OptimizationProblem::num_residuals).
 //
-// This abstraction deliberately decouples the optimizer from the expression-tree
-// representation. Later, the tree + dataset + evaluator will produce this closure
-// (constants -> mean loss over the data). For the walking skeleton it lets us build,
-// run, and test optimizers before any tree code exists, and it is exactly the seam
-// that keeps optimizer backends swappable.
-using ObjectiveFunction = std::function<double(const std::vector<double>&)>;
+// A residual representation (not a scalar loss) is required because the least-squares
+// backends (Eigen Levenberg-Marquardt now; Ceres later) operate on the residual vector
+// and its Jacobian. The scalar loss used by derivative-free backends is derived as the
+// sum of squared residuals (see sum_of_squared_residuals).
+//
+// This abstraction also keeps the optimizer decoupled from the expression tree: later,
+// the tree + dataset + evaluator will produce this closure (constants -> residuals).
+using ResidualFunction =
+    std::function<void(const std::vector<double>& params,
+                       std::vector<double>& residuals)>;
 
-// A constant-optimization problem: an objective plus a starting point. The size of
-// `initial_constants` defines the dimensionality (k). k == 0 is valid (an expression
-// with no tunable constants); the objective is then evaluated on an empty vector.
+// A constant-optimization problem. `num_residuals` (m) is the number of residuals the
+// function fills; `initial_constants` size (k) defines the dimensionality. k == 0 is
+// valid (an expression with no tunable constants).
 struct OptimizationProblem {
-    ObjectiveFunction objective;            // required; must not be null
+    ResidualFunction residuals;             // required; must not be null
+    std::size_t num_residuals = 0;          // m
     std::vector<double> initial_constants;  // x0; size defines k
 };
 
 // Outcome of an optimization run.
 struct OptimizationResult {
     std::vector<double> constants;  // best constants found
-    double loss = 0.0;              // objective(constants)
+    double loss = 0.0;              // sum of squared residuals at `constants`
     bool success = false;           // true iff a finite-loss solution was found
-    std::size_t evaluations = 0;    // number of objective evaluations performed
+    std::size_t evaluations = 0;    // number of residual-function evaluations
 };
 
-// Common configuration shared by backends. Individual backends read the fields they
-// need and ignore the rest. Keeping a single struct avoids a config-class explosion
-// in the skeleton; it can be specialized later if a backend needs unique parameters.
+// Common configuration shared by backends. Each backend reads the fields it needs and
+// ignores the rest. A single struct avoids a config-class explosion in the skeleton.
 struct OptimizerConfig {
     std::uint64_t seed = 0;             // RNG seed (reproducibility is required)
     std::size_t n_restarts = 4;         // number of restarts (including the initial)
-    std::size_t max_iterations = 100;   // local-search iterations per restart
+    std::size_t max_iterations = 100;   // local-search iters / solver evaluation cap
     double perturbation_scale = 0.5;    // relative scale of random perturbations
 };
 
+// Scalar loss convention used across all backends: SSE = sum_i r_i^2. A non-finite
+// residual maps the whole loss to +Inf so it is never accepted.
+inline double sum_of_squared_residuals(const OptimizationProblem& problem,
+                                       const std::vector<double>& params) {
+    std::vector<double> residuals(problem.num_residuals, 0.0);
+    problem.residuals(params, residuals);
+    double sse = 0.0;
+    for (const double r : residuals) {
+        if (!std::isfinite(r)) {
+            return std::numeric_limits<double>::infinity();
+        }
+        sse += r * r;
+    }
+    return sse;
+}
+
 // Strategy interface. All constant-optimization backends implement this. The search
 // loop depends only on this interface, never on a concrete optimizer, so backends
-// (RandomRestart now; Eigen MINPACK LM, Ceres TinySolver, full Ceres later) are
-// interchangeable.
+// (RandomRestart, EigenLM now; Ceres TinySolver, full Ceres later) are interchangeable.
 class ConstantOptimizer {
 public:
     virtual ~ConstantOptimizer() = default;
 
     // Optimize the constants of `problem`. Implementations must not throw on a merely
     // poor result; they return success == false instead. They may throw only on
-    // misuse (e.g. a null objective).
+    // misuse (e.g. a null residual function).
     virtual OptimizationResult optimize(const OptimizationProblem& problem) const = 0;
 
-    // Human-readable backend name, e.g. for logging and benchmark reporting.
+    // Human-readable backend name, for logging and benchmark reporting.
     virtual std::string name() const = 0;
 };
 
