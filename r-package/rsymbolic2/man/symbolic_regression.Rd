@@ -8,6 +8,7 @@ symbolic_regression(
   X,
   y,
   population_size = 200L,
+  n_populations = 1L,
   generations = 50L,
   tournament_size = 4L,
   unary_ops = c("neg", "exp", "log", "sin", "cos"),
@@ -27,8 +28,13 @@ features). A numeric vector is treated as a single-column matrix.}
 \item{y}{Numeric vector of target values; \code{length(y)} must equal
 \code{nrow(X)}.}
 
-\item{population_size}{Number of candidate expressions kept in the
+\item{population_size}{Number of candidate expressions kept in each island
 population (default 200).}
+
+\item{n_populations}{Number of independent island populations to evolve in
+parallel (default 1). Values greater than 1 enable OpenMP-parallel island
+evolution with periodic ring migration. When OpenMP is unavailable the
+islands still run but sequentially.}
 
 \item{generations}{Number of evolution generations (default 50).}
 

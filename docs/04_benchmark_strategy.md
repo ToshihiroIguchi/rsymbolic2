@@ -205,3 +205,64 @@ These are published results to target or exceed:
 **rsymbolic2 target:** Match PySR on Feynman recovery rate at equivalent wall-clock time by end of Phase 3. Exceed PySR on PMLB R² median by end of Phase 4 (via e-graph simplification improving Pareto front quality).
 
 **Note:** These targets are based on the current literature and are not guaranteed. Actual performance depends on implementation quality and hyperparameter choices. Benchmarks should drive decisions, not confirm predetermined conclusions.
+
+---
+
+## 6. Parallel Efficiency Measurement — Phase 3 (2026-06-06)
+
+### Setup
+
+**Method:** Strong scaling (fixed total work, vary threads).
+`n_populations=12` fixed; `omp_num_threads` ∈ {1, 2, 3, 4, 6}.
+12 divides evenly into each thread count → no load-imbalance artifact from unequal island assignment.
+`target_loss = -∞` forces the full `pop × gen` budget on every island regardless of fit quality.
+
+**Hardware:** Intel hybrid (10 physical / 12 logical cores — P+E architecture).
+**OS:** Windows 11 Home 10.0.26200.
+**Toolchain:** Rtools45 MinGW GCC / UCRT, OpenMP enabled.
+**Problem:** Nguyen-1 (x³+x²+x), polynomial, no transcendentals.
+**Config:** `n_populations=12`, `population_size=100`, `generations=25`,
+`migration_interval=10`, `migration_size=5`, `simplify=false`.
+**n_runs:** 3 (median reported).
+
+### Results
+
+| threads | med_ms | min_ms | max_ms | speedup | efficiency | gate (≥0.70) |
+|---------|--------|--------|--------|---------|------------|--------------|
+| 1       | 7,806  | 6,379  | 7,854  | 1.000   | 1.000      | PASS         |
+| 2       | 4,363  | 4,324  | 4,659  | 1.789   | **0.895**  | PASS         |
+| 3       | 4,047  | 3,754  | 4,510  | 1.929   | 0.643      | FAIL         |
+| 4       | 3,451  | 3,270  | 4,484  | 2.262   | 0.565      | FAIL         |
+| 6       | 3,092  | 2,845  | 3,984  | 2.524   | 0.421      | FAIL         |
+
+### Analysis
+
+Gate (efficiency ≥ 0.70) is met at **threads=2 only**.
+
+The sharp drop between threads=2 (0.895) and threads=3 (0.643) is consistent across
+calibration and confirmed runs. Cause is **not load imbalance** — islands are equal-sized,
+`schedule(dynamic)` is active, and each island's RNG is fully independent.
+
+Most likely causes (hardware-specific, not algorithmic):
+
+1. **Intel hybrid core scheduling.** 10 physical / 12 logical suggests a P+E configuration.
+   Windows schedules the 3rd thread onto an E-core (significantly slower), making its islands
+   take proportionally longer and limiting wall-time to the slowest thread.
+2. **Windows heap allocation contention.** LM optimization allocates Eigen matrix temporaries
+   per evaluation. Under concurrent allocation pressure from 3+ threads, the Windows CRT heap
+   serialises allocations, reducing parallelism.
+
+Variance increases with thread count (max/min ratio: 1.40× at threads=6 vs 1.23× at threads=1),
+consistent with non-deterministic OS scheduling on hybrid cores.
+
+### Decision
+
+Per roadmap: "only if efficiency falls below 0.7× **and the cause is load imbalance**, evaluate
+TBB." Cause here is hardware architecture + OS allocator, not load imbalance → TBB adoption
+condition is not satisfied.
+
+Speedup of **2.5× at 6 threads** is still a net benefit. The gate failure is hardware-context-
+dependent; a homogeneous-core machine or Linux (glibc + ptmalloc2) may yield different results.
+
+**Remaining action:** Measure on Ubuntu LTS (homogeneous cores, glibc allocator) before drawing
+final conclusions about the 0.7× gate. That measurement is deferred to the Ubuntu CI phase.

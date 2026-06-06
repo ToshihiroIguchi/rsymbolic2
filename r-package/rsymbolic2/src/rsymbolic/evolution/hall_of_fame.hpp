@@ -22,6 +22,9 @@ public:
     // Insert a candidate, keeping only the lowest-loss member at each complexity.
     void update(const PopMember& member);
 
+    // Merge all entries from another HallOfFame into this one.
+    void merge(const HallOfFame& other);
+
     bool empty() const { return by_complexity_.empty(); }
 
     // The single lowest-loss member across all complexities.

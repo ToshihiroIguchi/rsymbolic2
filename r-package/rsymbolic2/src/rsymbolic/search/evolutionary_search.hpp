@@ -29,6 +29,12 @@ struct SearchOptions {
     // Fraction of evolution steps that perform subtree crossover instead of mutation.
     // 0.0 = mutation only (original behaviour); 0.5 = equal chance of each.
     double crossover_probability = 0.5;
+
+    // Island-model parallelism. n_populations=1 reproduces the single-population
+    // path exactly (island 0 uses seed directly; RNG sequence is identical).
+    std::size_t n_populations      = 1;   // number of parallel islands
+    std::size_t migration_interval = 10;  // evolve this many generations between migrations
+    std::size_t migration_size     = 5;   // top-k individuals sent to the next island
 };
 
 // The outcome of a search: the best expression found (with constants fitted) plus the

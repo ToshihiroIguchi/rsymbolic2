@@ -12,8 +12,8 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
 // symbolic_regression_cpp
-List symbolic_regression_cpp(NumericMatrix X, NumericVector y, int population_size, int generations, int tournament_size, CharacterVector unary_ops, CharacterVector binary_ops, int max_depth, int max_nodes, double target_loss, bool simplify, double crossover_probability, double seed);
-RcppExport SEXP _rsymbolic2_symbolic_regression_cpp(SEXP XSEXP, SEXP ySEXP, SEXP population_sizeSEXP, SEXP generationsSEXP, SEXP tournament_sizeSEXP, SEXP unary_opsSEXP, SEXP binary_opsSEXP, SEXP max_depthSEXP, SEXP max_nodesSEXP, SEXP target_lossSEXP, SEXP simplifySEXP, SEXP crossover_probabilitySEXP, SEXP seedSEXP) {
+List symbolic_regression_cpp(NumericMatrix X, NumericVector y, int population_size, int generations, int tournament_size, CharacterVector unary_ops, CharacterVector binary_ops, int max_depth, int max_nodes, double target_loss, bool simplify, double crossover_probability, double seed, int n_populations);
+RcppExport SEXP _rsymbolic2_symbolic_regression_cpp(SEXP XSEXP, SEXP ySEXP, SEXP population_sizeSEXP, SEXP generationsSEXP, SEXP tournament_sizeSEXP, SEXP unary_opsSEXP, SEXP binary_opsSEXP, SEXP max_depthSEXP, SEXP max_nodesSEXP, SEXP target_lossSEXP, SEXP simplifySEXP, SEXP crossover_probabilitySEXP, SEXP seedSEXP, SEXP n_populationsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -30,13 +30,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type simplify(simplifySEXP);
     Rcpp::traits::input_parameter< double >::type crossover_probability(crossover_probabilitySEXP);
     Rcpp::traits::input_parameter< double >::type seed(seedSEXP);
-    rcpp_result_gen = Rcpp::wrap(symbolic_regression_cpp(X, y, population_size, generations, tournament_size, unary_ops, binary_ops, max_depth, max_nodes, target_loss, simplify, crossover_probability, seed));
+    Rcpp::traits::input_parameter< int >::type n_populations(n_populationsSEXP);
+    rcpp_result_gen = Rcpp::wrap(symbolic_regression_cpp(X, y, population_size, generations, tournament_size, unary_ops, binary_ops, max_depth, max_nodes, target_loss, simplify, crossover_probability, seed, n_populations));
     return rcpp_result_gen;
 END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_rsymbolic2_symbolic_regression_cpp", (DL_FUNC) &_rsymbolic2_symbolic_regression_cpp, 13},
+    {"_rsymbolic2_symbolic_regression_cpp", (DL_FUNC) &_rsymbolic2_symbolic_regression_cpp, 14},
     {NULL, NULL, 0}
 };
 

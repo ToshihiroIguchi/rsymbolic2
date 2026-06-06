@@ -5,6 +5,12 @@
 
 namespace rsymbolic {
 
+void HallOfFame::merge(const HallOfFame& other) {
+    for (const auto& entry : other.by_complexity_) {
+        update(entry.second);
+    }
+}
+
 void HallOfFame::update(const PopMember& member) {
     auto it = by_complexity_.find(member.complexity);
     if (it == by_complexity_.end() || member.loss < it->second.loss) {

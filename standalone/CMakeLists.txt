@@ -28,6 +28,11 @@ target_include_directories(rsymbolic2_core PUBLIC ${CORE_SRC})
 target_compile_features(rsymbolic2_core PUBLIC cxx_std_17)
 target_link_libraries(rsymbolic2_core PRIVATE Eigen3::Eigen)
 
+find_package(OpenMP)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(rsymbolic2_core PUBLIC OpenMP::OpenMP_CXX)
+endif()
+
 # rsymbolic2_bench: benchmark harness (runner + problem suite).
 # Not part of the R package; depends on core for the search headers.
 add_library(rsymbolic2_bench STATIC ${BENCH_DIR}/runner.cpp)
@@ -59,10 +64,19 @@ if(RSYMBOLIC2_BUILD_TESTS)
     target_link_libraries(test_benchmark_quick PRIVATE rsymbolic2_bench)
     add_test(NAME benchmark_quick COMMAND test_benchmark_quick)
     set_tests_properties(benchmark_quick PROPERTIES TIMEOUT 30)
+
+    # Island-model: n_populations=1 regression + n=4 recovery + thread-count determinism.
+    add_executable(test_island_model tests/test_island_model.cpp)
+    target_link_libraries(test_island_model PRIVATE rsymbolic2_bench)
+    add_test(NAME island_model COMMAND test_island_model)
+    set_tests_properties(island_model PROPERTIES TIMEOUT 120)
 endif()
 
 option(RSYMBOLIC2_BUILD_BENCHMARKS "Build the standalone benchmark executable" ON)
 if(RSYMBOLIC2_BUILD_BENCHMARKS)
     add_executable(benchmark_main benchmarks/benchmark_main.cpp)
     target_link_libraries(benchmark_main PRIVATE rsymbolic2_bench)
+
+    add_executable(bench_parallel benchmarks/bench_parallel.cpp)
+    target_link_libraries(bench_parallel PRIVATE rsymbolic2_core)
 endif()
