@@ -10,6 +10,7 @@
 # to nothing on those that don't (e.g. macOS CRAN builds), giving a correct
 # serial fallback without any #ifdef in the source.
 
-PKG_CPPFLAGS = -I. $(SHLIB_OPENMP_CXXFLAGS)
+PKG_CPPFLAGS = -I.
+PKG_CXXFLAGS = $(SHLIB_OPENMP_CXXFLAGS)
 PKG_LIBS     = $(SHLIB_OPENMP_CXXFLAGS)
 CXX_STD      = CXX17
