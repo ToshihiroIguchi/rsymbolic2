@@ -18,7 +18,9 @@
 #'   (default 4).
 #' @param unary_ops Character vector of unary operators to allow.  Recognised
 #'   values: \code{"neg"}, \code{"exp"}, \code{"log"}, \code{"sin"},
-#'   \code{"cos"}.  Default uses all five.
+#'   \code{"cos"}, \code{"sqrt"}, \code{"tanh"}, \code{"abs"}.
+#'   Default uses the first five; \code{"sqrt"}, \code{"tanh"}, and
+#'   \code{"abs"} must be added explicitly when needed.
 #' @param binary_ops Character vector of binary operators.  Recognised values:
 #'   \code{"add"}, \code{"sub"}, \code{"mul"}, \code{"div"}.  Default is
 #'   \code{c("add","sub","mul")}.
@@ -37,12 +39,14 @@
 #'   Selection cost = \code{loss / y_norm + parsimony * complexity}, where
 #'   \code{y_norm = sum((y - mean(y))^2)} (the NMSE denominator). This makes
 #'   the penalty scale-stable across problems of different y-variance, so a
-#'   given \code{parsimony} value transfers across datasets. Default 0 (= off;
-#'   selection is by raw loss, pre-B2 behaviour). Positive values penalise
+#'   given \code{parsimony} value transfers across datasets. Default 1e-3,
+#'   chosen by sweeping \code{c(0, 1e-4, 5e-4, 1e-3, 5e-3)} on Nguyen
+#'   N1/N5/N7/N9/N10: p=1e-3 gave ~10x speedup on Nguyen N9 (123s→12s) with
+#'   no fast-case regression and full recovery. Positive values penalise
 #'   large expressions in tournament selection and migration, which reduces
 #'   bloat without changing the HallOfFame Pareto archive (which is still keyed
-#'   on raw loss vs. complexity). Typical starting points: 1e-4 to 1e-3; tune
-#'   by checking that median complexity drops without losing recovery.
+#'   on raw loss vs. complexity). Use 0 to restore the pre-B2 behaviour
+#'   (selection by raw loss only).
 #' @param optimize_probability Probability that a newly produced child
 #'   expression has its constants refined by the Levenberg-Marquardt optimizer
 #'   (default 0.1). Values less than 1 make constant optimization a
@@ -101,7 +105,7 @@ symbolic_regression <- function(
     simplify              = TRUE,
     crossover_probability = 0.5,
     seed                  = 0L,
-    parsimony             = 0,
+    parsimony             = 1e-3,
     optimize_probability  = 0.1,
     timeout_seconds       = 0,
     verbosity             = 0L

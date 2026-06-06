@@ -17,12 +17,16 @@ using namespace rsymbolic;
 namespace {
 
 UnaryOp parse_unary(const std::string& s) {
-    if (s == "neg") return UnaryOp::Neg;
-    if (s == "exp") return UnaryOp::Exp;
-    if (s == "log") return UnaryOp::Log;
-    if (s == "sin") return UnaryOp::Sin;
-    if (s == "cos") return UnaryOp::Cos;
-    Rcpp::stop("Unknown unary operator: '%s'. Use neg/exp/log/sin/cos.", s.c_str());
+    if (s == "neg")  return UnaryOp::Neg;
+    if (s == "exp")  return UnaryOp::Exp;
+    if (s == "log")  return UnaryOp::Log;
+    if (s == "sin")  return UnaryOp::Sin;
+    if (s == "cos")  return UnaryOp::Cos;
+    if (s == "sqrt") return UnaryOp::Sqrt;
+    if (s == "tanh") return UnaryOp::Tanh;
+    if (s == "abs")  return UnaryOp::Abs;
+    Rcpp::stop("Unknown unary operator: '%s'. Use neg/exp/log/sin/cos/sqrt/tanh/abs.",
+               s.c_str());
 }
 
 BinaryOp parse_binary(const std::string& s) {
@@ -107,7 +111,7 @@ List symbolic_regression_cpp(
         pf_expr.push_back(to_string(m.tree));
     }
 
-    return List::create(
+    List result = List::create(
         Named("expression")   = res.expression,
         Named("loss")         = res.loss,
         Named("complexity")   = res.complexity,
@@ -118,4 +122,6 @@ List symbolic_regression_cpp(
             Named("stringsAsFactors") = false
         )
     );
+    result.attr("class") = "rsymbolic2";
+    return result;
 }

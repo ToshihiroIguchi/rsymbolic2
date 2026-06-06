@@ -11,7 +11,7 @@ enum class NodeKind : std::uint8_t {
     Binary,    // a binary operator (`bop`)
 };
 
-enum class UnaryOp : std::uint8_t { Neg, Exp, Log, Sin, Cos };
+enum class UnaryOp : std::uint8_t { Neg, Exp, Log, Sin, Cos, Sqrt, Tanh, Abs };
 
 enum class BinaryOp : std::uint8_t { Add, Sub, Mul, Div };
 

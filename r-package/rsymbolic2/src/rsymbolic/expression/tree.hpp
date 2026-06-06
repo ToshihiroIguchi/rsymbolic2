@@ -18,21 +18,22 @@ namespace detail {
 
 template <typename T>
 T apply_unary(UnaryOp op, const T& a) {
+    using std::abs;
     using std::cos;
     using std::exp;
     using std::log;
     using std::sin;
+    using std::sqrt;
+    using std::tanh;
     switch (op) {
-        case UnaryOp::Neg:
-            return -a;
-        case UnaryOp::Exp:
-            return exp(a);  // ADL: rsymbolic::exp for Dual, std::exp for double
-        case UnaryOp::Log:
-            return log(a);
-        case UnaryOp::Sin:
-            return sin(a);
-        case UnaryOp::Cos:
-            return cos(a);
+        case UnaryOp::Neg:  return -a;
+        case UnaryOp::Exp:  return exp(a);   // ADL: rsymbolic:: for Dual, std:: for double
+        case UnaryOp::Log:  return log(a);
+        case UnaryOp::Sin:  return sin(a);
+        case UnaryOp::Cos:  return cos(a);
+        case UnaryOp::Sqrt: return sqrt(a);  // Dual: safe (neg→0); double: std::sqrt (NaN→kInf)
+        case UnaryOp::Tanh: return tanh(a);
+        case UnaryOp::Abs:  return abs(a);
     }
     return a;  // unreachable
 }
@@ -176,11 +177,14 @@ namespace detail {
 
 inline const char* unary_name(UnaryOp op) {
     switch (op) {
-        case UnaryOp::Neg: return "neg";
-        case UnaryOp::Exp: return "exp";
-        case UnaryOp::Log: return "log";
-        case UnaryOp::Sin: return "sin";
-        case UnaryOp::Cos: return "cos";
+        case UnaryOp::Neg:  return "neg";
+        case UnaryOp::Exp:  return "exp";
+        case UnaryOp::Log:  return "log";
+        case UnaryOp::Sin:  return "sin";
+        case UnaryOp::Cos:  return "cos";
+        case UnaryOp::Sqrt: return "sqrt";
+        case UnaryOp::Tanh: return "tanh";
+        case UnaryOp::Abs:  return "abs";
     }
     return "?";
 }

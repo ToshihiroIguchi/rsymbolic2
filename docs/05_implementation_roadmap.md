@@ -24,18 +24,21 @@ DONE (2026-06-06): runtime blowup diagnosed → **H1 bloat** (see `docs/12`);
 per-run wall-clock timeout + per-epoch instrumentation added and verified
 (timeout overshoot fixed: N9 s5 1127s → 30.6s at a 30s limit). Gate table now 9/9.
 
-1. **Adaptive parsimony** (Phase 2.7) — the decided fix for the diagnosed bloat:
-   a complexity penalty in the selection loss so the search prefers compact forms and
-   does not drift to the `max_nodes` cap. `RunningSearchStats` + frequency-weighted
-   penalty. Evidence: compact-form runs were 14–36s, bloated runs 73–1127s (`docs/12`).
-2. **Pass `R CMD check --as-cran`** — zero ERRORs/WARNINGs required before distribution.
-   Check: missing exports, NOTE on package size, Rd coverage. New `timeout_seconds` /
-   `verbosity` params must have complete Rd + examples.
-3. **Extend operator set** (sqrt, tanh, abs) — unblocks N8 and Feynman problems;
-   add to `UnaryOp` enum, `apply_unary`, `parse_unary`, R-level argument parsing.
-4. **`plot.rsymbolic2()`** — Pareto front plot (loss vs. complexity, ggplot2).
-5. **PySR comparison baseline** — document PySR version, hardware, time budget, and results
+DONE (2026-06-07): **B1 + B2 bloat control complete** (see `docs/13`).
+- B1 (optimize_probability=0.1): N9 s5 123s→34s (3.5×).
+- B2 (parsimony=1e-3): N9 s5 34s→12s (additional 2.8×, total ~10×).
+- B3 (adaptive parsimony): NOT NEEDED. B1+B2 sufficient; deferred.
+- Operator set extended: sqrt, tanh, abs added to UnaryOp + Dual + parse_unary.
+- `plot.rsymbolic2()` added (Pareto front, ggplot2, Suggests).
+- Rd documentation updated: 4 missing params added to \usage and \arguments.
+- `R CMD check --no-manual`: Status OK (no ERROR, no WARNING, no NOTE).
+
+1. **PySR comparison baseline** — document PySR version, hardware, time budget, and results
    on the same Nguyen subset. Required by CLAUDE.md.
+2. **Pass `R CMD check --as-cran` with network** — confirm zero ERRORs/WARNINGs when
+   CRAN incoming feasibility check is reachable. LaTeX (pdflatex) needed for manual.
+3. **Extend benchmarks** — run Nguyen gate after operator extension to confirm no regression.
+4. **Feynman benchmark** — now unblocked by sqrt/tanh/abs; plan separately.
 
 ---
 

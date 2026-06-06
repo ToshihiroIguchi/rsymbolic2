@@ -39,8 +39,13 @@ struct SearchOptions {
     // Selection cost = loss / y_norm + parsimony * complexity, where
     // y_norm = sum((y - mean(y))^2). Borrowed from PySR's loss_to_cost: dividing
     // by y_norm makes the penalty scale-stable across problems of different y-variance
-    // (equivalent to weighting by NMSE rather than raw SSE). 0 = off (default).
-    double parsimony = 0.0;
+    // (equivalent to weighting by NMSE rather than raw SSE). 0 = off.
+    // Default 1e-3 chosen from a sweep over {0, 1e-4, 5e-4, 1e-3, 5e-3} on
+    // Nguyen N9/N10/N1/N5/N7 (pop=500, n_pops=4, gen=200, timeout=120s):
+    // all cases recovered at every p; p=1e-3 gave ~10× speedup on N9 s5
+    // (123s→12s) and 6× on N10 s3 (48s→8s) with no fast-set regression
+    // (see docs/13, B2.8). B3 (adaptive parsimony) not needed.
+    double parsimony = 1e-3;
 
     // Probability that a newly produced child has its constants LM-optimized.
     // 1.0 = optimize every child (pre-B1 behavior; expensive on bloated trees).

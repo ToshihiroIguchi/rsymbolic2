@@ -59,4 +59,21 @@ inline Dual cos(const Dual& a) {
     return {std::cos(a.value), -a.deriv * std::sin(a.value)};
 }
 
+// safe: negative input → value=0, deriv=0 (prevents NaN from poisoning the LM solver)
+inline Dual sqrt(const Dual& a) {
+    const double s = std::sqrt(a.value > 0.0 ? a.value : 0.0);
+    return {s, s > 0.0 ? a.deriv / (2.0 * s) : 0.0};
+}
+
+inline Dual tanh(const Dual& a) {
+    const double t = std::tanh(a.value);
+    return {t, a.deriv * (1.0 - t * t)};
+}
+
+// subgradient at 0 is 0 (standard convention)
+inline Dual abs(const Dual& a) {
+    return {std::abs(a.value),
+            a.value > 0.0 ? a.deriv : a.value < 0.0 ? -a.deriv : 0.0};
+}
+
 }  // namespace rsymbolic

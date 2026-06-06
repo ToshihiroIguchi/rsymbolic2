@@ -18,7 +18,11 @@ symbolic_regression(
   target_loss = 1e-10,
   simplify = TRUE,
   crossover_probability = 0.5,
-  seed = 0L
+  seed = 0L,
+  parsimony = 1e-3,
+  optimize_probability = 0.1,
+  timeout_seconds = 0,
+  verbosity = 0L
 )
 }
 \arguments{
@@ -43,7 +47,9 @@ islands still run but sequentially.}
 
 \item{unary_ops}{Character vector of unary operators to allow.  Recognised
 values: \code{"neg"}, \code{"exp"}, \code{"log"}, \code{"sin"},
-\code{"cos"}.  Default uses all five.}
+\code{"cos"}, \code{"sqrt"}, \code{"tanh"}, \code{"abs"}.
+Default uses the first five; \code{"sqrt"}, \code{"tanh"}, and
+\code{"abs"} must be added explicitly when needed.}
 
 \item{binary_ops}{Character vector of binary operators.  Recognised values:
 \code{"add"}, \code{"sub"}, \code{"mul"}, \code{"div"}.  Default is
@@ -65,6 +71,42 @@ per evolution step (default 0.5).}
 
 \item{seed}{Integer random seed for reproducibility; 0 uses a
 non-deterministic seed (default 0).}
+
+\item{parsimony}{Complexity penalty added to the selection cost.
+Selection cost = \code{loss / y_norm + parsimony * complexity}, where
+\code{y_norm = sum((y - mean(y))^2)} (the NMSE denominator). This makes
+the penalty scale-stable across problems of different y-variance, so a
+given \code{parsimony} value transfers across datasets. Default 1e-3,
+chosen by sweeping \code{c(0, 1e-4, 5e-4, 1e-3, 5e-3)} on Nguyen
+N1/N5/N7/N9/N10: p=1e-3 gave ~10x speedup on Nguyen N9 (123s to 12s) with
+no fast-case regression and full recovery (see docs/13, B2.8). Positive
+values penalise large expressions in tournament selection and migration,
+which reduces bloat without changing the HallOfFame Pareto archive (which is
+still keyed on raw loss vs. complexity). Use 0 to restore selection by raw
+loss only.}
+
+\item{optimize_probability}{Probability that a newly produced child
+expression has its constants refined by the Levenberg-Marquardt optimizer
+(default 0.1). Values less than 1 make constant optimization a
+probabilistic event, trading some fit quality for substantially faster
+generation on large or constant-heavy trees (cf. PySR
+\code{weight_optimize}). The default 0.1 was chosen by sweeping
+\code{c(1.0, 0.5, 0.2, 0.1)} on Nguyen N1/N5/N7/N9/N10: all values
+recovered at every p; p=0.1 gave 3.5-4x speedup on slow cases with no
+fast-case regression. Children that skip optimization are still evaluated
+with their inherited constants and remain valid candidates for selection.
+Use \code{1.0} to restore the pre-B1 behaviour (optimize every child).}
+
+\item{timeout_seconds}{Wall-clock time limit in seconds (default 0 = no
+limit). When positive, the search stops after approximately this many
+seconds and returns the best expression found so far. \strong{Note:} a run
+that hits the timeout is not reproducible across machines; only runs that
+complete within the budget are bit-reproducible for a fixed seed.}
+
+\item{verbosity}{Integer verbosity level (default 0 = silent). Set to 1 to
+print one diagnostic line per epoch on stderr showing elapsed time, best
+loss, and population shape (median/max tree size and constant count). Useful
+for diagnosing slow runs.}
 }
 \value{
 A list with elements:

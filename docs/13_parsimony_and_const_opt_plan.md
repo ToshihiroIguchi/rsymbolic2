@@ -282,6 +282,45 @@ the largest wall-time reduction. Default flipped to **0.1** in `evolutionary_sea
   problem with a known compact form (e.g. N10), recovery preserved.
 - Tune from PySR's heuristic (≈ expected min NMSE / 5–10) then by B0 measurement.
 
+### B2.8 sweep results (2026-06-07, pop=500, islands=4, gens=200, timeout=120s, optimize_probability=0.1)
+
+Hardware: Windows 11 Home, 4 OpenMP threads.
+All NMSE values well below the 1e-4 recovery threshold.
+
+| parsimony | N9 s5 (s) | N10 s3 (s) | N1 s1 (s) | N5 s1 (s) | N7 s1 (s) | All recovered? |
+|-----------|-----------|------------|-----------|-----------|-----------|----------------|
+| 0         | 123       | 48         | 49        | 26        | 76        | YES            |
+| 1e-4      | 56        | 32         | 70        | 165 ⚠     | 41        | YES            |
+| 5e-4      | 40        | 10         | 14        | 19        | 12        | YES            |
+| **1e-3**  | **12**    | **8**      | **15**    | **12**    | **12**    | **YES**        |
+| 5e-3      | 15        | 8          | 5         | 31        | 10        | YES            |
+
+Notes:
+- p=1e-4: N5 s1 shows a 165s regression (vs 26s at p=0). Likely too weak to prevent
+  bloat but enough to interfere with the constant search. Not a useful value.
+- p=5e-3: N7 and N9 collapse to size=3/3 and 7/7 immediately; over-compression.
+  Still recovered but less accurate and N5 is slower (31s).
+- p=1e-3: best trade-off. N9 s5: 10× speedup (123s→12s). N10 s3: 6× (48s→8s).
+  Fast cases all maintain or improve. Epoch logs show size compresses gradually
+  (e.g. N9: epoch 0 size=22/51 → stabilises quickly), not collapsing to 3/3.
+
+**Decision:** default flipped to **parsimony=1e-3** in `evolutionary_search.hpp`
+and `symbolic_regression.R`. (See commit following this measurement.)
+
+## B3 — Frequency-based adaptive parsimony (DEFERRED — not needed)
+
+**B1 + B2 together are sufficient.** The B2 sweep shows that B1=0.1 + B2=1e-3
+achieves 6–10× speedup on the diagnosed slow cases (N9/N10) with full recovery
+maintained. Epoch logs confirm that median tree size now compresses quickly
+(within 1–2 epochs) rather than staying at the max_nodes cap.
+
+B3 would add `RunningSearchStatistics` per island, per-step frequency updates,
+and a new SearchOptions field. The marginal gain does not justify this complexity
+when B1+B2 already solve the problem. Decision: **B3 deferred indefinitely.**
+
+If future evidence (e.g. a new benchmark class where B1+B2 leaves size bloated)
+demands it, revisit the outline below.
+
 ## B3 — Frequency-based adaptive parsimony (code-level outline, only if needed)
 
 - New `struct RunningSearchStatistics { int window; std::vector<double> freq; ... };`
