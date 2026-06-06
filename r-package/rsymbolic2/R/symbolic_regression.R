@@ -33,6 +33,15 @@
 #'   per evolution step (default 0.5).
 #' @param seed Integer random seed for reproducibility; 0 uses a
 #'   non-deterministic seed (default 0).
+#' @param timeout_seconds Wall-clock time limit in seconds (default 0 = no
+#'   limit). When positive, the search stops after approximately this many
+#'   seconds and returns the best expression found so far. \strong{Note:} a run
+#'   that hits the timeout is not reproducible across machines; only runs that
+#'   complete within the budget are bit-reproducible for a fixed seed.
+#' @param verbosity Integer verbosity level (default 0 = silent). Set to 1 to
+#'   print one diagnostic line per epoch on stderr showing elapsed time, best
+#'   loss, and population shape (median/max tree size and constant count). Useful
+#'   for diagnosing slow runs.
 #'
 #' @return A list with elements:
 #'   \describe{
@@ -70,7 +79,9 @@ symbolic_regression <- function(
     target_loss           = 1e-10,
     simplify              = TRUE,
     crossover_probability = 0.5,
-    seed                  = 0L
+    seed                  = 0L,
+    timeout_seconds       = 0,
+    verbosity             = 0L
 ) {
     X <- as.matrix(X)
     y <- as.numeric(y)
@@ -93,6 +104,8 @@ symbolic_regression <- function(
         as.logical(simplify),
         as.double(crossover_probability),
         as.double(seed),
-        as.integer(n_populations)
+        as.integer(n_populations),
+        as.double(timeout_seconds),
+        as.integer(verbosity)
     )
 }

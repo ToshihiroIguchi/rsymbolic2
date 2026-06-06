@@ -35,6 +35,16 @@ struct SearchOptions {
     std::size_t n_populations      = 1;   // number of parallel islands
     std::size_t migration_interval = 10;  // evolve this many generations between migrations
     std::size_t migration_size     = 5;   // top-k individuals sent to the next island
+
+    // Wall-clock timeout. 0 = no limit (fully deterministic; default). Any value > 0
+    // stops the search after approximately this many seconds. A run that times out is
+    // NOT reproducible across machines — document this in user-facing roxygen.
+    double timeout_seconds = 0.0;
+
+    // Verbosity. 0 = silent. 1 = one diagnostic line per epoch on stderr:
+    //   [epoch N  t=Xs] best=Y  size med/max=A/B  nconst med/max=C/D
+    // Higher values reserved for future use (treated same as 1).
+    int verbosity = 0;
 };
 
 // The outcome of a search: the best expression found (with constants fitted) plus the

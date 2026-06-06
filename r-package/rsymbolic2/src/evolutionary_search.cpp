@@ -1,10 +1,13 @@
 #include "rsymbolic/search/evolutionary_search.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <limits>
 #include <memory>
+#include <numeric>
 #include <random>
 #include <vector>
 
@@ -86,13 +89,24 @@ void initialize_island(Island& isl,
     }
 }
 
-// Evolve island for exactly n_gens generations (or until early stop).
+using Clock    = std::chrono::steady_clock;
+using TimePoint = Clock::time_point;
+
+// Returns elapsed seconds since `start`.
+inline double elapsed_sec(const TimePoint& start) {
+    return std::chrono::duration<double>(Clock::now() - start).count();
+}
+
+// Evolve island for exactly n_gens generations (or until early stop / timeout).
 // Returns true if the early-stop threshold was reached.
 bool evolve_island(Island& isl,
                    const std::vector<std::vector<double>>& X,
                    const std::vector<double>& y,
                    const SearchOptions& opts,
-                   std::size_t n_gens) {
+                   std::size_t n_gens,
+                   const TimePoint& t_start,
+                   bool has_deadline,
+                   double deadline_sec) {
     const std::size_t tournament =
         opts.tournament_size == 0 ? 1 : opts.tournament_size;
     std::uniform_real_distribution<double> unit(0.0, 1.0);
@@ -100,8 +114,17 @@ bool evolve_island(Island& isl,
     for (std::size_t gen = 0; gen < n_gens; ++gen) {
         if (!isl.hof.empty() && isl.hof.best().loss < opts.target_loss)
             return true;
+        if (has_deadline && elapsed_sec(t_start) >= deadline_sec)
+            return false;
 
         for (std::size_t step = 0; step < opts.population_size; ++step) {
+            // Deadline is also checked inside the step loop, not only at generation
+            // boundaries: with bloated trees a single generation's LM optimisation can
+            // run for many minutes, so a per-generation check would overshoot the
+            // timeout several-fold. Per-step bounds overshoot to one fit() call.
+            if (has_deadline && elapsed_sec(t_start) >= deadline_sec)
+                return false;
+
             const std::size_t parent = tournament_best(isl.population,
                                                        tournament, isl.rng);
             Tree child_tree;
@@ -195,8 +218,17 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
     }
 
     const std::size_t interval = std::max<std::size_t>(1, options.migration_interval);
+    const TimePoint   t_start  = Clock::now();
+    const bool        has_deadline = options.timeout_seconds > 0.0;
+    const double      deadline_sec = options.timeout_seconds;
 
-    for (std::size_t done = 0; done < options.generations; done += interval) {
+    bool reached_target = false;
+    bool timed_out      = false;
+    std::size_t epoch   = 0;
+
+    for (std::size_t done = 0;
+         done < options.generations && !reached_target && !timed_out;
+         done += interval, ++epoch) {
         const std::size_t gens =
             std::min(interval, options.generations - done);
 
@@ -204,9 +236,59 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
 #       pragma omp parallel for schedule(dynamic) if(n > 1)
 #endif
         for (std::int64_t i = 0; i < static_cast<std::int64_t>(n); ++i)
-            evolve_island(islands[static_cast<std::size_t>(i)], X, y, options, gens);
+            evolve_island(islands[static_cast<std::size_t>(i)], X, y, options,
+                          gens, t_start, has_deadline, deadline_sec);
 
         if (n > 1) migrate(islands, options.migration_size);
+
+        // Global early stop: once any island reaches the target loss the answer is
+        // found, so stop instead of grinding the remaining islands and epochs through
+        // their full budget. Within-epoch early stop is handled inside evolve_island.
+        for (const auto& isl : islands) {
+            if (!isl.hof.empty() && isl.hof.best().loss < options.target_loss) {
+                reached_target = true;
+                break;
+            }
+        }
+
+        if (has_deadline && elapsed_sec(t_start) >= deadline_sec)
+            timed_out = true;
+
+        // Per-epoch diagnostic log (verbosity >= 1).
+        if (options.verbosity >= 1) {
+            // Gather stats across all islands' populations.
+            double best_loss = std::numeric_limits<double>::infinity();
+            std::vector<int> sizes, nconsts;
+            for (const auto& isl : islands) {
+                if (!isl.hof.empty()) {
+                    const double l = isl.hof.best().loss;
+                    if (l < best_loss) best_loss = l;
+                }
+                for (const auto& m : isl.population) {
+                    sizes.push_back(m.complexity);
+                    nconsts.push_back(count_constants(m.tree));
+                }
+            }
+            const std::size_t sz = sizes.size();
+            int size_med = 0, size_max = 0, nc_med = 0, nc_max = 0;
+            if (sz > 0) {
+                std::nth_element(sizes.begin(),
+                                 sizes.begin() + static_cast<std::ptrdiff_t>(sz / 2),
+                                 sizes.end());
+                size_med = sizes[sz / 2];
+                size_max = *std::max_element(sizes.begin(), sizes.end());
+                std::nth_element(nconsts.begin(),
+                                 nconsts.begin() + static_cast<std::ptrdiff_t>(sz / 2),
+                                 nconsts.end());
+                nc_med = nconsts[sz / 2];
+                nc_max = *std::max_element(nconsts.begin(), nconsts.end());
+            }
+            std::fprintf(stderr,
+                "[epoch %zu  t=%.1fs] best=%.3e  size med/max=%d/%d"
+                "  nconst med/max=%d/%d\n",
+                epoch, elapsed_sec(t_start), best_loss,
+                size_med, size_max, nc_med, nc_max);
+        }
     }
 
     // Merge per-island halls of fame into a single global result.

@@ -18,6 +18,10 @@ r-package/rsymbolic2/rsymbolic2.Rcheck/
 .idea/
 *.user
 
+# Benchmark results (generated; commit only curated summaries)
+benchmarks/results/*.csv
+benchmarks/results/*.log
+
 # OS
 .DS_Store
 Thumbs.db

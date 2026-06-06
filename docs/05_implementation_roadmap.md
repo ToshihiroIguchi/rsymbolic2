@@ -5,6 +5,40 @@
 
 ---
 
+## Current Status (2026-06-06)
+
+Implementation has reached the end of Phase 3 skeleton, with several gaps remaining
+before the Phase 3 milestone gate can be passed.
+
+| Phase | Status | Notes |
+|-------|--------|-------|
+| 0 | **Complete** | Linear target recovery confirmed in testthat |
+| 1 | **~70% complete** | Core done; missing: sqrt/tanh/abs operators, round-trip parser, AD vs finite-diff verification |
+| 2 | **Gate PASSED (2026-06-06)** | Nguyen N1–N7 recovered 5/5, N9 4/5 → 8/9, far below NMSE 1e-4. See `docs/11`. Missing: adaptive parsimony; runtime-blowup (bloat) on some seeds is the top open issue. |
+| 3 | **~55% complete** | Rcpp bridge, OpenMP island model, testthat done; missing: `R CMD check` clean, formal benchmarks, visualization, SRBench runner |
+| 4–5 | Not started | |
+
+### Immediate priorities (in order)
+
+DONE (2026-06-06): runtime blowup diagnosed → **H1 bloat** (see `docs/12`);
+per-run wall-clock timeout + per-epoch instrumentation added and verified
+(timeout overshoot fixed: N9 s5 1127s → 30.6s at a 30s limit). Gate table now 9/9.
+
+1. **Adaptive parsimony** (Phase 2.7) — the decided fix for the diagnosed bloat:
+   a complexity penalty in the selection loss so the search prefers compact forms and
+   does not drift to the `max_nodes` cap. `RunningSearchStats` + frequency-weighted
+   penalty. Evidence: compact-form runs were 14–36s, bloated runs 73–1127s (`docs/12`).
+2. **Pass `R CMD check --as-cran`** — zero ERRORs/WARNINGs required before distribution.
+   Check: missing exports, NOTE on package size, Rd coverage. New `timeout_seconds` /
+   `verbosity` params must have complete Rd + examples.
+3. **Extend operator set** (sqrt, tanh, abs) — unblocks N8 and Feynman problems;
+   add to `UnaryOp` enum, `apply_unary`, `parse_unary`, R-level argument parsing.
+4. **`plot.rsymbolic2()`** — Pareto front plot (loss vs. complexity, ggplot2).
+5. **PySR comparison baseline** — document PySR version, hardware, time budget, and results
+   on the same Nguyen subset. Required by CLAUDE.md.
+
+---
+
 ## Estimation Uncertainty (read first)
 
 The month ranges below are rough planning aids, not commitments. For a solo

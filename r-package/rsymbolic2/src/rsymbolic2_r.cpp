@@ -50,7 +50,9 @@ List symbolic_regression_cpp(
     bool          simplify,
     double        crossover_probability,
     double        seed,
-    int           n_populations
+    int           n_populations,
+    double        timeout_seconds,
+    int           verbosity
 ) {
     // Convert R matrix → vector<vector<double>> (row-major)
     const int n = X.nrow();
@@ -86,6 +88,8 @@ List symbolic_regression_cpp(
     opts.crossover_probability = crossover_probability;
     opts.seed                  = static_cast<std::uint64_t>(seed);
     opts.n_populations         = static_cast<std::size_t>(std::max(1, n_populations));
+    opts.timeout_seconds       = timeout_seconds;
+    opts.verbosity             = verbosity;
 
     const SearchResult res = run_evolution(X_cpp, y_cpp, opts);
 
