@@ -76,6 +76,21 @@ int main() {
         CHECK(!o.expression.empty());
     }
 
+    // Multi-variable smoke test: 2-feature problem must run without crashing.
+    // No recovery assertion (too slow for CI; recovery is verified in benchmark_main).
+    {
+        SearchOptions opts;
+        opts.population_size = 50;
+        opts.generations = 5;
+        opts.target_loss = 1e-10;
+        opts.simplify_expressions = true;
+
+        const RunOutcome o = run_single(problem_multivar(), opts);
+        std::printf("multivar smoke: trainLoss=%.3e  testErr=%.3e  cmpx=%d\n",
+                    o.train_loss, o.test_error, o.complexity);
+        CHECK(!o.expression.empty());
+    }
+
     if (g_failures == 0) {
         std::printf("All %d gate checks passed\n", g_checks);
         return 0;

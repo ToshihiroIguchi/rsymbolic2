@@ -3,6 +3,7 @@
 #include <cmath>
 #include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "rsymbolic/evolution/search_space.hpp"
@@ -57,6 +58,34 @@ inline void fill_1d(BenchmarkProblem& p,
         p.X_test.push_back({x});
         p.y_test.push_back(f(x));
     }
+}
+
+// Populate training and test data from a multi-feature function.
+// rows_train / rows_test are pre-built input row vectors.
+inline void fill_rows(BenchmarkProblem& p,
+                      const std::function<double(const std::vector<double>&)>& f,
+                      std::vector<std::vector<double>> rows_train,
+                      std::vector<std::vector<double>> rows_test) {
+    p.y.resize(rows_train.size());
+    for (std::size_t i = 0; i < rows_train.size(); ++i)
+        p.y[i] = f(rows_train[i]);
+    p.X = std::move(rows_train);
+
+    p.y_test.resize(rows_test.size());
+    for (std::size_t i = 0; i < rows_test.size(); ++i)
+        p.y_test[i] = f(rows_test[i]);
+    p.X_test = std::move(rows_test);
+}
+
+// Generate an n×n grid of 2-D input rows covering [lo, hi] × [lo, hi].
+inline std::vector<std::vector<double>> grid2d(double lo, double hi, int n) {
+    const auto xs = linspace(lo, hi, n);
+    std::vector<std::vector<double>> rows;
+    rows.reserve(static_cast<std::size_t>(n * n));
+    for (double x0 : xs)
+        for (double x1 : xs)
+            rows.push_back({x0, x1});
+    return rows;
 }
 
 // Baseline: y = 2.5*x + 1.7  (linear, trivially expressible)
@@ -134,10 +163,25 @@ inline BenchmarkProblem problem_nguyen7() {
     return p;
 }
 
+// Two-feature problem: y = x0*x1 + x0  (verifies multi-variable search path).
+// Training: 5×5 grid on [-2, 2]; test: 7×7 grid on [-3, 3] (extrapolation).
+inline BenchmarkProblem problem_multivar() {
+    BenchmarkProblem p;
+    p.name = "multivar (x0*x1 + x0)";
+    const auto f = [](const std::vector<double>& x) { return x[0] * x[1] + x[0]; };
+    fill_rows(p, f, grid2d(-2.0, 2.0, 5), grid2d(-3.0, 3.0, 7));
+    p.space.binary_ops = {BinaryOp::Add, BinaryOp::Sub, BinaryOp::Mul};
+    p.space.unary_ops = {};
+    p.space.num_features = 2;
+    p.space.max_depth = 4;
+    p.space.max_nodes = 30;
+    return p;
+}
+
 // Return all standard problems in difficulty order.
 inline std::vector<BenchmarkProblem> standard_problems() {
     return {problem_linear(), problem_exponential(), problem_nguyen1(),
-            problem_nguyen5(), problem_nguyen7()};
+            problem_nguyen5(), problem_nguyen7(), problem_multivar()};
 }
 
 }  // namespace rsymbolic

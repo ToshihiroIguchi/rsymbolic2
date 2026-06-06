@@ -74,6 +74,10 @@ if(RSYMBOLIC2_BUILD_TESTS)
     target_link_libraries(test_crossover PRIVATE rsymbolic2_core)
     add_test(NAME crossover COMMAND test_crossover)
 
+    add_executable(test_multivariate tests/test_multivariate.cpp)
+    target_link_libraries(test_multivariate PRIVATE rsymbolic2_core)
+    add_test(NAME multivariate COMMAND test_multivariate)
+
     add_executable(test_benchmark_quick tests/test_benchmark_quick.cpp)
     target_link_libraries(test_benchmark_quick PRIVATE rsymbolic2_core)
     add_test(NAME benchmark_quick COMMAND test_benchmark_quick)
