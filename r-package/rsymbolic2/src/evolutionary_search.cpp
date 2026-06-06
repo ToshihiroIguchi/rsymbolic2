@@ -38,6 +38,22 @@ struct Island {
     std::unique_ptr<ConstantOptimizer>  optimizer;
 };
 
+// SSE with the tree's current constants — no LM, no Jacobian.
+// Used for children that skip the optimizer this step (optimize_probability < 1).
+// Strictly cheaper than fit(): one forward pass over the data vs. many LM iterations.
+double sse_current(const Tree& tree, const std::vector<std::vector<double>>& X,
+                   const std::vector<double>& y) {
+    const std::vector<double> c = initial_constants(tree);
+    double sse = 0.0;
+    for (std::size_t i = 0; i < y.size(); ++i) {
+        const double pred = evaluate<double>(tree, X[i].data(), c.data());
+        const double r = pred - y[i];
+        if (!std::isfinite(r)) return kInf;
+        sse += r * r;
+    }
+    return sse;
+}
+
 double fit(Tree& tree, const std::vector<std::vector<double>>& X,
            const std::vector<double>& y, const ConstantOptimizer& optimizer) {
     const std::vector<double> init = initial_constants(tree);
@@ -141,7 +157,14 @@ bool evolve_island(Island& isl,
                 mutate(child_tree, opts.space, isl.rng, opts.const_perturb_scale);
             }
 
-            const double loss = fit(child_tree, X, y, *isl.optimizer);
+            // Optimize constants with probability optimize_probability (cf. PySR
+            // weight_optimize). When skipped, evaluate SSE with inherited constants
+            // — cheaper, does not write back to the tree.
+            const double loss =
+                (opts.optimize_probability >= 1.0 ||
+                 unit(isl.rng) < opts.optimize_probability)
+                    ? fit(child_tree, X, y, *isl.optimizer)
+                    : sse_current(child_tree, X, y);
             if (opts.simplify_expressions) child_tree = simplify(child_tree);
             PopMember child{std::move(child_tree), loss, 0};
             child.complexity = static_cast<int>(child.tree.size());

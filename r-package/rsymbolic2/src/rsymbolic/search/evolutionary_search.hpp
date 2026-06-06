@@ -36,6 +36,17 @@ struct SearchOptions {
     std::size_t migration_interval = 10;  // evolve this many generations between migrations
     std::size_t migration_size     = 5;   // top-k individuals sent to the next island
 
+    // Probability that a newly produced child has its constants LM-optimized.
+    // 1.0 = optimize every child (pre-B1 behavior; expensive on bloated trees).
+    // Lower values make constant optimization a probabilistic event (cf. PySR
+    // weight_optimize), reducing the per-child LM cost that causes runtime blowup
+    // on large trees. Default 0.1 chosen from a sweep over {1.0, 0.5, 0.2, 0.1}
+    // on Nguyen N9/N10/N1/N5/N7: all cases recovered at every p; p=0.1 gave 3.5–4×
+    // speedup on the slow cases with no fast-set regression (see docs/13, B1.8).
+    // Children not LM-optimized receive a plain SSE evaluation with their inherited
+    // constants; they are still valid candidates for selection.
+    double optimize_probability = 0.1;
+
     // Wall-clock timeout. 0 = no limit (fully deterministic; default). Any value > 0
     // stops the search after approximately this many seconds. A run that times out is
     // NOT reproducible across machines — document this in user-facing roxygen.

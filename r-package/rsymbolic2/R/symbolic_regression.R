@@ -33,6 +33,17 @@
 #'   per evolution step (default 0.5).
 #' @param seed Integer random seed for reproducibility; 0 uses a
 #'   non-deterministic seed (default 0).
+#' @param optimize_probability Probability that a newly produced child
+#'   expression has its constants refined by the Levenberg-Marquardt optimizer
+#'   (default 0.1). Values less than 1 make constant optimization a
+#'   probabilistic event, trading some fit quality for substantially faster
+#'   generation on large or constant-heavy trees (cf. PySR
+#'   \code{weight_optimize}). The default 0.1 was chosen by sweeping
+#'   \code{c(1.0, 0.5, 0.2, 0.1)} on Nguyen N1/N5/N7/N9/N10: all values
+#'   recovered at every p; p=0.1 gave 3.5–4x speedup on slow cases with no
+#'   fast-case regression. Children that skip optimization are still evaluated
+#'   with their inherited constants and remain valid candidates for selection.
+#'   Use \code{1.0} to restore the pre-B1 behaviour (optimize every child).
 #' @param timeout_seconds Wall-clock time limit in seconds (default 0 = no
 #'   limit). When positive, the search stops after approximately this many
 #'   seconds and returns the best expression found so far. \strong{Note:} a run
@@ -80,6 +91,7 @@ symbolic_regression <- function(
     simplify              = TRUE,
     crossover_probability = 0.5,
     seed                  = 0L,
+    optimize_probability  = 0.1,
     timeout_seconds       = 0,
     verbosity             = 0L
 ) {
@@ -106,6 +118,7 @@ symbolic_regression <- function(
         as.double(seed),
         as.integer(n_populations),
         as.double(timeout_seconds),
-        as.integer(verbosity)
+        as.integer(verbosity),
+        as.double(optimize_probability)
     )
 }
