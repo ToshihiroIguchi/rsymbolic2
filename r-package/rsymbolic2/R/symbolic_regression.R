@@ -41,12 +41,15 @@
 #'   }
 #'
 #' @examples
+#' \donttest{
 #' # Single-variable linear: y = 2.5*x + 1.7
 #' X <- matrix(seq(-5, 5, length.out = 20), ncol = 1)
 #' y <- 2.5 * X[, 1] + 1.7
 #' res <- symbolic_regression(X, y, unary_ops = character(0),
-#'                            population_size = 200L, generations = 40L)
+#'                            population_size = 200L, generations = 40L,
+#'                            seed = 42L)
 #' cat(res$expression, "\n")
+#' }
 #'
 #' @export
 symbolic_regression <- function(
