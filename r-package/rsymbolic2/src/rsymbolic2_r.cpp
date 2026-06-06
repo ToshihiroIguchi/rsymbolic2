@@ -53,7 +53,8 @@ List symbolic_regression_cpp(
     int           n_populations,
     double        timeout_seconds,
     int           verbosity,
-    double        optimize_probability
+    double        optimize_probability,
+    double        parsimony
 ) {
     // Convert R matrix → vector<vector<double>> (row-major)
     const int n = X.nrow();
@@ -92,6 +93,7 @@ List symbolic_regression_cpp(
     opts.timeout_seconds       = timeout_seconds;
     opts.verbosity             = verbosity;
     opts.optimize_probability  = optimize_probability;
+    opts.parsimony             = parsimony;
 
     const SearchResult res = run_evolution(X_cpp, y_cpp, opts);
 

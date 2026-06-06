@@ -54,6 +54,24 @@ double sse_current(const Tree& tree, const std::vector<std::vector<double>>& X,
     return sse;
 }
 
+// y_norm = sum((y - mean(y))^2), used as the NMSE denominator.
+// Returns 1.0 when the denominator would be zero (constant y or single point).
+double compute_y_norm(const std::vector<double>& y) {
+    if (y.size() <= 1) return 1.0;
+    const double mean_y =
+        std::accumulate(y.begin(), y.end(), 0.0) / static_cast<double>(y.size());
+    double ss = 0.0;
+    for (const double v : y) { const double d = v - mean_y; ss += d * d; }
+    return ss > 0.0 ? ss : 1.0;
+}
+
+// Selection cost: loss/y_norm + parsimony*complexity.
+// When parsimony=0 (default) this collapses to loss, preserving pre-B2 behaviour.
+inline double selection_cost(const PopMember& m, double parsimony, double y_norm) {
+    if (parsimony <= 0.0) return m.loss;
+    return m.loss / y_norm + parsimony * static_cast<double>(m.complexity);
+}
+
 double fit(Tree& tree, const std::vector<std::vector<double>>& X,
            const std::vector<double>& y, const ConstantOptimizer& optimizer) {
     const std::vector<double> init = initial_constants(tree);
@@ -69,21 +87,25 @@ std::size_t sample_index(std::size_t size, std::mt19937_64& rng) {
 }
 
 std::size_t tournament_best(const std::vector<PopMember>& pop, std::size_t k,
-                            std::mt19937_64& rng) {
+                            std::mt19937_64& rng, double parsimony, double y_norm) {
     std::size_t best = sample_index(pop.size(), rng);
+    double best_cost = selection_cost(pop[best], parsimony, y_norm);
     for (std::size_t i = 1; i < k; ++i) {
         const std::size_t cand = sample_index(pop.size(), rng);
-        if (pop[cand].loss < pop[best].loss) best = cand;
+        const double c = selection_cost(pop[cand], parsimony, y_norm);
+        if (c < best_cost) { best = cand; best_cost = c; }
     }
     return best;
 }
 
 std::size_t tournament_worst(const std::vector<PopMember>& pop, std::size_t k,
-                             std::mt19937_64& rng) {
+                             std::mt19937_64& rng, double parsimony, double y_norm) {
     std::size_t worst = sample_index(pop.size(), rng);
+    double worst_cost = selection_cost(pop[worst], parsimony, y_norm);
     for (std::size_t i = 1; i < k; ++i) {
         const std::size_t cand = sample_index(pop.size(), rng);
-        if (pop[cand].loss > pop[worst].loss) worst = cand;
+        const double c = selection_cost(pop[cand], parsimony, y_norm);
+        if (c > worst_cost) { worst = cand; worst_cost = c; }
     }
     return worst;
 }
@@ -122,9 +144,11 @@ bool evolve_island(Island& isl,
                    std::size_t n_gens,
                    const TimePoint& t_start,
                    bool has_deadline,
-                   double deadline_sec) {
+                   double deadline_sec,
+                   double y_norm) {
     const std::size_t tournament =
         opts.tournament_size == 0 ? 1 : opts.tournament_size;
+    const double parsimony = opts.parsimony;
     std::uniform_real_distribution<double> unit(0.0, 1.0);
 
     for (std::size_t gen = 0; gen < n_gens; ++gen) {
@@ -142,12 +166,14 @@ bool evolve_island(Island& isl,
                 return false;
 
             const std::size_t parent = tournament_best(isl.population,
-                                                       tournament, isl.rng);
+                                                       tournament, isl.rng,
+                                                       parsimony, y_norm);
             Tree child_tree;
             if (opts.crossover_probability > 0.0 &&
                 unit(isl.rng) < opts.crossover_probability) {
                 const std::size_t parent2 = tournament_best(isl.population,
-                                                            tournament, isl.rng);
+                                                            tournament, isl.rng,
+                                                            parsimony, y_norm);
                 child_tree = subtree_crossover(
                     isl.population[parent].tree,
                     isl.population[parent2].tree,
@@ -171,8 +197,10 @@ bool evolve_island(Island& isl,
             isl.hof.update(child);
 
             const std::size_t worst = tournament_worst(isl.population,
-                                                       tournament, isl.rng);
-            if (child.loss < isl.population[worst].loss)
+                                                       tournament, isl.rng,
+                                                       parsimony, y_norm);
+            if (selection_cost(child, parsimony, y_norm) <
+                    selection_cost(isl.population[worst], parsimony, y_norm))
                 isl.population[worst] = std::move(child);
         }
     }
@@ -181,7 +209,8 @@ bool evolve_island(Island& isl,
 
 // Ring migration: snapshot top-k from each island, then inject into the next.
 // Called serially after each epoch barrier — no concurrent access.
-void migrate(std::vector<Island>& islands, std::size_t k) {
+void migrate(std::vector<Island>& islands, std::size_t k,
+             double parsimony, double y_norm) {
     const std::size_t n = islands.size();
     if (n < 2 || k == 0) return;
 
@@ -194,8 +223,9 @@ void migrate(std::vector<Island>& islands, std::size_t k) {
         const std::size_t take = std::min(k, pop.size());
         std::partial_sort(ptrs.begin(), ptrs.begin() + static_cast<std::ptrdiff_t>(take),
                           ptrs.end(),
-                          [](const PopMember* a, const PopMember* b) {
-                              return a->loss < b->loss;
+                          [parsimony, y_norm](const PopMember* a, const PopMember* b) {
+                              return selection_cost(*a, parsimony, y_norm) <
+                                     selection_cost(*b, parsimony, y_norm);
                           });
         emigrants[i].reserve(take);
         for (std::size_t j = 0; j < take; ++j)
@@ -208,11 +238,14 @@ void migrate(std::vector<Island>& islands, std::size_t k) {
         auto& pop = dst.population;
 
         for (const auto& em : emigrants[i]) {
-            // Replace the worst member if the emigrant is better.
+            // Replace the worst member (by selection cost) if the emigrant is better.
             std::size_t worst_idx = 0;
-            for (std::size_t j = 1; j < pop.size(); ++j)
-                if (pop[j].loss > pop[worst_idx].loss) worst_idx = j;
-            if (em.loss < pop[worst_idx].loss) {
+            double worst_cost = selection_cost(pop[0], parsimony, y_norm);
+            for (std::size_t j = 1; j < pop.size(); ++j) {
+                const double c = selection_cost(pop[j], parsimony, y_norm);
+                if (c > worst_cost) { worst_idx = j; worst_cost = c; }
+            }
+            if (selection_cost(em, parsimony, y_norm) < worst_cost) {
                 pop[worst_idx] = em;
                 dst.hof.update(em);
             }
@@ -244,6 +277,7 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
     const TimePoint   t_start  = Clock::now();
     const bool        has_deadline = options.timeout_seconds > 0.0;
     const double      deadline_sec = options.timeout_seconds;
+    const double      y_norm    = compute_y_norm(y);  // denominator for selection cost
 
     bool reached_target = false;
     bool timed_out      = false;
@@ -260,9 +294,9 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
 #endif
         for (std::int64_t i = 0; i < static_cast<std::int64_t>(n); ++i)
             evolve_island(islands[static_cast<std::size_t>(i)], X, y, options,
-                          gens, t_start, has_deadline, deadline_sec);
+                          gens, t_start, has_deadline, deadline_sec, y_norm);
 
-        if (n > 1) migrate(islands, options.migration_size);
+        if (n > 1) migrate(islands, options.migration_size, options.parsimony, y_norm);
 
         // Global early stop: once any island reaches the target loss the answer is
         // found, so stop instead of grinding the remaining islands and epochs through

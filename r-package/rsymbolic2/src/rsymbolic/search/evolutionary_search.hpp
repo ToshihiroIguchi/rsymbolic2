@@ -36,6 +36,12 @@ struct SearchOptions {
     std::size_t migration_interval = 10;  // evolve this many generations between migrations
     std::size_t migration_size     = 5;   // top-k individuals sent to the next island
 
+    // Selection cost = loss / y_norm + parsimony * complexity, where
+    // y_norm = sum((y - mean(y))^2). Borrowed from PySR's loss_to_cost: dividing
+    // by y_norm makes the penalty scale-stable across problems of different y-variance
+    // (equivalent to weighting by NMSE rather than raw SSE). 0 = off (default).
+    double parsimony = 0.0;
+
     // Probability that a newly produced child has its constants LM-optimized.
     // 1.0 = optimize every child (pre-B1 behavior; expensive on bloated trees).
     // Lower values make constant optimization a probabilistic event (cf. PySR

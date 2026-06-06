@@ -33,6 +33,16 @@
 #'   per evolution step (default 0.5).
 #' @param seed Integer random seed for reproducibility; 0 uses a
 #'   non-deterministic seed (default 0).
+#' @param parsimony Complexity penalty added to the selection cost.
+#'   Selection cost = \code{loss / y_norm + parsimony * complexity}, where
+#'   \code{y_norm = sum((y - mean(y))^2)} (the NMSE denominator). This makes
+#'   the penalty scale-stable across problems of different y-variance, so a
+#'   given \code{parsimony} value transfers across datasets. Default 0 (= off;
+#'   selection is by raw loss, pre-B2 behaviour). Positive values penalise
+#'   large expressions in tournament selection and migration, which reduces
+#'   bloat without changing the HallOfFame Pareto archive (which is still keyed
+#'   on raw loss vs. complexity). Typical starting points: 1e-4 to 1e-3; tune
+#'   by checking that median complexity drops without losing recovery.
 #' @param optimize_probability Probability that a newly produced child
 #'   expression has its constants refined by the Levenberg-Marquardt optimizer
 #'   (default 0.1). Values less than 1 make constant optimization a
@@ -91,6 +101,7 @@ symbolic_regression <- function(
     simplify              = TRUE,
     crossover_probability = 0.5,
     seed                  = 0L,
+    parsimony             = 0,
     optimize_probability  = 0.1,
     timeout_seconds       = 0,
     verbosity             = 0L
@@ -119,6 +130,7 @@ symbolic_regression <- function(
         as.integer(n_populations),
         as.double(timeout_seconds),
         as.integer(verbosity),
-        as.double(optimize_probability)
+        as.double(optimize_probability),
+        as.double(parsimony)
     )
 }
