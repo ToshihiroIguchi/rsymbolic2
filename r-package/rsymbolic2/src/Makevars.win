@@ -1,0 +1,15 @@
+# Makevars.win — Windows (Rtools / MinGW / UCRT) build flags.
+#
+# -I. makes `#include "rsymbolic/..."` resolve against src/rsymbolic/ (the
+# bundled core headers).  RcppEigen's include path is added automatically by R
+# via the LinkingTo: mechanism in DESCRIPTION, so Eigen and its unsupported
+# modules (NonLinearOptimization, NumericalDiff) are available without further
+# action here.
+#
+# SHLIB_OPENMP_CXXFLAGS expands to -fopenmp on toolchains that support it and
+# to nothing on those that don't (e.g. macOS CRAN builds), giving a correct
+# serial fallback without any #ifdef in the source.
+
+PKG_CPPFLAGS = -I. $(SHLIB_OPENMP_CXXFLAGS)
+PKG_LIBS     = $(SHLIB_OPENMP_CXXFLAGS)
+CXX_STD      = CXX17

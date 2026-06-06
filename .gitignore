@@ -3,6 +3,16 @@
 /build-mingw/
 /cmake-build-*/
 
+# R package build artefacts
+r-package/rsymbolic2/src/*.o
+r-package/rsymbolic2/src/*.so
+r-package/rsymbolic2/src/*.dll
+r-package/rsymbolic2/src/rsymbolic2.def
+r-package/rsymbolic2/src-x64/
+r-package/rsymbolic2/src-i386/
+r-package/rsymbolic2/*.tar.gz
+r-package/rsymbolic2/rsymbolic2.Rcheck/
+
 # Editor / IDE
 .vscode/
 .idea/

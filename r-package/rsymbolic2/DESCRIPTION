@@ -1,0 +1,16 @@
+Package: rsymbolic2
+Type: Package
+Title: Symbolic Regression via Genetic Programming
+Version: 0.1.0
+Authors@R: person("Toshihiro", "Iguchi", role = c("aut", "cre"),
+                  email = "toshihiro.iguchi.mail@gmail.com")
+Description: Discovers mathematical expressions that fit data using a
+    steady-state genetic programming algorithm with Levenberg-Marquardt
+    constant optimization. The search engine is implemented in C++ and
+    exposed through a single R function.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends: R (>= 4.2.0)
+Imports: Rcpp
+LinkingTo: Rcpp, RcppEigen
+RoxygenNote: 7.0.0
