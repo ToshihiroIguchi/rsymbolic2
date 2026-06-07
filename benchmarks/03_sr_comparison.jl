@@ -9,14 +9,16 @@
 # Protocol (see docs/15 for the full reporting checklist):
 #   - JIT is warmed up once before timing (compilation is amortised once per session,
 #     exactly as in real PySR usage — not gaming the clock).
-#   - Equal wall-clock budget per run (TIMEOUT_S) and identical early-stop threshold,
-#     to put both tools on the same footing despite different internal population config.
-#   - PySR's default population configuration is mirrored.
+#   - PySR strict defaults: parallelism=:multithreading, no timeout_in_seconds.
+#     Thread budget is equalized on rsymbolic2's side via launch flag (-t 4).
+#   - Operators are the shared problem input given identically to both tools (CLAUDE.md).
+#     Output suppression (progress=false, verbosity=0) is non-algorithmic; recorded as such.
 #   - Recovery uses the SAME criterion as benchmarks/utils.R: NMSE = SSE / ((n-1)*var(y)),
 #     recovered iff NMSE < 1e-4, computed from the best member's predictions.
 #
-# Usage (from project root):
-#   julia +release benchmarks/03_sr_comparison.jl
+# Usage (from project root, T=4 threads to match rsymbolic2 gate n_populations=4):
+#   julia +release -t 4 benchmarks/03_sr_comparison.jl base  > benchmarks/results/_sr_base.log 2>&1
+#   julia +release -t 4 benchmarks/03_sr_comparison.jl sqrt  > benchmarks/results/_sr_sqrt.log 2>&1
 # Optional first arg: "base" (default, no sqrt) or "sqrt" (adds sqrt, includes N8).
 
 using SymbolicRegression
@@ -33,15 +35,12 @@ using Dates
 # defaults, so this is genuinely "PySR at its default settings", run via the same engine
 # (SymbolicRegression.jl) but without the broken Python wrapper. See docs/15.
 #
-# The ONLY deliberate deviations from PySR's defaults are documented and necessary:
-#   1. operators are matched to the rsymbolic2 gate set (a same-search-space comparison
-#      requires it; PySR's own default has no unary operators);
-#   2. serial execution + a wall-clock backstop (reproducibility and a safety bound;
-#      PySR defaults to multithreaded, no timeout).
-# In particular early stopping is left at PySR's default (None): each run uses its full
-# NITERATIONS budget, exactly as default PySR would. rsymbolic2's gate, by contrast, uses
-# its own default early stop — i.e. each tool runs at its own defaults (defaults vs
-# defaults), which is the honest cross-tool comparison.
+# Operators (the shared problem input, per CLAUDE.md) are set explicitly because PySR's
+# literal default has no unary operators and cannot address N5-N10. This is NOT a PySR
+# tuning knob — it is a shared problem definition given identically to both tools.
+# Early stopping is left at PySR's default (None): each run uses its full NITERATIONS
+# budget, exactly as default PySR would. rsymbolic2's gate uses its own default early
+# stop — each tool runs at its own defaults (defaults vs defaults).
 const NITERATIONS    = 100       # PySR default (sr.py)
 const POPULATIONS    = 31        # PySR default (sr.py)
 const POPULATION_SZ  = 27        # PySR default (sr.py)
@@ -49,7 +48,7 @@ const NCYCLES        = 380       # PySR default ncycles_per_iteration (sr.py)
 const TOURNAMENT_N   = 15        # PySR default tournament_selection_n (sr.py)
 const PARSIMONY      = 0.0       # PySR default (sr.py)
 const MAXSIZE        = 30        # PySR default (sr.py); also bounds per-iteration cost
-const TIMEOUT_S      = 120.0     # backstop only (not a PySR default); NITERATIONS is the bound
+const TIMEOUT_S      = 120.0     # wall-clock analysis flag only; NOT passed to SR.jl (PySR has no timeout default)
 const N_SEEDS        = 5
 const RECOVERY_THRESHOLD = 1e-4  # identical to utils.R
 
@@ -83,12 +82,12 @@ end
 function run_one(X, y, options, seed)
     Random.seed!(seed)
     t0 = time()
-    # verbosity=0, progress=false: SR.jl is otherwise extremely chatty (per-iteration
-    # progress bars + Hall-of-Fame tables). When that stdout is captured through a pipe,
-    # a full pipe buffer BLOCKS the Julia process — observed as ~19 min "runs" that used
-    # almost no CPU (see docs/15). Silencing the engine makes wall-time == compute time.
+    # progress=false, verbosity=0: output suppression only (non-algorithmic).
+    # SR.jl's per-iteration tables, when captured through a pipe, blocked the process
+    # (~19 min idle, low CPU — see docs/15). OS-level redirect (> file) + these flags
+    # keep wall-time == compute time. parallelism=:multithreading is PySR's default.
     hof = equation_search(X, y; niterations = NITERATIONS, options = options,
-                          parallelism = :serial, verbosity = 0, progress = false)
+                          parallelism = :multithreading, verbosity = 0, progress = false)
     elapsed = time() - t0
     dom = calculate_pareto_frontier(hof)
     # lowest-loss member on the frontier
@@ -116,9 +115,6 @@ function make_options()
         tournament_selection_n = TOURNAMENT_N,
         parsimony              = PARSIMONY,
         maxsize                = MAXSIZE,
-        # Deviations (documented): backstop timeout only. early stop left at PySR default
-        # (None) so each run uses its full NITERATIONS budget.
-        timeout_in_seconds = TIMEOUT_S,
     )
 end
 
@@ -137,10 +133,9 @@ let
     Xw = reshape(collect(range(-1.0, 1.0; length = 20)), 1, :)
     yw = 1.5 .* Xw[1, :] .+ 0.3
     warmopts = Options(binary_operators = [+, -, *, /], unary_operators = unary_ops,
-                       populations = 4, population_size = 20, maxsize = MAXSIZE,
-                       timeout_in_seconds = 10.0)
+                       populations = 4, population_size = 20, maxsize = MAXSIZE)
     Random.seed!(0)
-    equation_search(Xw, yw; niterations = 3, options = warmopts, parallelism = :serial,
+    equation_search(Xw, yw; niterations = 3, options = warmopts, parallelism = :multithreading,
                     verbosity = 0, progress = false)
 end
 println("done")
