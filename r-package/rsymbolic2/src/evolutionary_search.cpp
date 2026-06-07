@@ -4,8 +4,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
-#include <cstdio>
 #include <limits>
+#include <R_ext/Print.h>
 #include <memory>
 #include <numeric>
 #include <random>
@@ -340,7 +340,7 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
                 nc_med = nconsts[sz / 2];
                 nc_max = *std::max_element(nconsts.begin(), nconsts.end());
             }
-            std::fprintf(stderr,
+            REprintf(
                 "[epoch %zu  t=%.1fs] best=%.3e  size med/max=%d/%d"
                 "  nconst med/max=%d/%d\n",
                 epoch, elapsed_sec(t_start), best_loss,
