@@ -1,7 +1,10 @@
 # rsymbolic2
 
 A native symbolic regression library with a C++ core, an R interface, and a
-planned Python interface. It must run without any Julia dependency.
+planned Python interface. The **shipped library and its runtime must not depend on
+Julia.** Benchmarking is exempt: comparison against reference tools (e.g. PySR, whose
+engine is SymbolicRegression.jl) may use Julia in the development/benchmark environment
+only — never in anything the library ships or requires at runtime.
 
 This file holds the project's durable principles. Implementation detail that may
 change lives in `docs/` (architecture, dependencies, migration, benchmarks,
@@ -71,8 +74,12 @@ portability for speed unless a benchmark shows the speed matters and the user ag
   Let results change the plan.
 - **Primary benchmark: Feynman** (ground-truth recovery).
 - **Secondary benchmarks: Nguyen, Keijzer, SRBench.**
-- **Comparison against PySR is required** at an equivalent wall-clock budget on the
-  same hardware. Report version, hardware, time limit, and number of runs.
+- **Comparison against PySR is required.** Run PySR **only at its documented default
+  settings** — never a hand-tuned "default-equivalent" approximation. The operator set is
+  the one shared problem input given identically to both tools (it defines the search
+  space, it is not an algorithm tuning knob). Any equalization needed for a fair
+  comparison (e.g. the thread/compute budget) is done on **rsymbolic2's** side, never by
+  altering PySR's settings. Report version, hardware, time limit, and number of runs.
 - Report medians over multiple runs with spread, never a single best run.
 - Recovery thresholds and protocol follow `docs/` (benchmark strategy); do not
   weaken thresholds to make results look better.
