@@ -45,13 +45,17 @@ now closed with two dated, full-runner CSVs at the shipped defaults
 - One open issue: a rare bloat-tail timeout overshoot (N2 s3 ran 3.2 h; did not recur in
   Run 2). Not a recovery regression; follow-up options recorded in `docs/14` §1.7.
 
-1. **PySR comparison baseline** — document version, hardware, time budget, and results on
-   the same Nguyen data. Required by CLAUDE.md. **In progress** via SymbolicRegression.jl
-   (PySR's engine) driven directly from Julia — PySR's juliacall bridge is broken on this
-   machine's Microsoft Store Python; the direct-Julia path is an equivalent, cleaner
-   comparison. See `docs/14` Step 2 / `docs/15`.
-2. **Pass `R CMD check --as-cran` with network** — confirm zero ERRORs/WARNINGs when
-   CRAN incoming feasibility check is reachable. LaTeX (pdflatex) needed for manual.
+1. ~~**PySR comparison baseline**~~ **DONE (2026-06-07)** — documented at PySR strict
+   defaults via SymbolicRegression.jl (PySR's engine) driven directly from Julia (PySR's
+   juliacall bridge is broken on this machine's Microsoft Store Python). Both tools
+   recover the full Nguyen set: base 9/9 (45/45), sqrt 10/10 (50/50). See `docs/15`
+   (results) and `docs/16` (strict-defaults methodology).
+2. **Pass `R CMD check --as-cran` with network** — **Windows DONE (2026-06-07)**:
+   `R CMD check --as-cran` on R 4.6.0 + Rtools45 reports no ERROR, no WARNING; the two
+   remaining NOTEs (New submission; pandoc absent) are benign and CRAN-clean. The PDF
+   manual builds (TinyTeX + the `courier`/`makeindex` TeX packages). See `docs/17` for
+   the plan and triage. **Remaining:** re-run on Ubuntu LTS (Platform Constraints require
+   both OSes) before the item is fully closed.
 3. ~~**Extend benchmarks** — run Nguyen gate after operator extension to confirm no
    regression.~~ **DONE** (Run 2 above; `docs/14` §1.6).
 4. **Feynman benchmark** — now unblocked by sqrt/tanh/abs; plan separately.
