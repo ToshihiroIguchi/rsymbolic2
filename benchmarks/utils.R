@@ -17,8 +17,11 @@ RECOVERY_THRESHOLD <- 1e-4
 is_recovered <- function(nmse) is.finite(nmse) && nmse < RECOVERY_THRESHOLD
 
 # Save a results data frame to a timestamped CSV under benchmarks/results/.
-save_results <- function(df, label) {
-  dir <- file.path(dirname(sys.frame(1)$ofile %||% "."), "results")
+# `out_dir` lets callers pass an explicit directory; this is more robust than
+# relying on sys.frame(1)$ofile, which is unavailable under Rscript and silently
+# falls back to ./results (i.e. the current working directory, not benchmarks/).
+save_results <- function(df, label, out_dir = NULL) {
+  dir <- out_dir %||% file.path(dirname(sys.frame(1)$ofile %||% "."), "results")
   if (!dir.exists(dir)) dir.create(dir, recursive = TRUE)
   stamp <- format(Sys.Date(), "%Y%m%d")
   path <- file.path(dir, paste0(label, "_", stamp, ".csv"))

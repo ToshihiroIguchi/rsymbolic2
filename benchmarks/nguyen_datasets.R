@@ -69,8 +69,10 @@ nguyen_problems <- list(
     fn      = function(x) log(x[1] + 1) + log(x[1]^2 + 1)
   ),
 
-  # N8: sqrt(x) — requires sqrt operator, not yet implemented.
-  # Kept here for completeness; runner skips it automatically.
+  # N8: sqrt(x). The sqrt operator IS implemented, but recovery requires "sqrt"
+  # to be present in unary_ops. The default gate operator set omits it, so N8 is
+  # skipped by default and enabled explicitly in the operator-extension run
+  # (benchmarks/01b_nguyen_gate_sqrt.R; see docs/14).
   N8 = list(
     id      = "N8",
     formula = "sqrt(x)",
@@ -78,7 +80,7 @@ nguyen_problems <- list(
     domains = list(c(0, 4)),
     fn      = function(x) sqrt(x[1]),
     skip    = TRUE,
-    skip_reason = "sqrt operator not yet implemented"
+    skip_reason = "requires 'sqrt' in unary_ops (enabled in the operator-extension run)"
   ),
 
   N9 = list(

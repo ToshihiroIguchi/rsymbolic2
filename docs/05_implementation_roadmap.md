@@ -33,11 +33,27 @@ DONE (2026-06-07): **B1 + B2 bloat control complete** (see `docs/13`).
 - Rd documentation updated: 4 missing params added to \usage and \arguments.
 - `R CMD check --no-manual`: Status OK (no ERROR, no WARNING, no NOTE).
 
-1. **PySR comparison baseline** — document PySR version, hardware, time budget, and results
-   on the same Nguyen subset. Required by CLAUDE.md.
+DONE (2026-06-07): **Full-runner Nguyen gate regression verification** (see `docs/14`).
+The earlier "Gate table now 9/9" claim was from per-run timeout work and the B1/B2 *sweep*
+scripts (a subset, sweep-specific params), not the official `01_nguyen_gate.R`. That gap is
+now closed with two dated, full-runner CSVs at the shipped defaults
+(optimize_probability=0.1, parsimony=1e-3):
+- Run 1 (original operator set): **Gate 9/9 PASS**; pre-B1/B2 outliers collapsed
+  (N4 s5 2966 s→10 s; N9 s5 DNF→2 s). B1/B2 did not regress recovery.
+- Run 2 (sqrt added, N8 enabled): **Gate 10/10 PASS**; N8=sqrt(x) recovers exactly.
+  The operator extension did not regress recovery.
+- One open issue: a rare bloat-tail timeout overshoot (N2 s3 ran 3.2 h; did not recur in
+  Run 2). Not a recovery regression; follow-up options recorded in `docs/14` §1.7.
+
+1. **PySR comparison baseline** — document version, hardware, time budget, and results on
+   the same Nguyen data. Required by CLAUDE.md. **In progress** via SymbolicRegression.jl
+   (PySR's engine) driven directly from Julia — PySR's juliacall bridge is broken on this
+   machine's Microsoft Store Python; the direct-Julia path is an equivalent, cleaner
+   comparison. See `docs/14` Step 2 / `docs/15`.
 2. **Pass `R CMD check --as-cran` with network** — confirm zero ERRORs/WARNINGs when
    CRAN incoming feasibility check is reachable. LaTeX (pdflatex) needed for manual.
-3. **Extend benchmarks** — run Nguyen gate after operator extension to confirm no regression.
+3. ~~**Extend benchmarks** — run Nguyen gate after operator extension to confirm no
+   regression.~~ **DONE** (Run 2 above; `docs/14` §1.6).
 4. **Feynman benchmark** — now unblocked by sqrt/tanh/abs; plan separately.
 
 ---
