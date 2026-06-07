@@ -197,3 +197,28 @@ Findings, in the order they surfaced, and how each was resolved:
 **Dev-environment changes made (not package changes):** installed TinyTeX, the TeX
 packages `courier` and `makeindex`, and the R packages `testthat` + `ggplot2`. None of
 these are runtime/library dependencies.
+
+### Ubuntu LTS (2026-06-07)
+
+Environment: WSL Ubuntu-24.04, R 4.3.3, g++ 13.3.0 (texlive complete; pandoc 3.1.3
+and qpdf 11.9.0 installed via apt; ggplot2 installed via apt r-cran-ggplot2).
+
+Final: `R CMD check --as-cran` on R 4.3.3 + Ubuntu 24.04 → **no ERROR, no WARNING,
+4 NOTEs** (all benign). Archived log:
+`benchmarks/results/r_cmd_check_as_cran_ubuntu_20260607.log` (gitignored).
+
+One new finding vs Windows, resolved by a package code change (commit `5359f42`):
+
+5. **NOTE — `Found 'stderr'` in compiled code (`evolutionary_search.o`).** The
+   verbosity progress log used `std::fprintf(stderr, ...)`, which CRAN prohibits
+   (compiled code must not write to C stderr). Fixed by replacing with `REprintf(...)`
+   from `<R_ext/Print.h>` and removing the now-unused `<cstdio>` include. This is a
+   genuine cross-platform fix: the Windows `--as-cran` check did not catch it because
+   the Windows binary checker uses a different object-level scan.
+
+Remaining 4 NOTEs on Ubuntu (documented in `cran-comments.md`):
+- `New submission` — expected.
+- `installed size is 17.9Mb` — inherent to the Eigen/C++ core; no large data files.
+- `-mno-omit-leaf-frame-pointer` — injected by Ubuntu apt-R 4.3.3 Makeconf; absent on
+  R-project.org R builds used by CRAN; package Makevars has no such flag.
+- `unable to verify current time` / `tidy absent` — network/tool environment only.

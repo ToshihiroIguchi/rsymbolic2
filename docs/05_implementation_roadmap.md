@@ -50,12 +50,15 @@ now closed with two dated, full-runner CSVs at the shipped defaults
    juliacall bridge is broken on this machine's Microsoft Store Python). Both tools
    recover the full Nguyen set: base 9/9 (45/45), sqrt 10/10 (50/50). See `docs/15`
    (results) and `docs/16` (strict-defaults methodology).
-2. **Pass `R CMD check --as-cran` with network** — **Windows DONE (2026-06-07)**:
-   `R CMD check --as-cran` on R 4.6.0 + Rtools45 reports no ERROR, no WARNING; the two
-   remaining NOTEs (New submission; pandoc absent) are benign and CRAN-clean. The PDF
-   manual builds (TinyTeX + the `courier`/`makeindex` TeX packages). See `docs/17` for
-   the plan and triage. **Remaining:** re-run on Ubuntu LTS (Platform Constraints require
-   both OSes) before the item is fully closed.
+2. ~~**Pass `R CMD check --as-cran` with network**~~ **DONE (2026-06-07, both OSes)**:
+   - Windows: R 4.6.0 + Rtools45 — no ERROR, no WARNING; 2 NOTEs (New submission;
+     pandoc absent on local machine, does not occur on CRAN). PDF manual builds.
+   - Ubuntu 24.04 LTS (WSL): R 4.3.3 — no ERROR, no WARNING; 4 NOTEs all benign
+     (installed size; time verify timeout; `-mno-omit-leaf-frame-pointer` from Ubuntu
+     apt-R Makeconf, absent on CRAN R; tidy absent). PDF manual builds.
+   - Code fix: `std::fprintf(stderr, ...)` → `REprintf(...)` in
+     `evolutionary_search.cpp` (CRAN: compiled code must not write to C stderr).
+   - See `docs/17` for the full plan, triage, and outcome.
 3. ~~**Extend benchmarks** — run Nguyen gate after operator extension to confirm no
    regression.~~ **DONE** (Run 2 above; `docs/14` §1.6).
 4. **Feynman benchmark** — now unblocked by sqrt/tanh/abs; plan separately.
