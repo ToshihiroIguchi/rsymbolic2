@@ -22,11 +22,13 @@ UnaryOp parse_unary(const std::string& s) {
     if (s == "log")  return UnaryOp::Log;
     if (s == "sin")  return UnaryOp::Sin;
     if (s == "cos")  return UnaryOp::Cos;
-    if (s == "sqrt") return UnaryOp::Sqrt;
-    if (s == "tanh") return UnaryOp::Tanh;
-    if (s == "abs")  return UnaryOp::Abs;
-    Rcpp::stop("Unknown unary operator: '%s'. Use neg/exp/log/sin/cos/sqrt/tanh/abs.",
-               s.c_str());
+    if (s == "sqrt")   return UnaryOp::Sqrt;
+    if (s == "tanh")   return UnaryOp::Tanh;
+    if (s == "abs")    return UnaryOp::Abs;
+    if (s == "square") return UnaryOp::Square;
+    Rcpp::stop(
+        "Unknown unary operator: '%s'. Use neg/exp/log/sin/cos/sqrt/tanh/abs/square.",
+        s.c_str());
 }
 
 BinaryOp parse_binary(const std::string& s) {
@@ -34,7 +36,8 @@ BinaryOp parse_binary(const std::string& s) {
     if (s == "sub") return BinaryOp::Sub;
     if (s == "mul") return BinaryOp::Mul;
     if (s == "div") return BinaryOp::Div;
-    Rcpp::stop("Unknown binary operator: '%s'. Use add/sub/mul/div.", s.c_str());
+    if (s == "pow") return BinaryOp::Pow;
+    Rcpp::stop("Unknown binary operator: '%s'. Use add/sub/mul/div/pow.", s.c_str());
 }
 
 }  // namespace

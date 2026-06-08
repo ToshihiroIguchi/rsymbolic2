@@ -26,14 +26,15 @@ T apply_unary(UnaryOp op, const T& a) {
     using std::sqrt;
     using std::tanh;
     switch (op) {
-        case UnaryOp::Neg:  return -a;
-        case UnaryOp::Exp:  return exp(a);   // ADL: rsymbolic:: for Dual, std:: for double
-        case UnaryOp::Log:  return log(a);
-        case UnaryOp::Sin:  return sin(a);
-        case UnaryOp::Cos:  return cos(a);
-        case UnaryOp::Sqrt: return sqrt(a);  // Dual: safe (neg→0); double: std::sqrt (NaN→kInf)
-        case UnaryOp::Tanh: return tanh(a);
-        case UnaryOp::Abs:  return abs(a);
+        case UnaryOp::Neg:    return -a;
+        case UnaryOp::Exp:    return exp(a);    // ADL: rsymbolic:: for Dual, std:: for double
+        case UnaryOp::Log:    return log(a);
+        case UnaryOp::Sin:    return sin(a);
+        case UnaryOp::Cos:    return cos(a);
+        case UnaryOp::Sqrt:   return sqrt(a);   // Dual: safe (neg→0); double: std::sqrt
+        case UnaryOp::Tanh:   return tanh(a);
+        case UnaryOp::Abs:    return abs(a);
+        case UnaryOp::Square: return square(a); // rsymbolic::square via ADL
     }
     return a;  // unreachable
 }
@@ -41,16 +42,39 @@ T apply_unary(UnaryOp op, const T& a) {
 template <typename T>
 T apply_binary(BinaryOp op, const T& a, const T& b) {
     switch (op) {
-        case BinaryOp::Add:
-            return a + b;
-        case BinaryOp::Sub:
-            return a - b;
-        case BinaryOp::Mul:
-            return a * b;
-        case BinaryOp::Div:
-            return a / b;
+        case BinaryOp::Add: return a + b;
+        case BinaryOp::Sub: return a - b;
+        case BinaryOp::Mul: return a * b;
+        case BinaryOp::Div: return a / b;
+        case BinaryOp::Pow: return pow(a, b);  // rsymbolic::pow via ADL (safe semantics)
     }
     return a;  // unreachable
+}
+
+inline const char* unary_name(UnaryOp op) {
+    switch (op) {
+        case UnaryOp::Neg:    return "neg";
+        case UnaryOp::Exp:    return "exp";
+        case UnaryOp::Log:    return "log";
+        case UnaryOp::Sin:    return "sin";
+        case UnaryOp::Cos:    return "cos";
+        case UnaryOp::Sqrt:   return "sqrt";
+        case UnaryOp::Tanh:   return "tanh";
+        case UnaryOp::Abs:    return "abs";
+        case UnaryOp::Square: return "square";
+    }
+    return "?";
+}
+
+inline const char* binary_name(BinaryOp op) {
+    switch (op) {
+        case BinaryOp::Add: return "+";
+        case BinaryOp::Sub: return "-";
+        case BinaryOp::Mul: return "*";
+        case BinaryOp::Div: return "/";
+        case BinaryOp::Pow: return "^";
+    }
+    return "?";
 }
 
 }  // namespace detail
@@ -173,34 +197,6 @@ inline void set_constants(Tree& tree, const std::vector<double>& constants) {
     }
 }
 
-namespace detail {
-
-inline const char* unary_name(UnaryOp op) {
-    switch (op) {
-        case UnaryOp::Neg:  return "neg";
-        case UnaryOp::Exp:  return "exp";
-        case UnaryOp::Log:  return "log";
-        case UnaryOp::Sin:  return "sin";
-        case UnaryOp::Cos:  return "cos";
-        case UnaryOp::Sqrt: return "sqrt";
-        case UnaryOp::Tanh: return "tanh";
-        case UnaryOp::Abs:  return "abs";
-    }
-    return "?";
-}
-
-inline char binary_symbol(BinaryOp op) {
-    switch (op) {
-        case BinaryOp::Add: return '+';
-        case BinaryOp::Sub: return '-';
-        case BinaryOp::Mul: return '*';
-        case BinaryOp::Div: return '/';
-    }
-    return '?';
-}
-
-}  // namespace detail
-
 // Render a tree as a human-readable infix string (for logging / debugging).
 inline std::string to_string(const Tree& tree) {
     std::vector<std::string> stack;
@@ -226,7 +222,7 @@ inline std::string to_string(const Tree& tree) {
                 stack.pop_back();
                 const std::string a = stack.back();
                 stack.back() =
-                    "(" + a + " " + detail::binary_symbol(node.bop) + " " + b + ")";
+                    "(" + a + " " + detail::binary_name(node.bop) + " " + b + ")";
                 break;
             }
         }

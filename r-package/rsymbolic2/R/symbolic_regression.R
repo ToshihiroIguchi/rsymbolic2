@@ -18,12 +18,17 @@
 #'   (default 4).
 #' @param unary_ops Character vector of unary operators to allow.  Recognised
 #'   values: \code{"neg"}, \code{"exp"}, \code{"log"}, \code{"sin"},
-#'   \code{"cos"}, \code{"sqrt"}, \code{"tanh"}, \code{"abs"}.
-#'   Default uses the first five; \code{"sqrt"}, \code{"tanh"}, and
-#'   \code{"abs"} must be added explicitly when needed.
+#'   \code{"cos"}, \code{"sqrt"}, \code{"tanh"}, \code{"abs"}, \code{"square"}.
+#'   Default uses the first five; \code{"sqrt"}, \code{"tanh"}, \code{"abs"},
+#'   and \code{"square"} must be added explicitly when needed.
+#'   \code{"square"} computes \eqn{x^2} as a single node (cheaper than
+#'   \code{pow} for the common quadratic case).
 #' @param binary_ops Character vector of binary operators.  Recognised values:
-#'   \code{"add"}, \code{"sub"}, \code{"mul"}, \code{"div"}.  Default is
-#'   \code{c("add","sub","mul")}.
+#'   \code{"add"}, \code{"sub"}, \code{"mul"}, \code{"div"}, \code{"pow"}.
+#'   Default is \code{c("add","sub","mul")}.
+#'   \code{"pow"} uses a safe implementation that avoids \code{NaN} when the
+#'   base is non-positive: \code{x^y} returns 0 for undefined inputs instead
+#'   of \code{NaN}, preventing LM-solver poisoning.
 #' @param max_depth Maximum tree depth for randomly generated expressions
 #'   (default 4).
 #' @param max_nodes Soft upper bound on expression-tree size (default 40).

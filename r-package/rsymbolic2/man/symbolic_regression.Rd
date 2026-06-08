@@ -19,7 +19,7 @@ symbolic_regression(
   simplify = TRUE,
   crossover_probability = 0.5,
   seed = 0L,
-  parsimony = 1e-3,
+  parsimony = 0.001,
   optimize_probability = 0.1,
   timeout_seconds = 0,
   verbosity = 0L
@@ -47,13 +47,18 @@ islands still run but sequentially.}
 
 \item{unary_ops}{Character vector of unary operators to allow.  Recognised
 values: \code{"neg"}, \code{"exp"}, \code{"log"}, \code{"sin"},
-\code{"cos"}, \code{"sqrt"}, \code{"tanh"}, \code{"abs"}.
-Default uses the first five; \code{"sqrt"}, \code{"tanh"}, and
-\code{"abs"} must be added explicitly when needed.}
+\code{"cos"}, \code{"sqrt"}, \code{"tanh"}, \code{"abs"}, \code{"square"}.
+Default uses the first five; \code{"sqrt"}, \code{"tanh"}, \code{"abs"},
+and \code{"square"} must be added explicitly when needed.
+\code{"square"} computes \eqn{x^2} as a single node (cheaper than
+\code{pow} for the common quadratic case).}
 
 \item{binary_ops}{Character vector of binary operators.  Recognised values:
-\code{"add"}, \code{"sub"}, \code{"mul"}, \code{"div"}.  Default is
-\code{c("add","sub","mul")}.}
+\code{"add"}, \code{"sub"}, \code{"mul"}, \code{"div"}, \code{"pow"}.
+Default is \code{c("add","sub","mul")}.
+\code{"pow"} uses a safe implementation that avoids \code{NaN} when the
+base is non-positive: \code{x^y} returns 0 for undefined inputs instead
+of \code{NaN}, preventing LM-solver poisoning.}
 
 \item{max_depth}{Maximum tree depth for randomly generated expressions
 (default 4).}
@@ -78,12 +83,12 @@ Selection cost = \code{loss / y_norm + parsimony * complexity}, where
 the penalty scale-stable across problems of different y-variance, so a
 given \code{parsimony} value transfers across datasets. Default 1e-3,
 chosen by sweeping \code{c(0, 1e-4, 5e-4, 1e-3, 5e-3)} on Nguyen
-N1/N5/N7/N9/N10: p=1e-3 gave ~10x speedup on Nguyen N9 (123s to 12s) with
-no fast-case regression and full recovery (see docs/13, B2.8). Positive
-values penalise large expressions in tournament selection and migration,
-which reduces bloat without changing the HallOfFame Pareto archive (which is
-still keyed on raw loss vs. complexity). Use 0 to restore selection by raw
-loss only.}
+N1/N5/N7/N9/N10: p=1e-3 gave ~10x speedup on Nguyen N9 (123s→12s) with
+no fast-case regression and full recovery. Positive values penalise
+large expressions in tournament selection and migration, which reduces
+bloat without changing the HallOfFame Pareto archive (which is still keyed
+on raw loss vs. complexity). Use 0 to restore the pre-B2 behaviour
+(selection by raw loss only).}
 
 \item{optimize_probability}{Probability that a newly produced child
 expression has its constants refined by the Levenberg-Marquardt optimizer
@@ -92,7 +97,7 @@ probabilistic event, trading some fit quality for substantially faster
 generation on large or constant-heavy trees (cf. PySR
 \code{weight_optimize}). The default 0.1 was chosen by sweeping
 \code{c(1.0, 0.5, 0.2, 0.1)} on Nguyen N1/N5/N7/N9/N10: all values
-recovered at every p; p=0.1 gave 3.5-4x speedup on slow cases with no
+recovered at every p; p=0.1 gave 3.5–4x speedup on slow cases with no
 fast-case regression. Children that skip optimization are still evaluated
 with their inherited constants and remain valid candidates for selection.
 Use \code{1.0} to restore the pre-B1 behaviour (optimize every child).}

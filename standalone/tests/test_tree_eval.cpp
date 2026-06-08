@@ -114,6 +114,71 @@ void test_count_and_initial_constants() {
     CHECK(close(init[1], 0.3, 1e-12));
 }
 
+// Tree for y = a * square(x).  Postfix: [a][x][square][*]
+Tree square_tree(double a0) {
+    return {constant_node(0, a0), variable_node(0), unary_node(UnaryOp::Square),
+            binary_node(BinaryOp::Mul)};
+}
+
+// Tree for y = x ^ c.  Postfix: [x][c][pow]
+Tree pow_tree(double c0) {
+    return {variable_node(0), constant_node(0, c0), binary_node(BinaryOp::Pow)};
+}
+
+void test_square_value_and_gradient() {
+    const Tree tree = square_tree(3.0);
+    const std::vector<double> c = {3.0};
+    // y = 3*x^2 at x=2 -> 12
+    const std::vector<double> row = {2.0};
+    CHECK(close(evaluate<double>(tree, row.data(), c.data()), 12.0, 1e-12));
+
+    // d/da = x^2 = 4
+    const double h = 1e-6;
+    CHECK(close(dual_grad(tree, row, c, 0), finite_diff(tree, row, c, 0, h), 1e-5));
+}
+
+void test_pow_value_and_gradient() {
+    const Tree tree = pow_tree(3.0);
+    const std::vector<double> c = {3.0};
+    // y = x^3 at x=2 -> 8
+    const std::vector<double> row = {2.0};
+    CHECK(close(evaluate<double>(tree, row.data(), c.data()), 8.0, 1e-9));
+
+    // d/dc = x^c * ln(x) at x=2,c=3 -> 8*ln2
+    const double h = 1e-6;
+    CHECK(close(dual_grad(tree, row, c, 0), finite_diff(tree, row, c, 0, h), 1e-4));
+}
+
+// Verify square and pow guarded values are finite (not NaN) at boundary inputs.
+void test_safe_boundaries() {
+    // square(-3) = 9, no NaN
+    {
+        const Tree tree = square_tree(1.0);
+        const std::vector<double> c = {1.0};
+        const std::vector<double> row = {-3.0};
+        const double v = evaluate<double>(tree, row.data(), c.data());
+        CHECK(std::isfinite(v));
+        CHECK(close(v, 9.0, 1e-12));
+    }
+    // pow(-2, 2) = 4 (integer exponent, negative base)
+    {
+        const Tree tree = pow_tree(2.0);
+        const std::vector<double> c = {2.0};
+        const std::vector<double> row = {-2.0};
+        const double v = evaluate<double>(tree, row.data(), c.data());
+        CHECK(std::isfinite(v));
+        CHECK(close(v, 4.0, 1e-9));
+    }
+    // pow(-2, 1.5) -> guarded (not NaN)
+    {
+        const Tree tree = pow_tree(1.5);
+        const std::vector<double> c = {1.5};
+        const std::vector<double> row = {-2.0};
+        const double v = evaluate<double>(tree, row.data(), c.data());
+        CHECK(std::isfinite(v));
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -121,6 +186,9 @@ int main() {
     test_exp_value();
     test_gradient_matches_finite_difference();
     test_count_and_initial_constants();
+    test_square_value_and_gradient();
+    test_pow_value_and_gradient();
+    test_safe_boundaries();
 
     if (g_failures == 0) {
         std::printf("All %d checks passed\n", g_checks);

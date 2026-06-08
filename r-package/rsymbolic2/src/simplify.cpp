@@ -103,6 +103,16 @@ Ast simplify_ast(Ast a) {
             case BinaryOp::Div:
                 if (rc && R.node.value == 1.0) return a.kids[0];  // x / 1 -> x
                 break;
+            case BinaryOp::Pow:
+                if (rc && R.node.value == 0.0) return make_constant(1.0);  // x^0 -> 1
+                if (rc && R.node.value == 1.0) return a.kids[0];           // x^1 -> x
+                if (rc && R.node.value == 2.0) {                           // x^2 -> square(x)
+                    Ast sq;
+                    sq.node = unary_node(UnaryOp::Square);
+                    sq.kids.push_back(a.kids[0]);
+                    return sq;
+                }
+                break;
         }
         return a;
     }

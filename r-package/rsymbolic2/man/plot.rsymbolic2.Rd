@@ -24,7 +24,7 @@ A \code{ggplot2} plot object, returned invisibly.
   The plot is also printed as a side effect.
 }
 \description{
-Draws a complexity vs. loss scatter plot of the non-dominated expressions
+Draws a complexity vs.\ loss scatter plot of the non-dominated expressions
 found by \code{\link{symbolic_regression}}.  The expression with the
 lowest loss is highlighted in red.  Requires the \pkg{ggplot2} package.
 }

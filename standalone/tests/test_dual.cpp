@@ -59,6 +59,57 @@ void test_partial_wrt_one_variable() {
     CHECK(close(y.deriv, a * x * std::exp(0.3 * x)));
 }
 
+// d/dx (x^2) = 2x at x = 3 -> value=9, deriv=6
+void test_square() {
+    Dual x(3.0, 1.0);
+    Dual y = rsymbolic::square(x);
+    CHECK(close(y.value, 9.0));
+    CHECK(close(y.deriv, 6.0));
+
+    // negative input: value still works, no NaN
+    Dual xn(-2.0, 1.0);
+    Dual yn = rsymbolic::square(xn);
+    CHECK(close(yn.value, 4.0));
+    CHECK(close(yn.deriv, -4.0));
+}
+
+// safe_pow(x, y): standard branch x>0
+// d/dx (x^3) = 3x^2 at x=2 -> 12; d/dy (2^y) = 2^y * ln2 at y=3 -> 8*ln2
+void test_pow_std_branch() {
+    // Partial w.r.t. base (seed base, fix exponent)
+    Dual base(2.0, 1.0);
+    Dual exp_arg(3.0, 0.0);
+    Dual p = rsymbolic::pow(base, exp_arg);
+    CHECK(close(p.value, 8.0));
+    CHECK(close(p.deriv, 12.0));  // 3 * 2^2
+
+    // Partial w.r.t. exponent (fix base, seed exponent)
+    Dual base2(2.0, 0.0);
+    Dual exp_arg2(3.0, 1.0);
+    Dual p2 = rsymbolic::pow(base2, exp_arg2);
+    CHECK(close(p2.value, 8.0));
+    CHECK(close(p2.deriv, 8.0 * std::log(2.0)));  // 2^3 * ln2
+}
+
+// safe_pow guard: x <= 0 returns finite (not NaN), derivative is 0
+void test_pow_guarded() {
+    // x=0, y>0 -> value=0
+    Dual z = rsymbolic::pow(Dual(0.0, 1.0), Dual(2.0, 0.0));
+    CHECK(std::isfinite(z.value));
+    CHECK(z.value == 0.0);
+    CHECK(std::isfinite(z.deriv));
+
+    // x<0, integer y: sign-correct ((-2)^3 = -8)
+    Dual neg = rsymbolic::pow(Dual(-2.0, 0.0), Dual(3.0, 0.0));
+    CHECK(close(neg.value, -8.0));
+    CHECK(std::isfinite(neg.deriv));
+
+    // x<0, non-integer y -> 0 (not NaN)
+    Dual bad = rsymbolic::pow(Dual(-2.0, 1.0), Dual(1.5, 0.0));
+    CHECK(std::isfinite(bad.value));
+    CHECK(std::isfinite(bad.deriv));
+}
+
 }  // namespace
 
 int main() {
@@ -66,6 +117,9 @@ int main() {
     test_quotient_rule();
     test_exp_chain_rule();
     test_partial_wrt_one_variable();
+    test_square();
+    test_pow_std_branch();
+    test_pow_guarded();
 
     if (g_failures == 0) {
         std::printf("All %d checks passed\n", g_checks);

@@ -11,9 +11,9 @@ enum class NodeKind : std::uint8_t {
     Binary,    // a binary operator (`bop`)
 };
 
-enum class UnaryOp : std::uint8_t { Neg, Exp, Log, Sin, Cos, Sqrt, Tanh, Abs };
+enum class UnaryOp : std::uint8_t { Neg, Exp, Log, Sin, Cos, Sqrt, Tanh, Abs, Square };
 
-enum class BinaryOp : std::uint8_t { Add, Sub, Mul, Div };
+enum class BinaryOp : std::uint8_t { Add, Sub, Mul, Div, Pow };
 
 // A single node of an expression tree. Trees are stored as a flat vector in postfix
 // (reverse Polish) order, so a stack-based evaluator can run with no pointer chasing

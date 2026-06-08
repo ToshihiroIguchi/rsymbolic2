@@ -5,7 +5,20 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
-#include <R_ext/Print.h>
+// Use R's error channel when building inside the R package; fall back to
+// stderr for the standalone cmake build (no R headers available there).
+#ifdef __has_include
+#  if __has_include(<R_ext/Print.h>)
+#    include <R_ext/Print.h>
+#    define rsym_eprintf(...) REprintf(__VA_ARGS__)
+#  else
+#    include <cstdio>
+#    define rsym_eprintf(...) std::fprintf(stderr, __VA_ARGS__)
+#  endif
+#else
+#  include <cstdio>
+#  define rsym_eprintf(...) std::fprintf(stderr, __VA_ARGS__)
+#endif
 #include <memory>
 #include <numeric>
 #include <random>
@@ -340,7 +353,7 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
                 nc_med = nconsts[sz / 2];
                 nc_max = *std::max_element(nconsts.begin(), nconsts.end());
             }
-            REprintf(
+            rsym_eprintf(
                 "[epoch %zu  t=%.1fs] best=%.3e  size med/max=%d/%d"
                 "  nconst med/max=%d/%d\n",
                 epoch, elapsed_sec(t_start), best_loss,
