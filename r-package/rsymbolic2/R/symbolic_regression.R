@@ -73,7 +73,7 @@
 #'   loss, and population shape (median/max tree size and constant count). Useful
 #'   for diagnosing slow runs.
 #'
-#' @return A list with elements:
+#' @return A list of class \code{"rsymbolic2"} with elements:
 #'   \describe{
 #'     \item{expression}{Best expression found, as an infix string.}
 #'     \item{loss}{Training loss (sum of squared residuals) of the best
@@ -81,6 +81,8 @@
 #'     \item{complexity}{Number of nodes in the expression tree.}
 #'     \item{pareto_front}{Data frame of non-dominated (complexity, loss,
 #'       expression) trade-offs from accuracy-vs-complexity Pareto front.}
+#'     \item{n_features}{Number of input features (columns of \code{X}) used
+#'       during fitting; required by \code{\link{predict.rsymbolic2}}.}
 #'   }
 #'
 #' @examples
@@ -122,7 +124,7 @@ symbolic_regression <- function(
     if (nrow(X) != length(y)) stop("nrow(X) must equal length(y)")
     if (!is.numeric(X)) stop("X must be numeric")
 
-    symbolic_regression_cpp(
+    result <- symbolic_regression_cpp(
         X,
         y,
         as.integer(population_size),
@@ -142,4 +144,6 @@ symbolic_regression <- function(
         as.double(optimize_probability),
         as.double(parsimony)
     )
+    result$n_features <- ncol(X)
+    result
 }

@@ -61,7 +61,10 @@ now closed with two dated, full-runner CSVs at the shipped defaults
    - See `docs/17` for the full plan, triage, and outcome.
 3. ~~**Extend benchmarks** — run Nguyen gate after operator extension to confirm no
    regression.~~ **DONE** (Run 2 above; `docs/14` §1.6).
-4. **Feynman benchmark** — now unblocked by sqrt/tanh/abs; plan separately.
+4. **Feynman benchmark** — plan in `docs/19`. Stage 0 (smoke) PASS on both OSes.
+   `predict.rsymbolic2()` implemented 2026-06-13 (verified Windows R 4.6.0 + Ubuntu
+   R 4.3.3, testthat 19/19) to enable the Stage 2 held-out NMSE evaluation. Stage 1
+   dev gate is the next step.
 
 ---
 

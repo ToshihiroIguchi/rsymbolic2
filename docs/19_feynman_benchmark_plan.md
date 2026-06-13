@@ -48,12 +48,14 @@ Uniform random sampling within the published variable ranges per equation.
 Training data is what `symbolic_regression()` sees. Test data is used for the final
 NMSE gate (held-out evaluation).
 
-**Current limitation:** `symbolic_regression()` returns the training `loss` (SSR) but
-no `predict()` method for new data yet exists in the R API. For Stages 0–1 (development
-gates), in-sample NMSE on the training split is used as a proxy — the same protocol as
-the Nguyen gate (which also uses in-sample loss). For Stage 2 (publication quality),
-implementing `predict.rsymbolic2()` or evaluating the returned expression string on the
-test split is a prerequisite before recording the final recovery rate.
+**Evaluation method:** For Stages 0–1 (development gates), in-sample NMSE on the
+training split is used as a proxy — the same protocol as the Nguyen gate (which also
+uses in-sample loss). For Stage 2 (publication quality), held-out NMSE on the test
+split is the standard. `predict.rsymbolic2()` is now implemented (verified on Windows
+and Ubuntu, 2026-06-13): it evaluates the fitted expression string on new data, so the
+Stage 2 held-out evaluation is unblocked. The current Stage 0–1 runner
+(`02_feynman_gate.R`) still scores in-sample `loss` for consistency with the Nguyen
+gate; switching it to `predict()` on the test split is a Stage 2 task.
 
 Output directory: `benchmarks/data/feynman_I_<id>.csv`, `benchmarks/data/feynman_II_<id>.csv`
 Columns: `x1, x2, ..., xp, y` (consistent with Nguyen data format).
