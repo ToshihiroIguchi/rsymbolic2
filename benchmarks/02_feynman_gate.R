@@ -40,13 +40,11 @@ for (a in args) {
 if (STAGE == 0L) {
   KEYS      <- feynman_smoke_keys
   N_RUNS    <- 3L
-  TIMEOUT   <- 180L
   label     <- "feynman_smoke"
   gate_desc <- "Stage 0 — smoke test"
 } else {
   KEYS      <- feynman_dev_keys
   N_RUNS    <- 5L
-  TIMEOUT   <- 300L
   label     <- "feynman_gate"
   gate_desc <- "Stage 1 — dev gate"
 }
@@ -68,8 +66,22 @@ BENCH_PARAMS <- list(
   target_loss           = 1e-10,
   simplify              = TRUE,
   crossover_probability = 0.5,
-  timeout_seconds       = TIMEOUT
+  timeout_seconds       = 300L
 )
+
+# Stage 0 is a pipeline-health check, not a recovery measurement (docs/19 §6).
+# A full-budget smoke run overshoots its time limit several-fold because the
+# deadline cannot interrupt one in-flight LM fit(); use a lighter profile so the
+# smoke run stays fast and predictable. Lower recovery here is expected and
+# irrelevant — the Stage 0 gate is "all runs finite NMSE", not a threshold.
+if (STAGE == 0L) {
+  BENCH_PARAMS <- modifyList(BENCH_PARAMS, list(
+    population_size = 200L,
+    n_populations   = 2L,
+    generations     = 100L,
+    timeout_seconds = 60L
+  ))
+}
 
 DATA_SEED <- 42L   # Matches export_feynman_data.R DATA_SEED_TRAIN
 
@@ -79,7 +91,7 @@ cat(gate_desc, "\n")
 cat("rsymbolic2 version:", as.character(packageVersion("rsymbolic2")), "\n")
 cat("Date:", format(Sys.Date()), "\n")
 cat(sprintf("Problems: %d  Runs/problem: %d  Timeout: %ds\n",
-            length(KEYS), N_RUNS, TIMEOUT))
+            length(KEYS), N_RUNS, BENCH_PARAMS$timeout_seconds))
 cat(sprintf("pop=%d  islands=%d  gens=%d\n",
             BENCH_PARAMS$population_size,
             BENCH_PARAMS$n_populations,

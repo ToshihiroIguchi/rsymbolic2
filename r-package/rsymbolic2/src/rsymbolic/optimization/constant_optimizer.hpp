@@ -59,6 +59,13 @@ struct OptimizerConfig {
     double perturbation_scale = 0.5;    // relative scale of random perturbations
 };
 
+// Stop predicate polled by optimizers at their own coarse boundaries. When it returns
+// true the optimizer stops early and returns the best result found so far. A callback
+// (rather than a deadline value) keeps timing semantics — wall-clock, evaluation
+// budget, or a test stub — entirely out of the optimizer interface; the search loop,
+// which owns the deadline, captures it in the closure. See docs/20.
+using StopRequested = std::function<bool()>;
+
 // Scalar loss convention used across all backends: SSE = sum_i r_i^2. A non-finite
 // residual maps the whole loss to +Inf so it is never accepted.
 inline double sum_of_squared_residuals(const OptimizationProblem& problem,
@@ -85,7 +92,20 @@ public:
     // Optimize the constants of `problem`. Implementations must not throw on a merely
     // poor result; they return success == false instead. They may throw only on
     // misuse (e.g. a null residual function).
-    virtual OptimizationResult optimize(const OptimizationProblem& problem) const = 0;
+    //
+    // Implementations poll `stop_requested()` at their own coarse boundaries; when it
+    // returns true they stop early and return the best result found so far (`success`
+    // reflects whether that result is finite). The overshoot past the first true poll
+    // is bounded by one unit of inner work (one residual evaluation / one LM step).
+    virtual OptimizationResult optimize(const OptimizationProblem& problem,
+                                        const StopRequested& stop_requested) const = 0;
+
+    // Convenience overload: no deadline. Used by tests and any caller that does not
+    // impose a time limit. Non-virtual; forwards with an always-false predicate, so
+    // every existing call site that passes no predicate is unchanged.
+    OptimizationResult optimize(const OptimizationProblem& problem) const {
+        return optimize(problem, [] { return false; });
+    }
 
     // Human-readable backend name, for logging and benchmark reporting.
     virtual std::string name() const = 0;

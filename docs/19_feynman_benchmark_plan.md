@@ -111,7 +111,7 @@ operator set).
 
 | Stage | Per-problem limit | Rationale |
 |-------|------------------|-----------|
-| Stage 0 | 3 min | Smoke test; fast feedback |
+| Stage 0 | 60 s | Smoke test; pipeline-health check only, not a recovery measurement (see §6 Stage 0 profile) |
 | Stage 1 | 5 min | Dev gate; consistent with Nguyen gate experience |
 | Stage 2 | 10 min | Publication quality; Feynman equations are harder than Nguyen |
 | PySR comparison | 10 min | Match Stage 2 budget; equalization on rsymbolic2 side only |
@@ -190,9 +190,29 @@ BENCH_PARAMS <- list(
 )
 ```
 
-These are the defaults for Stage 0–1. If Stage 1 shows systematic failures on
+These are the defaults for Stage 1–2. If Stage 1 shows systematic failures on
 hard equations, generation count may be increased before Stage 2 — but only with
 the Stage 1 failure pattern as evidence (not speculatively).
+
+**Stage 0 smoke profile (lighter).** Stage 0 only checks that the pipeline runs
+end-to-end and returns a finite NMSE — it does **not** measure recovery. Running it
+at the full `BENCH_PARAMS` above is wasteful: a single bloated `pow`-tree `fit()` can
+take minutes (the deadline is checked at step boundaries but cannot interrupt one
+in-flight LM optimisation; see `evolutionary_search.cpp`), so a full-budget smoke run
+overshoots its time limit several-fold. The smoke test therefore uses a reduced budget:
+
+```r
+SMOKE_PARAMS <- modifyList(BENCH_PARAMS, list(
+  population_size = 200L,   # vs 500L
+  n_populations   = 2L,     # vs 4L
+  generations     = 100L,   # vs 500L
+  timeout_seconds = 60L     # per-problem wall-clock cap (overshoots to one fit() call)
+))
+```
+
+Lower recovery under `SMOKE_PARAMS` is expected and irrelevant: the Stage 0 gate is
+"all runs return a finite NMSE", not a recovery threshold. Recovery is measured at
+Stage 1 onward with the full `BENCH_PARAMS`.
 
 **Statistical reporting (Stage 2 only):**
 - Median recovery rate ± IQR across all reachable equations

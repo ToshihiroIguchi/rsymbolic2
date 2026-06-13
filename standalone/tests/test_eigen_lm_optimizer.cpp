@@ -127,6 +127,46 @@ void test_null_residuals_throws() {
     CHECK(threw);
 }
 
+// --- Stop-predicate tests (docs/20) ------------------------------------------
+
+// With an immediately-true stop predicate, optimize() must return without crashing
+// and produce a result with the right shape (constants.size() == k, finite or Inf loss).
+void test_immediate_stop_returns_valid() {
+    using namespace rsymbolic;
+    const LinearData data = make_data();
+    const OptimizationProblem problem = make_problem(data);
+
+    EigenLMOptimizer opt;
+    const OptimizationResult res = opt.optimize(problem, [] { return true; });
+
+    CHECK(res.constants.size() == 2);
+    // loss must be finite or Inf, never NaN
+    CHECK(res.loss == res.loss);  // NaN != NaN
+}
+
+// With an always-false stop predicate, results must be identical to the no-deadline
+// overload (which internally calls with []{return false;}). Confirms that the
+// decomposed minimizeInit/minimizeOneStep loop is the same code path. See docs/20 §4.2.
+void test_no_stop_matches_plain_optimize() {
+    using namespace rsymbolic;
+    const LinearData data = make_data();
+    const OptimizationProblem problem1 = make_problem(data);
+    const OptimizationProblem problem2 = make_problem(data);
+
+    EigenLMOptimizer opt;
+    const OptimizationResult plain   = opt.optimize(problem1);
+    const OptimizationResult no_stop = opt.optimize(problem2, [] { return false; });
+
+    CHECK(plain.constants.size() == no_stop.constants.size());
+    if (plain.constants.size() == no_stop.constants.size()) {
+        CHECK(plain.constants[0] == no_stop.constants[0]);
+        CHECK(plain.constants[1] == no_stop.constants[1]);
+    }
+    CHECK(plain.loss == no_stop.loss);
+    CHECK(plain.success == no_stop.success);
+    CHECK(plain.evaluations == no_stop.evaluations);
+}
+
 }  // namespace
 
 int main() {
@@ -134,6 +174,8 @@ int main() {
     test_via_factory();
     test_reproducibility();
     test_null_residuals_throws();
+    test_immediate_stop_returns_valid();
+    test_no_stop_matches_plain_optimize();
 
     if (g_failures == 0) {
         std::printf("All %d checks passed\n", g_checks);

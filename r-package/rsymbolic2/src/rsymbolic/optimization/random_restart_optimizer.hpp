@@ -20,7 +20,9 @@ class RandomRestartOptimizer final : public ConstantOptimizer {
 public:
     explicit RandomRestartOptimizer(OptimizerConfig config = {});
 
-    OptimizationResult optimize(const OptimizationProblem& problem) const override;
+    OptimizationResult optimize(const OptimizationProblem& problem,
+                                const StopRequested& stop_requested) const override;
+    using ConstantOptimizer::optimize;  // keep the no-deadline convenience overload
     std::string name() const override;
 
 private:

@@ -150,6 +150,80 @@ void test_name() {
     CHECK(opt.name() == "RandomRestartOptimizer");
 }
 
+// --- Stop-predicate tests (docs/20) ------------------------------------------
+
+// With an immediately-true stop predicate, optimize() must return without crashing.
+// Restart 0 is skipped by the check at the top of the restart loop, so result is the
+// initialised best-so-far: constants == x0, loss == Inf, success == false.
+void test_immediate_stop_returns_valid() {
+    using namespace rsymbolic;
+    RandomRestartOptimizer opt(test_config());
+
+    OptimizationProblem problem;
+    problem.num_residuals = 1;
+    problem.residuals = [](const std::vector<double>& c, std::vector<double>& r) {
+        r[0] = c[0] - 3.0;
+    };
+    problem.initial_constants = {0.0};
+
+    const OptimizationResult res = opt.optimize(problem, [] { return true; });
+
+    CHECK(res.constants.size() == 1);
+    CHECK(res.constants[0] == 0.0);  // x0 returned unchanged
+    CHECK(!res.success);             // no work done, loss = Inf
+    CHECK(res.loss == res.loss);     // not NaN
+}
+
+// A counter-based predicate that fires after N polls stops within bounded evaluations,
+// and the result is valid (not a crash). Confirms the inner-loop poll fires.
+void test_counter_stop_bounded() {
+    using namespace rsymbolic;
+    RandomRestartOptimizer opt(test_config());
+
+    OptimizationProblem problem;
+    problem.num_residuals = 1;
+    problem.residuals = [](const std::vector<double>& c, std::vector<double>& r) {
+        r[0] = c[0] - 3.0;
+    };
+    problem.initial_constants = {1.0};
+
+    // Trip after 5 polls (fires during inner iterations of restart 0).
+    int poll_count = 0;
+    const OptimizationResult res = opt.optimize(problem, [&poll_count] {
+        return ++poll_count >= 5;
+    });
+
+    CHECK(res.constants.size() == 1);
+    CHECK(res.loss == res.loss);  // not NaN
+    // With 5 polls total and (restart_check + iter_check) layout, we stop early
+    // — far fewer than the 4 * 500 = 2000 iterations the config allows.
+    CHECK(res.evaluations < 100);
+}
+
+// With an always-false predicate, results are identical to the no-deadline overload.
+void test_no_stop_matches_plain_optimize() {
+    using namespace rsymbolic;
+    auto make_prob = []() {
+        OptimizationProblem p;
+        p.num_residuals = 1;
+        p.residuals = [](const std::vector<double>& c, std::vector<double>& r) {
+            r[0] = c[0] - 3.0;
+        };
+        p.initial_constants = {0.0};
+        return p;
+    };
+
+    RandomRestartOptimizer opt(test_config());
+    const OptimizationResult plain   = opt.optimize(make_prob());
+    const OptimizationResult no_stop = opt.optimize(make_prob(), [] { return false; });
+
+    CHECK(plain.constants.size() == no_stop.constants.size());
+    CHECK(plain.constants[0] == no_stop.constants[0]);
+    CHECK(plain.loss == no_stop.loss);
+    CHECK(plain.success == no_stop.success);
+    CHECK(plain.evaluations == no_stop.evaluations);
+}
+
 // The factory builds the implemented backends, parses names, and throws for the
 // backends that are not yet implemented. This is the swappability seam.
 void test_factory() {
@@ -207,6 +281,9 @@ int main() {
     test_zero_dimension();
     test_name();
     test_factory();
+    test_immediate_stop_returns_valid();
+    test_counter_stop_bounded();
+    test_no_stop_matches_plain_optimize();
 
     if (g_failures == 0) {
         std::printf("All %d checks passed\n", g_checks);

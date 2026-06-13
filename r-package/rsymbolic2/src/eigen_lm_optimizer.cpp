@@ -104,6 +104,25 @@ void finalize(Lm& lm, Eigen::LevenbergMarquardtSpace::Status status,
         status != Eigen::LevenbergMarquardtSpace::ImproperInputParameters;
 }
 
+// Run Levenberg-Marquardt with a stop poll between steps. This is the explicit
+// decomposition of LevenbergMarquardt::minimize(): in the vendored Eigen, minimize()
+// is exactly `minimizeInit(x); do { minimizeOneStep(x); } while (Running);`
+// (NonLinearOptimization/LevenbergMarquardt.h:157-166), so with an always-false
+// predicate this is the same code path, bit-identical by construction. The poll lets
+// a long fit on a bloated tree honour the search-loop deadline instead of running the
+// full maxfev budget uninterruptibly. See docs/20.
+template <typename Lm>
+Eigen::LevenbergMarquardtSpace::Status run_lm(Lm& lm, Eigen::VectorXd& x,
+                                              const StopRequested& stop_requested) {
+    using Status = Eigen::LevenbergMarquardtSpace::Status;
+    Status status = lm.minimizeInit(x);
+    if (status == Status::ImproperInputParameters) return status;
+    do {
+        status = lm.minimizeOneStep(x);
+    } while (status == Status::Running && !stop_requested());
+    return status;
+}
+
 }  // namespace
 
 EigenLMOptimizer::EigenLMOptimizer(OptimizerConfig config) : config_(config) {}
@@ -111,7 +130,7 @@ EigenLMOptimizer::EigenLMOptimizer(OptimizerConfig config) : config_(config) {}
 std::string EigenLMOptimizer::name() const { return "EigenLMOptimizer"; }
 
 OptimizationResult EigenLMOptimizer::optimize(
-    const OptimizationProblem& problem) const {
+    const OptimizationProblem& problem, const StopRequested& stop_requested) const {
     if (!problem.residuals) {
         throw std::invalid_argument(
             "EigenLMOptimizer: problem.residuals must not be null");
@@ -145,14 +164,16 @@ OptimizationResult EigenLMOptimizer::optimize(
         AnalyticFunctor functor{problem.residuals, problem.jacobian, k, m};
         Eigen::LevenbergMarquardt<AnalyticFunctor> lm(functor);
         if (maxfev > 0) lm.parameters.maxfev = maxfev;
-        const Eigen::LevenbergMarquardtSpace::Status status = lm.minimize(x);
+        const Eigen::LevenbergMarquardtSpace::Status status =
+            run_lm(lm, x, stop_requested);
         finalize(lm, status, x, result);
     } else {
         NumericFunctor functor{problem.residuals, k, m};
         Eigen::NumericalDiff<NumericFunctor> num_diff(functor);
         Eigen::LevenbergMarquardt<Eigen::NumericalDiff<NumericFunctor>> lm(num_diff);
         if (maxfev > 0) lm.parameters.maxfev = maxfev;
-        const Eigen::LevenbergMarquardtSpace::Status status = lm.minimize(x);
+        const Eigen::LevenbergMarquardtSpace::Status status =
+            run_lm(lm, x, stop_requested);
         finalize(lm, status, x, result);
     }
 

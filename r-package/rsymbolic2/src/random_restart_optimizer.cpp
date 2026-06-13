@@ -41,7 +41,7 @@ std::string RandomRestartOptimizer::name() const {
 }
 
 OptimizationResult RandomRestartOptimizer::optimize(
-    const OptimizationProblem& problem) const {
+    const OptimizationProblem& problem, const StopRequested& stop_requested) const {
     if (!problem.residuals) {
         throw std::invalid_argument(
             "RandomRestartOptimizer: problem.residuals must not be null");
@@ -73,6 +73,9 @@ OptimizationResult RandomRestartOptimizer::optimize(
     const std::size_t n_restarts = config_.n_restarts == 0 ? 1 : config_.n_restarts;
 
     for (std::size_t restart = 0; restart < n_restarts; ++restart) {
+        // Honour the search-loop deadline: stop between restarts and return the
+        // best-so-far result (already tracked in `result`). See docs/20.
+        if (stop_requested()) break;
         // Restart 0 starts exactly at x0; later restarts start from a perturbation of
         // x0 so the search explores different basins.
         std::vector<double> current =
@@ -86,6 +89,7 @@ OptimizationResult RandomRestartOptimizer::optimize(
         }
 
         for (std::size_t it = 0; it < config_.max_iterations; ++it) {
+            if (stop_requested()) break;
             // Anneal the step from perturbation_scale down to ~0.1 of it, so early
             // iterations explore and later ones refine.
             const double frac =

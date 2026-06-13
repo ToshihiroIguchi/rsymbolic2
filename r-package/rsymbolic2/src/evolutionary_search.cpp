@@ -86,10 +86,11 @@ inline double selection_cost(const PopMember& m, double parsimony, double y_norm
 }
 
 double fit(Tree& tree, const std::vector<std::vector<double>>& X,
-           const std::vector<double>& y, const ConstantOptimizer& optimizer) {
+           const std::vector<double>& y, const ConstantOptimizer& optimizer,
+           const StopRequested& stop_requested) {
     const std::vector<double> init = initial_constants(tree);
     OptimizationProblem problem = make_least_squares_problem(tree, X, y, init);
-    const OptimizationResult result = optimizer.optimize(problem);
+    const OptimizationResult result = optimizer.optimize(problem, stop_requested);
     if (!result.success || !std::isfinite(result.loss)) return kInf;
     if (!result.constants.empty()) set_constants(tree, result.constants);
     return result.loss;
@@ -126,12 +127,19 @@ std::size_t tournament_worst(const std::vector<PopMember>& pop, std::size_t k,
 void initialize_island(Island& isl,
                        const std::vector<std::vector<double>>& X,
                        const std::vector<double>& y,
-                       const SearchOptions& opts) {
+                       const SearchOptions& opts,
+                       const StopRequested& stop_requested) {
     isl.population.clear();
     isl.population.reserve(opts.population_size);
     for (std::size_t i = 0; i < opts.population_size; ++i) {
+        // Empty-population guard: always create at least one member. The downstream
+        // tournament selection calls sample_index(pop.size(), ...) which computes
+        // uniform_int_distribution(0, size-1) — undefined for size == 0. We only
+        // check the predicate before the second member onward, so every island that
+        // exists has at least one member and is safe for evolve_island.
+        if (i > 0 && stop_requested()) break;
         Tree tree = generate_random_tree(opts.space, isl.rng);
-        const double loss = fit(tree, X, y, *isl.optimizer);
+        const double loss = fit(tree, X, y, *isl.optimizer, stop_requested);
         if (opts.simplify_expressions) tree = simplify(tree);
         PopMember m{std::move(tree), loss, 0};
         m.complexity = static_cast<int>(m.tree.size());
@@ -164,18 +172,24 @@ bool evolve_island(Island& isl,
     const double parsimony = opts.parsimony;
     std::uniform_real_distribution<double> unit(0.0, 1.0);
 
+    // Build the stop closure once. It reads t_start (immutable after search start)
+    // and the wall clock — safe to call from any thread under the OpenMP parallel-for.
+    const StopRequested stop = [&] {
+        return has_deadline && elapsed_sec(t_start) >= deadline_sec;
+    };
+
     for (std::size_t gen = 0; gen < n_gens; ++gen) {
         if (!isl.hof.empty() && isl.hof.best().loss < opts.target_loss)
             return true;
-        if (has_deadline && elapsed_sec(t_start) >= deadline_sec)
+        if (stop())
             return false;
 
         for (std::size_t step = 0; step < opts.population_size; ++step) {
-            // Deadline is also checked inside the step loop, not only at generation
-            // boundaries: with bloated trees a single generation's LM optimisation can
-            // run for many minutes, so a per-generation check would overshoot the
-            // timeout several-fold. Per-step bounds overshoot to one fit() call.
-            if (has_deadline && elapsed_sec(t_start) >= deadline_sec)
+            // Coarse step-boundary check: catches overshoot between fit() calls.
+            // The finer check inside fit() -> optimizer catches overshoot within a
+            // single bloated-tree optimization. Together they bound overshoot to one
+            // LM step rather than one full minimize() call. See docs/20.
+            if (stop())
                 return false;
 
             const std::size_t parent = tournament_best(isl.population,
@@ -202,7 +216,7 @@ bool evolve_island(Island& isl,
             const double loss =
                 (opts.optimize_probability >= 1.0 ||
                  unit(isl.rng) < opts.optimize_probability)
-                    ? fit(child_tree, X, y, *isl.optimizer)
+                    ? fit(child_tree, X, y, *isl.optimizer, stop)
                     : sse_current(child_tree, X, y);
             if (opts.simplify_expressions) child_tree = simplify(child_tree);
             PopMember child{std::move(child_tree), loss, 0};
@@ -273,6 +287,17 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
                            const SearchOptions& options) {
     const std::size_t n = std::max<std::size_t>(1, options.n_populations);
 
+    // Start the clock before island initialisation so that init time counts against
+    // the timeout budget. Previously t_start was set after initialize_island, meaning
+    // a long init was not charged to the deadline. See docs/20.
+    const TimePoint   t_start      = Clock::now();
+    const bool        has_deadline = options.timeout_seconds > 0.0;
+    const double      deadline_sec = options.timeout_seconds;
+
+    const StopRequested init_stop = [&] {
+        return has_deadline && elapsed_sec(t_start) >= deadline_sec;
+    };
+
     // Build islands. Island 0 always uses options.seed so that n_populations=1
     // produces exactly the same RNG sequence as the pre-island implementation.
     std::vector<Island> islands(n);
@@ -283,13 +308,10 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
         islands[i].optimizer =
             OptimizerFactory::create(options.optimizer_type,
                                      options.optimizer_config);
-        initialize_island(islands[i], X, y, options);
+        initialize_island(islands[i], X, y, options, init_stop);
     }
 
     const std::size_t interval = std::max<std::size_t>(1, options.migration_interval);
-    const TimePoint   t_start  = Clock::now();
-    const bool        has_deadline = options.timeout_seconds > 0.0;
-    const double      deadline_sec = options.timeout_seconds;
     const double      y_norm    = compute_y_norm(y);  // denominator for selection cost
 
     bool reached_target = false;
