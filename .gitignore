@@ -2,6 +2,9 @@
 /build/
 /build-mingw/
 /cmake-build-*/
+# Per-OS out-of-source build trees (root and standalone/); match at any depth.
+build-win/
+build-ubuntu/
 
 # R package build artefacts
 r-package/rsymbolic2/src/*.o

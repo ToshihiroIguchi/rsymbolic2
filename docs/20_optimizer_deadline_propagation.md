@@ -1,7 +1,21 @@
 # Constant-Optimizer Deadline Propagation (timeout fix)
 
 **Date:** 2026-06-09
-**Status:** Plan — not yet implemented.
+**Status:** **Implemented** (commit `6ba5791`, 2026-06-13). Verified on Windows; Ubuntu
+pending. Post-implementation investigation and the residual-overshoot follow-up are in
+**docs/21**.
+
+> **Two corrections to the analysis below, found during implementation (see docs/21):**
+> 1. §1 says EigenLM runs "with no analytic Jacobian, NumericalDiff multiplies that by
+>    `k`." That is wrong: `make_least_squares_problem` **does** supply an analytic
+>    Jacobian (dual numbers), so the `AnalyticFunctor` branch runs. The factor of `k` is
+>    real but comes from the analytic Jacobian's `k` forward passes, not NumericalDiff.
+> 2. §2's overshoot table understates the Eigen LM worst case. One `minimizeOneStep` is
+>    **not** "one Jacobian + one solve": its inner trust-region loop (`while ratio<1e-4`)
+>    can run up to `maxfev` residual evaluations before returning. The poll fires only
+>    *between* `minimizeOneStep` calls, so the true per-step overshoot bound is one
+>    Jacobian + up to `maxfev` inner evals ≈ a few seconds, not one solve. Still bounded,
+>    still acceptable; quantified in docs/21.
 
 ---
 

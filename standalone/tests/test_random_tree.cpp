@@ -49,6 +49,25 @@ void test_generation_is_wellformed_and_bounded() {
     }
 }
 
+// With a large max_depth but a small max_nodes, generation must honour the node cap
+// rather than the depth bound. mutation/crossover already respect max_nodes; this is
+// the matching guard for generation (docs/21 option B). The cap is soft: operator
+// nodes pending along the current spine can push the final size a little past
+// max_nodes (bounded by ~2*max_depth), but nowhere near the 2^(d+1)-1 depth maximum.
+void test_generation_respects_max_nodes() {
+    SearchSpace space;
+    space.max_depth = 8;    // depth bound alone would allow up to 2^9-1 = 511 nodes
+    space.max_nodes = 15;   // but the node cap is 15
+    std::mt19937_64 rng(7);
+    for (int i = 0; i < 200; ++i) {
+        const Tree tree = generate_random_tree(space, rng);
+        CHECK(!tree.empty());
+        CHECK(evaluates_ok(tree));
+        CHECK(static_cast<int>(tree.size()) <=
+              space.max_nodes + 2 * space.max_depth);
+    }
+}
+
 void test_generation_is_reproducible() {
     SearchSpace space;
     std::mt19937_64 rng_a(123);
@@ -110,6 +129,7 @@ void test_randomize_always_valid() {
 
 int main() {
     test_generation_is_wellformed_and_bounded();
+    test_generation_respects_max_nodes();
     test_generation_is_reproducible();
     test_mutate_operator_preserves_structure();
     test_mutate_constant_changes_value_only();

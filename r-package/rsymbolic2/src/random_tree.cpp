@@ -19,8 +19,17 @@ const T& pick(const std::vector<T>& options, std::mt19937_64& rng) {
 void grow(Tree& out, int depth, const SearchSpace& space, std::mt19937_64& rng,
           int& const_index) {
     const bool has_ops = !space.unary_ops.empty() || !space.binary_ops.empty();
+    // Honour the node cap during generation. mutation (append/crossover) already
+    // respects max_nodes; generation did not, so an initial tree could reach the
+    // depth-bounded maximum (~2^max_depth nodes) — far larger than evolution ever
+    // permits, and the dominant cause of multi-second constant-optimization fits on
+    // seed members (see docs/21). Once the cap is reached, force leaves. Like
+    // append/crossover this is a soft cap: operator nodes pending along the current
+    // spine may push the final size a few nodes past max_nodes, which is acceptable.
+    const bool budget_hit =
+        space.max_nodes > 0 && static_cast<int>(out.size()) >= space.max_nodes;
     const bool make_leaf =
-        depth <= 0 || !has_ops || uniform01(rng) < space.terminal_prob;
+        depth <= 0 || !has_ops || budget_hit || uniform01(rng) < space.terminal_prob;
 
     if (make_leaf) {
         const bool make_const =
