@@ -1,8 +1,9 @@
 # Constant-Optimizer Deadline Propagation (timeout fix)
 
 **Date:** 2026-06-09
-**Status:** **Implemented** (commit `6ba5791`, 2026-06-13). Verified on Windows; Ubuntu
-pending. Post-implementation investigation and the residual-overshoot follow-up are in
+**Status:** **Implemented** (commit `6ba5791`, 2026-06-13). Verified on Windows and on
+Ubuntu (WSL Ubuntu-24.04 standalone suite 14/14, incl. the optimizer stop-predicate
+tests). Post-implementation investigation and the residual-overshoot follow-up are in
 **docs/21**.
 
 > **Two corrections to the analysis below, found during implementation (see docs/21):**

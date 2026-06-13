@@ -208,7 +208,11 @@ targets). **Timeout correctness is met.**
       run), confirming the E-run recovery dip was contention, not a regression. *(The unit
       test already proves the mechanism: generation now obeys `max_nodes`, so the
       >50-node init trees that drove the longest fits no longer occur.)*
-- [ ] Ubuntu LTS: build + Stage 0 smoke (docs/20 left Ubuntu pending).
+- [x] Ubuntu LTS (WSL Ubuntu-24.04, cmake 3.28, g++): standalone suite **14/14 pass**,
+      incl. `test_generation_respects_max_nodes` and the docs/20 optimizer stop-predicate
+      tests — so the deadline fix *and* B are both verified on Ubuntu at the unit level.
+      (A full R-package Stage 0 smoke on Ubuntu remains a nice-to-have; the core sources
+      are identical to the standalone build and the Rcpp glue is untouched by B.)
 - [x] docs/20 status + the two analysis corrections noted in its header.
 
 ---
