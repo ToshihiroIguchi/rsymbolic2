@@ -89,7 +89,10 @@ double fit(Tree& tree, const std::vector<std::vector<double>>& X,
            const std::vector<double>& y, const ConstantOptimizer& optimizer,
            const StopRequested& stop_requested) {
     const std::vector<double> init = initial_constants(tree);
-    OptimizationProblem problem = make_least_squares_problem(tree, X, y, init);
+    // Pass stop_requested through so the residual/Jacobian closures can poll it
+    // mid-evaluation and signal an abort via problem.aborted (docs/22 Phase 1).
+    OptimizationProblem problem = make_least_squares_problem(tree, X, y, init,
+                                                             stop_requested);
     const OptimizationResult result = optimizer.optimize(problem, stop_requested);
     if (!result.success || !std::isfinite(result.loss)) return kInf;
     if (!result.constants.empty()) set_constants(tree, result.constants);

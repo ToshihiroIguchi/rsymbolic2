@@ -1,7 +1,9 @@
 #include "rsymbolic/optimization/eigen_lm_optimizer.hpp"
 
+#include <atomic>
 #include <cmath>
 #include <cstddef>
+#include <memory>
 #include <stdexcept>
 #include <vector>
 
@@ -39,6 +41,10 @@ struct NumericFunctor {
     enum { InputsAtCompileTime = Eigen::Dynamic, ValuesAtCompileTime = Eigen::Dynamic };
 
     const ResidualFunction& residuals;
+    // Abort flag from OptimizationProblem (docs/22 Phase 1). Null when no stop
+    // predicate was supplied; when set by the closure, operator() returns -1 so
+    // Eigen's minimizeOneStep returns UserAsked and run_lm exits.
+    std::shared_ptr<std::atomic<bool>> aborted;
     int n_inputs;
     int n_values;
 
@@ -47,6 +53,7 @@ struct NumericFunctor {
 
     int operator()(const InputType& x, ValueType& fvec) const {
         fill_residuals(residuals, x, n_values, fvec);
+        if (aborted && aborted->load(std::memory_order_relaxed)) return -1;
         return 0;
     }
 };
@@ -61,6 +68,10 @@ struct AnalyticFunctor {
 
     const ResidualFunction& residuals;
     const JacobianFunction& jacobian;
+    // Abort flag from OptimizationProblem (docs/22 Phase 1). Null when no stop
+    // predicate was supplied; when set by a closure, operator()/df() returns -1
+    // so Eigen's minimizeOneStep returns UserAsked and run_lm exits.
+    std::shared_ptr<std::atomic<bool>> aborted;
     int n_inputs;
     int n_values;
 
@@ -69,6 +80,7 @@ struct AnalyticFunctor {
 
     int operator()(const InputType& x, ValueType& fvec) const {
         fill_residuals(residuals, x, n_values, fvec);
+        if (aborted && aborted->load(std::memory_order_relaxed)) return -1;
         return 0;
     }
 
@@ -78,6 +90,7 @@ struct AnalyticFunctor {
             static_cast<std::size_t>(n_values) * static_cast<std::size_t>(n_inputs),
             0.0);
         jacobian(params, jac);
+        if (aborted && aborted->load(std::memory_order_relaxed)) return -1;
         fjac.resize(n_values, n_inputs);
         for (int i = 0; i < n_values; ++i) {
             for (int j = 0; j < n_inputs; ++j) {
@@ -160,15 +173,22 @@ OptimizationResult EigenLMOptimizer::optimize(
             ? static_cast<int>(config_.max_iterations) * (k + 1)
             : 0;
 
+    // Reset the abort flag before each optimize() so a problem that gets
+    // re-optimized after an aborted run starts fresh (docs/22 §5.1 step 2).
+    if (problem.aborted) {
+        problem.aborted->store(false, std::memory_order_relaxed);
+    }
+
     if (problem.jacobian) {
-        AnalyticFunctor functor{problem.residuals, problem.jacobian, k, m};
+        AnalyticFunctor functor{problem.residuals, problem.jacobian,
+                                problem.aborted, k, m};
         Eigen::LevenbergMarquardt<AnalyticFunctor> lm(functor);
         if (maxfev > 0) lm.parameters.maxfev = maxfev;
         const Eigen::LevenbergMarquardtSpace::Status status =
             run_lm(lm, x, stop_requested);
         finalize(lm, status, x, result);
     } else {
-        NumericFunctor functor{problem.residuals, k, m};
+        NumericFunctor functor{problem.residuals, problem.aborted, k, m};
         Eigen::NumericalDiff<NumericFunctor> num_diff(functor);
         Eigen::LevenbergMarquardt<Eigen::NumericalDiff<NumericFunctor>> lm(num_diff);
         if (maxfev > 0) lm.parameters.maxfev = maxfev;

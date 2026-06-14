@@ -58,6 +58,8 @@ if(RSYMBOLIC2_BUILD_TESTS)
     add_core_test(structural_mutation      tests/test_structural_mutation.cpp)
     add_core_test(crossover                tests/test_crossover.cpp)
     add_core_test(multivariate             tests/test_multivariate.cpp)
+    # Phase 1 interruptible-evaluation tests (docs/22 §5.4).
+    add_core_test(optimizer_stop           tests/test_optimizer_stop.cpp)
 
     # benchmark_quick uses the benchmark harness, not just core.
     add_executable(test_benchmark_quick tests/test_benchmark_quick.cpp)

@@ -2,6 +2,12 @@
 
 **Date:** 2026-06-13
 **Status:** Investigation complete; follow-up plan proposed (not yet implemented).
+**Update (2026-06-14):** The "real residual issue" in §5–6 is **resolved** — see
+**docs/22**. The genuine cause of the Stage 1 overshoot was not the per-`fit()` cost bound
+analysed here, but that a *single* residual/Jacobian evaluation (one closure over all
+`m` points) can take ~90 s for pow-heavy trees and the deadline could not interrupt it
+mid-evaluation. docs/22 Phase 1 makes evaluation interruptible (correct timeout); the
+~33 s figure below was a contention-influenced underestimate.
 **Depends on:** docs/20 (deadline propagation, implemented in `6ba5791`).
 
 ---

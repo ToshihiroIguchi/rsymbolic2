@@ -1,10 +1,12 @@
 #pragma once
 
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <limits>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -35,11 +37,20 @@ using JacobianFunction =
 // A constant-optimization problem. `num_residuals` (m) is the number of residuals the
 // function fills; `initial_constants` size (k) defines the dimensionality. k == 0 is
 // valid (an expression with no tunable constants).
+//
+// `aborted` is an optional abort flag set by the residual/Jacobian closures when a
+// stop predicate fires mid-evaluation (docs/22 Phase 1). When set, the optimizer
+// returns -1 from its functor, causing Eigen to return UserAsked. The optimizer
+// resets it to false at the start of each optimize() call.
 struct OptimizationProblem {
     ResidualFunction residuals;             // required; must not be null
     JacobianFunction jacobian;              // optional; null => numerical Jacobian
     std::size_t num_residuals = 0;          // m
     std::vector<double> initial_constants;  // x0; size defines k
+    // Abort flag shared between closures and the optimizer functor. May be null
+    // (meaning the closures never abort early). Created by make_least_squares_problem
+    // when a stop predicate is supplied; left null otherwise.
+    std::shared_ptr<std::atomic<bool>> aborted;
 };
 
 // Outcome of an optimization run.
