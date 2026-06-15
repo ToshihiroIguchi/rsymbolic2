@@ -37,6 +37,13 @@ for (a in args) {
   if (length(m) > 0L) STAGE <- as.integer(sub("stage=", "", m))
 }
 
+# Fail-fast: abort the whole gate the moment a run grossly overshoots its budget
+# (a runaway evaluation, not a problem that merely used its full budget). This
+# stops PDCA cycles from wasting hours on a known-broken build. Pass "nofailfast"
+# to run the full gate to completion regardless (e.g. final validation).
+FAIL_FAST        <- !any(grepl("nofailfast", args, fixed = TRUE))
+OVERSHOOT_FACTOR <- 1.5  # a run is a runaway iff elapsed > timeout * this
+
 if (STAGE == 0L) {
   KEYS      <- feynman_smoke_keys
   N_RUNS    <- 3L
@@ -100,6 +107,8 @@ cat(rep("-", 70), "\n", sep = "")
 
 rows <- vector("list", length(KEYS) * N_RUNS)
 row_idx <- 0L
+aborted <- FALSE
+overshoot_limit <- BENCH_PARAMS$timeout_seconds * OVERSHOOT_FACTOR
 
 for (key in KEYS) {
   ds   <- feynman_dataset(key, n = 1000L, data_seed = DATA_SEED, split = "train")
@@ -144,6 +153,9 @@ for (key in KEYS) {
       nmse        = nmse,
       recovered   = rec,
       timed_out   = timed_out,
+      overshoot_sec = if (timed_out)
+                        round(max(0.0, elapsed - BENCH_PARAMS$timeout_seconds), 2L)
+                      else NA_real_,
       n_vars      = prob$n_vars,
       expression  = expr_str,
       stringsAsFactors = FALSE
@@ -153,7 +165,19 @@ for (key in KEYS) {
                 key, seed, nmse, elapsed,
                 if (rec) "RECOVERED" else "not recovered",
                 if (timed_out) "  [TIMED OUT]" else ""))
+
+    if (FAIL_FAST && elapsed > overshoot_limit) {
+      cat(sprintf(
+        "\nABORT: %s seed=%d overshot the budget (%.0fs > %.0fs = %dx%g). ",
+        key, seed, elapsed, overshoot_limit,
+        BENCH_PARAMS$timeout_seconds, OVERSHOOT_FACTOR))
+      cat("Fail-fast enabled; stopping the gate to avoid wasting time.\n")
+      cat("(Pass 'nofailfast' to run the full gate to completion.)\n")
+      aborted <- TRUE
+      break
+    }
   }
+  if (aborted) break
 }
 
 # ---- Summary and gate -------------------------------------------------------
@@ -208,10 +232,16 @@ if (STAGE == 0L) {
               if (gate_pass) "PASS" else "FAIL"))
 }
 
+if (aborted) {
+  gate_pass <- FALSE
+  cat("NOTE: gate ABORTED early on a runaway run; results are PARTIAL and the\n")
+  cat("      gate is recorded as FAIL. Investigate the overshoot before retrying.\n")
+}
+
 if (any(df$timed_out, na.rm = TRUE)) {
   cat("WARNING: one or more runs hit the timeout — check for search regressions.\n")
 }
 
 save_results(df, label, out_dir = file.path(script_dir, "results"))
 
-invisible(list(results = df, gate_pass = gate_pass))
+invisible(list(results = df, gate_pass = gate_pass, aborted = aborted))

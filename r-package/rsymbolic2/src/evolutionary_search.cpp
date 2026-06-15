@@ -328,7 +328,17 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
             std::min(interval, options.generations - done);
 
 #ifdef _OPENMP
-#       pragma omp parallel for schedule(dynamic) if(n > 1)
+        // One worker thread per island, capped at the hardware. The default
+        // OpenMP team size is the core count; when that exceeds the number of
+        // islands the surplus threads have no loop iteration and busy-wait at the
+        // implicit barrier, starving the island workers. Under that starvation a
+        // single node evaluation's wall time can balloon to tens of seconds, so
+        // the deadline poll (which runs on the starved worker) cannot fire and the
+        // run grossly overshoots its timeout (docs/22). Islands are the only unit
+        // of parallelism here, so capping the team at n loses no useful concurrency.
+        const int omp_threads = static_cast<int>(std::min<std::size_t>(
+            n, static_cast<std::size_t>(std::max(1, omp_get_num_procs()))));
+#       pragma omp parallel for schedule(dynamic) num_threads(omp_threads) if(n > 1)
 #endif
         for (std::int64_t i = 0; i < static_cast<std::int64_t>(n); ++i)
             evolve_island(islands[static_cast<std::size_t>(i)], X, y, options,

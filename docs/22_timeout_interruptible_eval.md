@@ -1,10 +1,57 @@
 # Timeout Overshoot: Root Cause and the Interruptible-Evaluation Fix
 
-**Date:** 2026-06-14
-**Status:** Plan. Phase 1 (correctness) ready to implement; Phase 2 (performance) gated on
-the Phase 1 verification and a short diagnosis.
+**Date:** 2026-06-14 (updated 2026-06-15)
+**Status:** Phase 1 implemented (`7a10757`). **Phase 2 (the `safe_pow`/libm guard)
+is withdrawn — its premise was wrong (see Update below).** The remaining overshoot was
+an OpenMP thread-oversubscription bug plus external CPU contention, fixed/mitigated as
+described in the Update.
 **Supersedes the open question in:** docs/21 §5–6 (the "real residual issue").
 **Depends on:** docs/20 (deadline propagation), docs/21 (timeout investigation).
+
+---
+
+## Update (2026-06-15): the actual root cause, and why Phase 2 is withdrawn
+
+A measurement-driven re-investigation found the Phase 2 premise — "a value-dependent slow
+`libm` path inside `safe_pow`" — to be **incorrect**. The real causes:
+
+1. **A stale build masqueraded as a 6× overshoot.** Phase 1's core change is in the header
+   `least_squares_problem.hpp`. R's package build does **not** track header dependencies, so
+   `make` reported "Nothing to be done" and relinked stale `.o` files that predated Phase 1.
+   The running binary therefore lacked the interruptible-evaluation fix. A forced clean
+   rebuild (delete `src/*.o,*.dll`, reinstall) dropped `rel_mass`'s worst overshoot from
+   ~1660 s to ~50 s. **Always clean-rebuild after editing a header.**
+
+2. **The residual overshoot was OpenMP thread oversubscription, not a slow op.** The island
+   loop used `#pragma omp parallel for` with the default team size (= core count, 12 here)
+   for only `n = n_populations` (= 4) iterations. The 8 surplus threads busy-wait at the
+   loop barrier and starve the island workers. Under that starvation, the **wall time** of a
+   single ordinary node evaluation balloons to tens of seconds — instrumentation caught a
+   single `std::exp(23.0)` taking **187 s** and a `std::log(5.07)` taking **67 s**, both with
+   perfectly normal arguments (no libm value can be intrinsically that slow → the thread was
+   simply not scheduled). The deadline poll runs on the starved worker, so it cannot fire.
+   - **Proof:** `OMP_NUM_THREADS=4` (one thread per island) → 15/15 runs stop exactly at the
+     budget. Single-threaded → no overshoot. The fix is to cap the team at the island count:
+     `num_threads(min(n, omp_get_num_procs()))` on the island parallel-for
+     (`evolutionary_search.cpp`). Islands are the only unit of parallelism, so this loses no
+     concurrency.
+
+3. **Any remaining overshoot is external CPU contention, not a code defect.** With the fix,
+   on an **idle** machine the timeout is honoured exactly (`rel_mass` 300 s budget: runs land
+   at 300.0 s, process CPU ≈ 895 s ⇒ cpu/wall ≈ 3.0). An overshooting run showed wall = 764 s
+   but **total process CPU = 660 s (lower than a clean run's 895 s)** and cpu/wall = 0.86 —
+   i.e. the process was *denied* CPU (a busy internal stall would *raise* CPU, not lower it).
+   A cooperative in-thread deadline cannot beat external starvation; the benchmark-level
+   **fail-fast** (abort the gate when a run exceeds `timeout × 1.5`) bounds the wasted time.
+
+**Net fixes delivered:** clean-rebuild discipline; `num_threads` cap on the island loop
+(`evolutionary_search.cpp`); benchmark fail-fast + `overshoot_sec` column
+(`benchmarks/02_feynman_gate.R`). Phase 1 (interruptible residual/Jacobian) is retained and
+correct. Phase 2 (§6 below) is **withdrawn**: there is no slow `safe_pow` path to guard.
+
+The diagnostic detail in §§5–6 below is kept for the record but read it in light of this
+update; the `cpu/wall` accounting is the decisive evidence and supersedes the "~94 ms/point
+slow libm" reading in §1.
 
 ---
 
