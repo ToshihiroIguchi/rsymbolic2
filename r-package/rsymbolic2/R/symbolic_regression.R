@@ -52,6 +52,18 @@
 #'   bloat without changing the HallOfFame Pareto archive (which is still keyed
 #'   on raw loss vs. complexity). Use 0 to restore the pre-B2 behaviour
 #'   (selection by raw loss only).
+#' @param adaptive_parsimony_scaling Strength of frequency-based adaptive
+#'   parsimony, borrowed from PySR / SymbolicRegression.jl (default 0 = off).
+#'   When positive, tournament selection multiplies each candidate's base cost by
+#'   \code{exp(adaptive_parsimony_scaling * f)}, where \code{f} is the normalised
+#'   frequency of that candidate's complexity in a per-island running histogram.
+#'   This penalises \emph{over-represented} complexities rather than \emph{large}
+#'   ones, so when the population piles up at a single size that size is pushed
+#'   back. It is a self-balancing diversity pressure that counters the premature
+#'   collapse the fixed-scalar \code{parsimony} causes on low-variance targets
+#'   (see \code{docs/23}, \code{docs/24}). PySR ships 1040; because the
+#'   normalisation scale differs here, tune this value by measurement. The
+#'   HallOfFame Pareto archive is unaffected (still keyed on raw loss).
 #' @param optimize_probability Probability that a newly produced child
 #'   expression has its constants refined by the Levenberg-Marquardt optimizer
 #'   (default 0.1). Values less than 1 make constant optimization a
@@ -113,6 +125,7 @@ symbolic_regression <- function(
     crossover_probability = 0.5,
     seed                  = 0L,
     parsimony             = 1e-3,
+    adaptive_parsimony_scaling = 0,
     optimize_probability  = 0.1,
     timeout_seconds       = 0,
     verbosity             = 0L
@@ -142,7 +155,8 @@ symbolic_regression <- function(
         as.double(timeout_seconds),
         as.integer(verbosity),
         as.double(optimize_probability),
-        as.double(parsimony)
+        as.double(parsimony),
+        as.double(adaptive_parsimony_scaling)
     )
     result$n_features <- ncol(X)
     result

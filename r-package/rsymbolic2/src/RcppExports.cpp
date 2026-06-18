@@ -12,8 +12,8 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
 // symbolic_regression_cpp
-List symbolic_regression_cpp(NumericMatrix X, NumericVector y, int population_size, int generations, int tournament_size, CharacterVector unary_ops, CharacterVector binary_ops, int max_depth, int max_nodes, double target_loss, bool simplify, double crossover_probability, double seed, int n_populations, double timeout_seconds, int verbosity, double optimize_probability, double parsimony);
-RcppExport SEXP _rsymbolic2_symbolic_regression_cpp(SEXP XSEXP, SEXP ySEXP, SEXP population_sizeSEXP, SEXP generationsSEXP, SEXP tournament_sizeSEXP, SEXP unary_opsSEXP, SEXP binary_opsSEXP, SEXP max_depthSEXP, SEXP max_nodesSEXP, SEXP target_lossSEXP, SEXP simplifySEXP, SEXP crossover_probabilitySEXP, SEXP seedSEXP, SEXP n_populationsSEXP, SEXP timeout_secondsSEXP, SEXP verbositySEXP, SEXP optimize_probabilitySEXP, SEXP parsimonySEXP) {
+List symbolic_regression_cpp(NumericMatrix X, NumericVector y, int population_size, int generations, int tournament_size, CharacterVector unary_ops, CharacterVector binary_ops, int max_depth, int max_nodes, double target_loss, bool simplify, double crossover_probability, double seed, int n_populations, double timeout_seconds, int verbosity, double optimize_probability, double parsimony, double adaptive_parsimony_scaling);
+RcppExport SEXP _rsymbolic2_symbolic_regression_cpp(SEXP XSEXP, SEXP ySEXP, SEXP population_sizeSEXP, SEXP generationsSEXP, SEXP tournament_sizeSEXP, SEXP unary_opsSEXP, SEXP binary_opsSEXP, SEXP max_depthSEXP, SEXP max_nodesSEXP, SEXP target_lossSEXP, SEXP simplifySEXP, SEXP crossover_probabilitySEXP, SEXP seedSEXP, SEXP n_populationsSEXP, SEXP timeout_secondsSEXP, SEXP verbositySEXP, SEXP optimize_probabilitySEXP, SEXP parsimonySEXP, SEXP adaptive_parsimony_scalingSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -35,13 +35,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type verbosity(verbositySEXP);
     Rcpp::traits::input_parameter< double >::type optimize_probability(optimize_probabilitySEXP);
     Rcpp::traits::input_parameter< double >::type parsimony(parsimonySEXP);
-    rcpp_result_gen = Rcpp::wrap(symbolic_regression_cpp(X, y, population_size, generations, tournament_size, unary_ops, binary_ops, max_depth, max_nodes, target_loss, simplify, crossover_probability, seed, n_populations, timeout_seconds, verbosity, optimize_probability, parsimony));
+    Rcpp::traits::input_parameter< double >::type adaptive_parsimony_scaling(adaptive_parsimony_scalingSEXP);
+    rcpp_result_gen = Rcpp::wrap(symbolic_regression_cpp(X, y, population_size, generations, tournament_size, unary_ops, binary_ops, max_depth, max_nodes, target_loss, simplify, crossover_probability, seed, n_populations, timeout_seconds, verbosity, optimize_probability, parsimony, adaptive_parsimony_scaling));
     return rcpp_result_gen;
 END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_rsymbolic2_symbolic_regression_cpp", (DL_FUNC) &_rsymbolic2_symbolic_regression_cpp, 18},
+    {"_rsymbolic2_symbolic_regression_cpp", (DL_FUNC) &_rsymbolic2_symbolic_regression_cpp, 19},
     {NULL, NULL, 0}
 };
 

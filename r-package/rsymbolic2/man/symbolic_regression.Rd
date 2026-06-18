@@ -20,6 +20,7 @@ symbolic_regression(
   crossover_probability = 0.5,
   seed = 0L,
   parsimony = 0.001,
+  adaptive_parsimony_scaling = 0,
   optimize_probability = 0.1,
   timeout_seconds = 0,
   verbosity = 0L
@@ -90,6 +91,19 @@ bloat without changing the HallOfFame Pareto archive (which is still keyed
 on raw loss vs. complexity). Use 0 to restore the pre-B2 behaviour
 (selection by raw loss only).}
 
+\item{adaptive_parsimony_scaling}{Strength of frequency-based adaptive
+parsimony, borrowed from PySR / SymbolicRegression.jl (default 0 = off).
+When positive, tournament selection multiplies each candidate's base cost by
+\code{exp(adaptive_parsimony_scaling * f)}, where \code{f} is the normalised
+frequency of that candidate's complexity in a per-island running histogram.
+This penalises \emph{over-represented} complexities rather than \emph{large}
+ones, so when the population piles up at a single size that size is pushed
+back. It is a self-balancing diversity pressure that counters the premature
+collapse the fixed-scalar \code{parsimony} causes on low-variance targets
+(see \code{docs/23}, \code{docs/24}). PySR ships 1040; because the
+normalisation scale differs here, tune this value by measurement. The
+HallOfFame Pareto archive is unaffected (still keyed on raw loss).}
+
 \item{optimize_probability}{Probability that a newly produced child
 expression has its constants refined by the Levenberg-Marquardt optimizer
 (default 0.1). Values less than 1 make constant optimization a
@@ -114,7 +128,7 @@ loss, and population shape (median/max tree size and constant count). Useful
 for diagnosing slow runs.}
 }
 \value{
-A list with elements:
+A list of class \code{"rsymbolic2"} with elements:
   \describe{
     \item{expression}{Best expression found, as an infix string.}
     \item{loss}{Training loss (sum of squared residuals) of the best
@@ -122,6 +136,8 @@ A list with elements:
     \item{complexity}{Number of nodes in the expression tree.}
     \item{pareto_front}{Data frame of non-dominated (complexity, loss,
       expression) trade-offs from accuracy-vs-complexity Pareto front.}
+    \item{n_features}{Number of input features (columns of \code{X}) used
+      during fitting; required by \code{\link{predict.rsymbolic2}}.}
   }
 }
 \description{

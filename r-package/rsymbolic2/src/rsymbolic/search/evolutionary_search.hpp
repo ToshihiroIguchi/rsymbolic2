@@ -47,6 +47,25 @@ struct SearchOptions {
     // (see docs/13, B2.8). B3 (adaptive parsimony) not needed.
     double parsimony = 1e-3;
 
+    // Frequency-based adaptive parsimony (borrowed from PySR / SymbolicRegression.jl).
+    // In tournament selection the base cost is multiplied by
+    //   exp(adaptive_parsimony_scaling * normalized_frequency[complexity]),
+    // where normalized_frequency is a per-island running histogram over complexity
+    // (see RunningSearchStatistics in evolutionary_search.cpp). This penalises
+    // *over-represented* complexities rather than *large* ones, so when the
+    // population piles up at one size that size is pushed back — a self-balancing
+    // diversity pressure that counters the premature-collapse trap the fixed-scalar
+    // parsimony causes on low-variance targets (docs/23, docs/24). 0 = disabled,
+    // which reproduces the pre-adaptive behaviour byte-for-byte. SR.jl ships 1040;
+    // our normalization scale differs, so the default is chosen by measurement.
+    double adaptive_parsimony_scaling = 0.0;
+
+    // Sliding-window size for the frequency histogram: once the summed counts
+    // exceed this, all bins are scaled down proportionally so the statistics track
+    // recent search behaviour rather than the whole run. Matches SR.jl's default;
+    // kept internal (not an R argument) — it only matters over very long runs.
+    int parsimony_window = 100000;
+
     // Probability that a newly produced child has its constants LM-optimized.
     // 1.0 = optimize every child (pre-B1 behavior; expensive on bloated trees).
     // Lower values make constant optimization a probabilistic event (cf. PySR

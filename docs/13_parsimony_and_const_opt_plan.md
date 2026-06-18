@@ -307,19 +307,20 @@ Notes:
 **Decision:** default flipped to **parsimony=1e-3** in `evolutionary_search.hpp`
 and `symbolic_regression.R`. (See commit following this measurement.)
 
-## B3 — Frequency-based adaptive parsimony (DEFERRED — not needed)
+## B3 — Frequency-based adaptive parsimony (IMPLEMENTED — see docs/24)
 
-**B1 + B2 together are sufficient.** The B2 sweep shows that B1=0.1 + B2=1e-3
-achieves 6–10× speedup on the diagnosed slow cases (N9/N10) with full recovery
-maintained. Epoch logs confirm that median tree size now compresses quickly
-(within 1–2 epochs) rather than staying at the max_nodes cap.
+**Originally deferred, then revived by new evidence.** B1+B2 fixed the Nguyen
+bloat/runtime problem, but the multivariate Feynman diagnosis (docs/23) found a
+*different* failure of the fixed-scalar parsimony: on low-variance targets it
+collapses the population below the size needed to express the answer. That is the
+exact pathology B3 was designed to prevent, so B3 was implemented.
 
-B3 would add `RunningSearchStatistics` per island, per-step frequency updates,
-and a new SearchOptions field. The marginal gain does not justify this complexity
-when B1+B2 already solve the problem. Decision: **B3 deferred indefinitely.**
-
-If future evidence (e.g. a new benchmark class where B1+B2 leaves size bloated)
-demands it, revisit the outline below.
+The `RunningSearchStatistics` outline below was followed, with the cost combined
+**multiplicatively** (`base * exp(scaling * normalized_freq[complexity])`, matching
+PySR) rather than additively. The full mechanism, the scaling sweep, and the
+default decision are in **docs/24**. The option ships as
+`adaptive_parsimony_scaling` (default 0 = off, pending the gate-count
+confirmation recorded in docs/24).
 
 ## B3 — Frequency-based adaptive parsimony (code-level outline, only if needed)
 

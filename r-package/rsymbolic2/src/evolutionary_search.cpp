@@ -41,14 +41,76 @@ namespace {
 
 constexpr double kInf = std::numeric_limits<double>::infinity();
 
+// Per-island running histogram of complexity (node count), for PySR-style
+// frequency-based adaptive parsimony. frequencies[c] counts how often a candidate
+// of complexity c has been evaluated (every bin starts at 1.0 so none is ever
+// zero); normalized[c] = frequencies[c] / sum. Tournament selection multiplies a
+// member's base cost by exp(scaling * normalized[complexity]), penalising
+// over-represented sizes. Kept per island (share-nothing) so n_populations=1 stays
+// fully deterministic. See docs/24.
+struct RunningSearchStatistics {
+    std::vector<double> frequencies;
+    std::vector<double> normalized;
+    double              sum         = 0.0;
+    int                 window_size = 100000;
+
+    // Size the histogram so complexity in [1, max_nodes+1] indexes safely; bin 0 is
+    // unused but kept for 1-based indexing. All bins start at 1.0 (SR.jl's "ones").
+    void init(int max_nodes, int window) {
+        const std::size_t n =
+            static_cast<std::size_t>(std::max(1, max_nodes)) + 2;
+        frequencies.assign(n, 1.0);
+        normalized.assign(n, 1.0 / static_cast<double>(n));
+        sum         = static_cast<double>(n);
+        window_size = std::max(1, window);
+    }
+
+    int clamp_index(int complexity) const {
+        if (complexity < 1) complexity = 1;
+        const int last = static_cast<int>(frequencies.size()) - 1;
+        if (complexity > last) complexity = last;
+        return complexity;
+    }
+
+    void update(int complexity) {
+        frequencies[static_cast<std::size_t>(clamp_index(complexity))] += 1.0;
+        sum += 1.0;
+        if (sum > static_cast<double>(window_size)) move_window();
+    }
+
+    // Sliding window: scale every bin down proportionally so the histogram tracks
+    // recent search behaviour rather than the whole run. SR.jl instead subtracts
+    // from the largest bins; the proportional form is simpler and keeps every bin
+    // strictly positive (docs/24).
+    void move_window() {
+        const double factor = static_cast<double>(window_size) / sum;
+        double s = 0.0;
+        for (double& f : frequencies) { f *= factor; s += f; }
+        sum = s;
+    }
+
+    void normalize() {
+        if (sum <= 0.0) return;
+        const double inv = 1.0 / sum;
+        for (std::size_t i = 0; i < frequencies.size(); ++i)
+            normalized[i] = frequencies[i] * inv;
+    }
+
+    double freq_at(int complexity) const {
+        return normalized[static_cast<std::size_t>(clamp_index(complexity))];
+    }
+};
+
 // Per-island state. Each island is fully self-contained: its own population,
-// hall of fame, RNG, and optimizer instance. No state is shared across islands
-// during parallel evolution, so no synchronisation is needed inside the loop.
+// hall of fame, RNG, optimizer instance, and complexity statistics. No state is
+// shared across islands during parallel evolution, so no synchronisation is
+// needed inside the loop.
 struct Island {
     std::vector<PopMember>              population;
     HallOfFame                          hof;
     std::mt19937_64                     rng;
     std::unique_ptr<ConstantOptimizer>  optimizer;
+    RunningSearchStatistics             stats;
 };
 
 // SSE with the tree's current constants — no LM, no Jacobian.
@@ -78,11 +140,29 @@ double compute_y_norm(const std::vector<double>& y) {
     return ss > 0.0 ? ss : 1.0;
 }
 
-// Selection cost: loss/y_norm + parsimony*complexity.
-// When parsimony=0 (default) this collapses to loss, preserving pre-B2 behaviour.
-inline double selection_cost(const PopMember& m, double parsimony, double y_norm) {
+// Base selection cost: loss/y_norm + parsimony*complexity.
+// When parsimony=0 this collapses to raw loss, preserving pre-B2 behaviour. Used
+// by migration and as the base for the frequency-adjusted tournament cost.
+inline double base_cost(const PopMember& m, double parsimony, double y_norm) {
     if (parsimony <= 0.0) return m.loss;
     return m.loss / y_norm + parsimony * static_cast<double>(m.complexity);
+}
+
+// Frequency-adjusted cost used in tournament selection. With scaling<=0 it is
+// exactly base_cost (frequency penalty disabled — byte-identical to pre-adaptive
+// behaviour). Otherwise the base is taken in normalized-loss units
+// (loss/y_norm + parsimony*complexity) so the multiplicative factor is comparable
+// across problems, and multiplied by exp(scaling * normalized_frequency[complexity]).
+// The exponent is clamped to avoid overflow to +inf, which would tie every
+// candidate. See docs/24.
+inline double adjusted_cost(const PopMember& m, double parsimony, double y_norm,
+                            const RunningSearchStatistics& stats, double scaling) {
+    if (scaling <= 0.0) return base_cost(m, parsimony, y_norm);
+    const double base =
+        m.loss / y_norm + parsimony * static_cast<double>(m.complexity);
+    double e = scaling * stats.freq_at(m.complexity);
+    if (e > 50.0) e = 50.0;
+    return base * std::exp(e);
 }
 
 double fit(Tree& tree, const std::vector<std::vector<double>>& X,
@@ -104,24 +184,26 @@ std::size_t sample_index(std::size_t size, std::mt19937_64& rng) {
 }
 
 std::size_t tournament_best(const std::vector<PopMember>& pop, std::size_t k,
-                            std::mt19937_64& rng, double parsimony, double y_norm) {
+                            std::mt19937_64& rng, double parsimony, double y_norm,
+                            const RunningSearchStatistics& stats, double scaling) {
     std::size_t best = sample_index(pop.size(), rng);
-    double best_cost = selection_cost(pop[best], parsimony, y_norm);
+    double best_cost = adjusted_cost(pop[best], parsimony, y_norm, stats, scaling);
     for (std::size_t i = 1; i < k; ++i) {
         const std::size_t cand = sample_index(pop.size(), rng);
-        const double c = selection_cost(pop[cand], parsimony, y_norm);
+        const double c = adjusted_cost(pop[cand], parsimony, y_norm, stats, scaling);
         if (c < best_cost) { best = cand; best_cost = c; }
     }
     return best;
 }
 
 std::size_t tournament_worst(const std::vector<PopMember>& pop, std::size_t k,
-                             std::mt19937_64& rng, double parsimony, double y_norm) {
+                             std::mt19937_64& rng, double parsimony, double y_norm,
+                             const RunningSearchStatistics& stats, double scaling) {
     std::size_t worst = sample_index(pop.size(), rng);
-    double worst_cost = selection_cost(pop[worst], parsimony, y_norm);
+    double worst_cost = adjusted_cost(pop[worst], parsimony, y_norm, stats, scaling);
     for (std::size_t i = 1; i < k; ++i) {
         const std::size_t cand = sample_index(pop.size(), rng);
-        const double c = selection_cost(pop[cand], parsimony, y_norm);
+        const double c = adjusted_cost(pop[cand], parsimony, y_norm, stats, scaling);
         if (c > worst_cost) { worst = cand; worst_cost = c; }
     }
     return worst;
@@ -134,6 +216,7 @@ void initialize_island(Island& isl,
                        const StopRequested& stop_requested) {
     isl.population.clear();
     isl.population.reserve(opts.population_size);
+    isl.stats.init(opts.space.max_nodes, opts.parsimony_window);
     for (std::size_t i = 0; i < opts.population_size; ++i) {
         // Empty-population guard: always create at least one member. The downstream
         // tournament selection calls sample_index(pop.size(), ...) which computes
@@ -147,6 +230,7 @@ void initialize_island(Island& isl,
         PopMember m{std::move(tree), loss, 0};
         m.complexity = static_cast<int>(m.tree.size());
         isl.hof.update(m);
+        isl.stats.update(m.complexity);
         isl.population.push_back(std::move(m));
     }
 }
@@ -173,6 +257,7 @@ bool evolve_island(Island& isl,
     const std::size_t tournament =
         opts.tournament_size == 0 ? 1 : opts.tournament_size;
     const double parsimony = opts.parsimony;
+    const double scaling   = opts.adaptive_parsimony_scaling;
     std::uniform_real_distribution<double> unit(0.0, 1.0);
 
     // Build the stop closure once. It reads t_start (immutable after search start)
@@ -187,6 +272,12 @@ bool evolve_island(Island& isl,
         if (stop())
             return false;
 
+        // Refresh the normalized frequency snapshot once per generation (cheap,
+        // O(max_nodes)). Tournament selection within this generation reads this
+        // snapshot; the raw counts keep accumulating and are re-normalized next
+        // generation (matches SR.jl's per-cycle cadence; deterministic).
+        if (scaling > 0.0) isl.stats.normalize();
+
         for (std::size_t step = 0; step < opts.population_size; ++step) {
             // Coarse step-boundary check: catches overshoot between fit() calls.
             // The finer check inside fit() -> optimizer catches overshoot within a
@@ -197,13 +288,15 @@ bool evolve_island(Island& isl,
 
             const std::size_t parent = tournament_best(isl.population,
                                                        tournament, isl.rng,
-                                                       parsimony, y_norm);
+                                                       parsimony, y_norm,
+                                                       isl.stats, scaling);
             Tree child_tree;
             if (opts.crossover_probability > 0.0 &&
                 unit(isl.rng) < opts.crossover_probability) {
                 const std::size_t parent2 = tournament_best(isl.population,
                                                             tournament, isl.rng,
-                                                            parsimony, y_norm);
+                                                            parsimony, y_norm,
+                                                            isl.stats, scaling);
                 child_tree = subtree_crossover(
                     isl.population[parent].tree,
                     isl.population[parent2].tree,
@@ -224,21 +317,33 @@ bool evolve_island(Island& isl,
             if (opts.simplify_expressions) child_tree = simplify(child_tree);
             PopMember child{std::move(child_tree), loss, 0};
             child.complexity = static_cast<int>(child.tree.size());
+            const int child_complexity = child.complexity;  // child may be moved below
             isl.hof.update(child);
 
             const std::size_t worst = tournament_worst(isl.population,
                                                        tournament, isl.rng,
-                                                       parsimony, y_norm);
-            if (selection_cost(child, parsimony, y_norm) <
-                    selection_cost(isl.population[worst], parsimony, y_norm))
+                                                       parsimony, y_norm,
+                                                       isl.stats, scaling);
+            if (adjusted_cost(child, parsimony, y_norm, isl.stats, scaling) <
+                    adjusted_cost(isl.population[worst], parsimony, y_norm,
+                                  isl.stats, scaling))
                 isl.population[worst] = std::move(child);
+
+            // Record this child's complexity in the running histogram. Updating
+            // after the selection above keeps every comparison in this generation
+            // consistent with the start-of-generation normalized snapshot; the new
+            // count only affects subsequent generations. No RNG is consumed, so
+            // fixed-seed determinism is preserved.
+            isl.stats.update(child_complexity);
         }
     }
     return false;
 }
 
 // Ring migration: snapshot top-k from each island, then inject into the next.
-// Called serially after each epoch barrier — no concurrent access.
+// Called serially after each epoch barrier — no concurrent access. Ranking uses
+// base_cost (no frequency factor): migration transfers quality between islands and
+// must not depend on any single island's complexity histogram.
 void migrate(std::vector<Island>& islands, std::size_t k,
              double parsimony, double y_norm) {
     const std::size_t n = islands.size();
@@ -254,8 +359,8 @@ void migrate(std::vector<Island>& islands, std::size_t k,
         std::partial_sort(ptrs.begin(), ptrs.begin() + static_cast<std::ptrdiff_t>(take),
                           ptrs.end(),
                           [parsimony, y_norm](const PopMember* a, const PopMember* b) {
-                              return selection_cost(*a, parsimony, y_norm) <
-                                     selection_cost(*b, parsimony, y_norm);
+                              return base_cost(*a, parsimony, y_norm) <
+                                     base_cost(*b, parsimony, y_norm);
                           });
         emigrants[i].reserve(take);
         for (std::size_t j = 0; j < take; ++j)
@@ -270,12 +375,12 @@ void migrate(std::vector<Island>& islands, std::size_t k,
         for (const auto& em : emigrants[i]) {
             // Replace the worst member (by selection cost) if the emigrant is better.
             std::size_t worst_idx = 0;
-            double worst_cost = selection_cost(pop[0], parsimony, y_norm);
+            double worst_cost = base_cost(pop[0], parsimony, y_norm);
             for (std::size_t j = 1; j < pop.size(); ++j) {
-                const double c = selection_cost(pop[j], parsimony, y_norm);
+                const double c = base_cost(pop[j], parsimony, y_norm);
                 if (c > worst_cost) { worst_idx = j; worst_cost = c; }
             }
-            if (selection_cost(em, parsimony, y_norm) < worst_cost) {
+            if (base_cost(em, parsimony, y_norm) < worst_cost) {
                 pop[worst_idx] = em;
                 dst.hof.update(em);
             }

@@ -61,7 +61,8 @@ List symbolic_regression_cpp(
     double        timeout_seconds,
     int           verbosity,
     double        optimize_probability,
-    double        parsimony
+    double        parsimony,
+    double        adaptive_parsimony_scaling
 ) {
     // Convert R matrix → vector<vector<double>> (row-major)
     const int n = X.nrow();
@@ -101,6 +102,7 @@ List symbolic_regression_cpp(
     opts.verbosity             = verbosity;
     opts.optimize_probability  = optimize_probability;
     opts.parsimony             = parsimony;
+    opts.adaptive_parsimony_scaling = adaptive_parsimony_scaling;
 
     const SearchResult res = run_evolution(X_cpp, y_cpp, opts);
 
