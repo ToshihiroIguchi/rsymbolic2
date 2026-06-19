@@ -122,6 +122,19 @@ Impact on the gate: at the measured pace, the `np=4`, 300 s gate completes only
 directly starves H3-type problems. Restoring parallel efficiency (or re-balancing
 the budget) would multiply the effective search per wall-second.
 
+**Update (root cause confirmed and fixed).** Direct allocation counting
+(`standalone/benchmarks/bench_alloc.cpp`, malloc routed through `--wrap`) localized
+the contention to `EigenLMOptimizer`: Eigen's `LevenbergMarquardt` makes ~35 large,
+m-sized heap allocations *per fit* (QR / lmpar / norm temporaries) that bypass
+`operator new` and, on Windows/MinGW, serialize on the process-wide allocator lock —
+reusing the Eigen solver object does not remove them (`bench_eigen_reuse.cpp`). A
+heap-contention probe (`bench_heap.cpp`) confirmed it: 4-thread `cpu/wall` was 1.4 for
+EigenLM but 3.7 for the identical workload with Eigen removed. The fix is a new
+allocation-free in-house Levenberg-Marquardt backend (`SelfLMOptimizer`), now the
+default, which keeps all working storage persistent across fits: 4-thread `cpu/wall`
+rose 1.4 → 2.9 and per-fit Eigen allocations dropped 35 → 0, with no recovery-rate
+regression. See **docs/25** for the design and full measurements.
+
 ## Proposed fix directions (deferred — require agreement before implementation)
 
 1. **Re-scale parsimony so it cannot collapse the population below the size

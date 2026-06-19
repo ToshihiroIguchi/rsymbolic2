@@ -119,9 +119,11 @@ struct Island {
 double sse_current(const Tree& tree, const std::vector<std::vector<double>>& X,
                    const std::vector<double>& y) {
     const std::vector<double> c = initial_constants(tree);
+    // Reuse one evaluation stack across all points (docs/23 §4): no per-point alloc.
+    std::vector<double> stack;
     double sse = 0.0;
     for (std::size_t i = 0; i < y.size(); ++i) {
-        const double pred = evaluate<double>(tree, X[i].data(), c.data());
+        const double pred = evaluate<double>(tree, X[i].data(), c.data(), stack);
         const double r = pred - y[i];
         if (!std::isfinite(r)) return kInf;
         sse += r * r;
@@ -165,13 +167,15 @@ inline double adjusted_cost(const PopMember& m, double parsimony, double y_norm,
     return base * std::exp(e);
 }
 
-double fit(Tree& tree, const std::vector<std::vector<double>>& X,
-           const std::vector<double>& y, const ConstantOptimizer& optimizer,
+double fit(Tree& tree, const std::shared_ptr<const Dataset>& data,
+           const ConstantOptimizer& optimizer,
            const StopRequested& stop_requested) {
     const std::vector<double> init = initial_constants(tree);
     // Pass stop_requested through so the residual/Jacobian closures can poll it
     // mid-evaluation and signal an abort via problem.aborted (docs/22 Phase 1).
-    OptimizationProblem problem = make_least_squares_problem(tree, X, y, init,
+    // The dataset is shared (not copied) so each fit() avoids the per-call dataset
+    // copy that was the dominant heap-contention source (docs/23 §4).
+    OptimizationProblem problem = make_least_squares_problem(tree, data, init,
                                                              stop_requested);
     const OptimizationResult result = optimizer.optimize(problem, stop_requested);
     if (!result.success || !std::isfinite(result.loss)) return kInf;
@@ -210,8 +214,7 @@ std::size_t tournament_worst(const std::vector<PopMember>& pop, std::size_t k,
 }
 
 void initialize_island(Island& isl,
-                       const std::vector<std::vector<double>>& X,
-                       const std::vector<double>& y,
+                       const std::shared_ptr<const Dataset>& data,
                        const SearchOptions& opts,
                        const StopRequested& stop_requested) {
     isl.population.clear();
@@ -225,7 +228,7 @@ void initialize_island(Island& isl,
         // exists has at least one member and is safe for evolve_island.
         if (i > 0 && stop_requested()) break;
         Tree tree = generate_random_tree(opts.space, isl.rng);
-        const double loss = fit(tree, X, y, *isl.optimizer, stop_requested);
+        const double loss = fit(tree, data, *isl.optimizer, stop_requested);
         if (opts.simplify_expressions) tree = simplify(tree);
         PopMember m{std::move(tree), loss, 0};
         m.complexity = static_cast<int>(m.tree.size());
@@ -246,8 +249,7 @@ inline double elapsed_sec(const TimePoint& start) {
 // Evolve island for exactly n_gens generations (or until early stop / timeout).
 // Returns true if the early-stop threshold was reached.
 bool evolve_island(Island& isl,
-                   const std::vector<std::vector<double>>& X,
-                   const std::vector<double>& y,
+                   const std::shared_ptr<const Dataset>& data,
                    const SearchOptions& opts,
                    std::size_t n_gens,
                    const TimePoint& t_start,
@@ -312,8 +314,8 @@ bool evolve_island(Island& isl,
             const double loss =
                 (opts.optimize_probability >= 1.0 ||
                  unit(isl.rng) < opts.optimize_probability)
-                    ? fit(child_tree, X, y, *isl.optimizer, stop)
-                    : sse_current(child_tree, X, y);
+                    ? fit(child_tree, data, *isl.optimizer, stop)
+                    : sse_current(child_tree, data->X, data->y);
             if (opts.simplify_expressions) child_tree = simplify(child_tree);
             PopMember child{std::move(child_tree), loss, 0};
             child.complexity = static_cast<int>(child.tree.size());
@@ -406,6 +408,12 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
         return has_deadline && elapsed_sec(t_start) >= deadline_sec;
     };
 
+    // Copy the dataset once into shared, immutable storage. Every island's fit()
+    // references this single Dataset instead of copying X/y per evaluation, which was
+    // the dominant multi-island heap-contention source (docs/23 §4). Read-only and
+    // shared by const pointer, so concurrent island workers never write to it.
+    const auto data = std::make_shared<const Dataset>(Dataset{X, y});
+
     // Build islands. Island 0 always uses options.seed so that n_populations=1
     // produces exactly the same RNG sequence as the pre-island implementation.
     std::vector<Island> islands(n);
@@ -416,7 +424,7 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
         islands[i].optimizer =
             OptimizerFactory::create(options.optimizer_type,
                                      options.optimizer_config);
-        initialize_island(islands[i], X, y, options, init_stop);
+        initialize_island(islands[i], data, options, init_stop);
     }
 
     const std::size_t interval = std::max<std::size_t>(1, options.migration_interval);
@@ -446,7 +454,7 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
 #       pragma omp parallel for schedule(dynamic) num_threads(omp_threads) if(n > 1)
 #endif
         for (std::int64_t i = 0; i < static_cast<std::int64_t>(n); ++i)
-            evolve_island(islands[static_cast<std::size_t>(i)], X, y, options,
+            evolve_island(islands[static_cast<std::size_t>(i)], data, options,
                           gens, t_start, has_deadline, deadline_sec, y_norm);
 
         if (n > 1) migrate(islands, options.migration_size, options.parsimony, y_norm);

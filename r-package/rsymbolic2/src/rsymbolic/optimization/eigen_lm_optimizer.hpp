@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include "rsymbolic/optimization/constant_optimizer.hpp"
 
 namespace rsymbolic {
@@ -28,6 +30,17 @@ public:
 
 private:
     OptimizerConfig config_;
+
+    // Scratch buffers reused across optimize() calls so the per-evaluation residual
+    // (size m), Jacobian (size m*k) and parameter (size k) vectors are not reallocated
+    // on every fit(). Per-fit reallocation of these m-sized buffers was the dominant
+    // multi-island serialization point: the fresh pages they touch fault under a
+    // process-wide kernel lock, blocking concurrent island workers (docs/23 §4).
+    // `mutable` because optimize() is const; thread-safe because each island owns its
+    // own optimizer instance and never calls optimize() concurrently on it.
+    mutable std::vector<double> params_;  // size k
+    mutable std::vector<double> rbuf_;    // size m (residuals)
+    mutable std::vector<double> jbuf_;    // size m*k (row-major Jacobian)
 };
 
 }  // namespace rsymbolic

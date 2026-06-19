@@ -238,6 +238,19 @@ will be fixed **before** measurement to avoid post-hoc bias.
 
 ---
 
+## 5b. Update — outcome: in-house allocation-free LM adopted as default
+
+The Eigen-based LM (Option A/B above) was implemented (`EigenLMOptimizer`) and shipped
+first, but its per-fit heap allocation (~35 m-sized `malloc`s, intrinsic to Eigen's
+algorithm) serialized multi-island workers on Windows/MinGW and collapsed scaling
+(docs/23 §4). The resolution was **not** to adopt Ceres/TBB but to write a small
+allocation-free Levenberg-Marquardt (`SelfLMOptimizer`) that reuses the existing,
+verified dual-number AD Jacobian and keeps all workspace persistent across fits. It
+matches EigenLM's recovery rate problem-for-problem while being ~7–8× faster per fit
+and eliminating the per-fit Eigen allocations, and is now the default backend. EigenLM
+remains selectable for comparison. Full design and measurements: **docs/25**. This
+keeps the "header-only LM sufficient" branch of §6 — no heavy dependency was adopted.
+
 ## 6. Position (explicit)
 
 - Ceres is **not "dangerous."** TBB is **not "dangerous."** Their adoption cost in the

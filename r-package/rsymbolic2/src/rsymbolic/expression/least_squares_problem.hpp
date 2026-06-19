@@ -22,11 +22,19 @@ static constexpr std::size_t kStride = 256;
 // the non-finite clamping value already used in fill_residuals (eigen_lm_optimizer.cpp).
 static constexpr double kLargeResidualSentinel = 1.0e10;
 
+// An immutable dataset (input rows + targets) shared across every per-candidate
+// problem in a search. Sharing it by shared_ptr means building a problem costs one
+// tree copy, not a full dataset copy — the dataset copy was ~m heap allocations per
+// fit() and the dominant source of multi-island heap-lock contention (docs/23 §4).
+struct Dataset {
+    std::vector<std::vector<double>> X;  // X[i] is the feature vector for point i
+    std::vector<double> y;               // y[i] corresponds to X[i]
+};
+
 // Builds a least-squares OptimizationProblem from an expression tree and a dataset.
 //
 //   tree     - the model, in postfix form, whose Constant nodes are the tunable params
-//   X        - rows of input features (X[i] is the feature vector for data point i)
-//   y        - target values (y[i] corresponds to X[i])
+//   dataset  - shared, immutable inputs/targets (referenced, not copied)
 //   initial  - initial constant values (size k); if empty, taken from the tree
 //   stop     - optional stop predicate (docs/22 Phase 1). When non-empty, the
 //              residual/Jacobian closures poll it every kStride points and signal an
@@ -37,18 +45,16 @@ static constexpr double kLargeResidualSentinel = 1.0e10;
 //   residuals: r_i(c) = model(X[i]; c) - y[i]              (plain double evaluation)
 //   jacobian : d r_i / d c_j via forward-mode dual numbers (k passes over the data)
 //
-// The tree and dataset are copied into shared storage so the returned closures remain
-// valid independently of the caller's objects.
+// The tree is copied into shared storage and the dataset is shared by pointer, so the
+// returned closures remain valid independently of the caller's tree object.
 inline OptimizationProblem make_least_squares_problem(
     Tree tree,
-    std::vector<std::vector<double>> X,
-    std::vector<double> y,
+    std::shared_ptr<const Dataset> dataset,
     std::vector<double> initial = {},
     StopRequested stop = {}) {
-    struct Data {
+    struct Model {
         Tree tree;
-        std::vector<std::vector<double>> X;
-        std::vector<double> y;
+        std::shared_ptr<const Dataset> data;
         int k;
     };
 
@@ -57,8 +63,8 @@ inline OptimizationProblem make_least_squares_problem(
         initial = initial_constants(tree);
     }
 
-    auto data = std::make_shared<Data>(
-        Data{std::move(tree), std::move(X), std::move(y), k});
+    auto model = std::make_shared<Model>(
+        Model{std::move(tree), std::move(dataset), k});
 
     // Abort flag: created only when a stop predicate is provided so that the
     // no-stop path has no overhead beyond an extra nullptr check. Both closures
@@ -68,13 +74,18 @@ inline OptimizationProblem make_least_squares_problem(
         : std::shared_ptr<std::atomic<bool>>{};
 
     OptimizationProblem problem;
-    problem.num_residuals = data->y.size();
+    problem.num_residuals = model->data->y.size();
     problem.initial_constants = std::move(initial);
     problem.aborted = aborted;
 
-    problem.residuals = [data, stop, aborted](const std::vector<double>& params,
+    problem.residuals = [model, stop, aborted](const std::vector<double>& params,
                                               std::vector<double>& residuals) {
-        const std::size_t m = data->y.size();
+        const Dataset& d = *model->data;
+        const std::size_t m = d.y.size();
+        // One evaluation stack reused across all m points (docs/23 §4): the per-point
+        // evaluate() call no longer allocates. Local to this closure invocation, so
+        // it is never shared across threads.
+        std::vector<double> stack;
         for (std::size_t i = 0; i < m; ++i) {
             // Poll stop predicate every kStride points (docs/22 §5.1 step 3).
             if (aborted && i % kStride == 0 && stop && stop()) {
@@ -86,16 +97,20 @@ inline OptimizationProblem make_least_squares_problem(
                 return;
             }
             const double prediction =
-                evaluate<double>(data->tree, data->X[i].data(), params.data());
-            residuals[i] = prediction - data->y[i];
+                evaluate<double>(model->tree, d.X[i].data(), params.data(), stack);
+            residuals[i] = prediction - d.y[i];
         }
     };
 
-    problem.jacobian = [data, stop, aborted](const std::vector<double>& params,
+    problem.jacobian = [model, stop, aborted](const std::vector<double>& params,
                                              std::vector<double>& jacobian) {
-        const int k = data->k;
-        const std::size_t m = data->y.size();
+        const int k = model->k;
+        const Dataset& d = *model->data;
+        const std::size_t m = d.y.size();
         std::vector<Dual> constants(static_cast<std::size_t>(k));
+        // Evaluation stack reused across all k*m dual-number evaluations (docs/23 §4).
+        // Local to this closure invocation — never shared across threads.
+        std::vector<Dual> stack;
         for (int kk = 0; kk < k; ++kk) {
             // Seed constant kk with derivative 1, all others with 0.
             for (int j = 0; j < k; ++j) {
@@ -113,7 +128,8 @@ inline OptimizationProblem make_least_squares_problem(
                     return;
                 }
                 const Dual prediction =
-                    evaluate<Dual>(data->tree, data->X[i].data(), constants.data());
+                    evaluate<Dual>(model->tree, d.X[i].data(), constants.data(),
+                                   stack);
                 // d r_i / d c_kk == d prediction_i / d c_kk (y_i is constant).
                 jacobian[i * static_cast<std::size_t>(k) +
                          static_cast<std::size_t>(kk)] = prediction.deriv;
@@ -122,6 +138,21 @@ inline OptimizationProblem make_least_squares_problem(
     };
 
     return problem;
+}
+
+// Value-copy overload (tests and other non-search callers). Copies X and y once into
+// a shared Dataset and delegates to the shared-dataset overload above, preserving the
+// original contract that the returned closures own their data independently of the
+// caller's X/y.
+inline OptimizationProblem make_least_squares_problem(
+    Tree tree,
+    std::vector<std::vector<double>> X,
+    std::vector<double> y,
+    std::vector<double> initial = {},
+    StopRequested stop = {}) {
+    auto data = std::make_shared<const Dataset>(Dataset{std::move(X), std::move(y)});
+    return make_least_squares_problem(std::move(tree), std::move(data),
+                                      std::move(initial), std::move(stop));
 }
 
 }  // namespace rsymbolic

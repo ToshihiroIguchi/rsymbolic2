@@ -20,7 +20,12 @@ struct SearchOptions {
     std::size_t population_size = 200;
     std::size_t generations = 20;
     std::size_t tournament_size = 4;
-    OptimizerType optimizer_type = OptimizerType::EigenLM;
+    // SelfLM is the default: it matches EigenLM's recovery rate problem-for-problem
+    // while being ~7-8x faster per fit and, crucially, performing zero large per-fit
+    // heap allocations — which restores multi-island scaling (4-thread cpu/wall
+    // 1.4 -> 2.9 on the heap probe). EigenLM remains selectable for comparison.
+    // See docs/25.
+    OptimizerType optimizer_type = OptimizerType::SelfLM;
     OptimizerConfig optimizer_config{};
     std::uint64_t seed = 0;
     double target_loss = 1e-10;         // early stop once the best loss is below this

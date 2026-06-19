@@ -89,9 +89,21 @@ inline const char* binary_name(BinaryOp op) {
 //                constant can be seeded with a derivative in the Dual case.
 //
 // Assumes a well-formed tree (every operator has its operands available on the stack).
+//
+// Scratch overload: the evaluation stack is supplied by the caller and reused across
+// calls. The stack vector itself carries no information between calls (it is cleared
+// on entry); only its heap capacity is reused. This removes the per-call allocation
+// that dominated the multi-island hot path (one std::vector<T> allocated per data
+// point, m allocations per residual/Jacobian evaluation) — see docs/23 §4. Numerically
+// identical to a fresh stack: same operations in the same order.
+//
+// Thread-safety: the caller owns `stack`; pass a stack local to each thread / closure
+// call and never share one across threads. evaluate() is non-recursive, so a single
+// stack per in-flight call is sufficient.
 template <typename T>
-T evaluate(const Tree& tree, const double* row, const T* constants) {
-    std::vector<T> stack;
+T evaluate(const Tree& tree, const double* row, const T* constants,
+           std::vector<T>& stack) {
+    stack.clear();
     stack.reserve(tree.size());
     for (const Node& node : tree) {
         switch (node.kind) {
@@ -116,6 +128,14 @@ T evaluate(const Tree& tree, const double* row, const T* constants) {
         }
     }
     return stack.back();
+}
+
+// Convenience overload: allocates a fresh scratch stack per call. Kept for one-off
+// callers (tests, non-hot paths) that do not manage their own buffer.
+template <typename T>
+T evaluate(const Tree& tree, const double* row, const T* constants) {
+    std::vector<T> stack;
+    return evaluate(tree, row, constants, stack);
 }
 
 // Number of operands a node consumes.

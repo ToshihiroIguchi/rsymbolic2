@@ -16,6 +16,7 @@ set(BENCH_DIR "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks")
 add_library(rsymbolic2_core
     ${CORE_SRC}/random_restart_optimizer.cpp
     ${CORE_SRC}/eigen_lm_optimizer.cpp
+    ${CORE_SRC}/self_lm_optimizer.cpp
     ${CORE_SRC}/optimizer_factory.cpp
     ${CORE_SRC}/random_tree.cpp
     ${CORE_SRC}/mutation.cpp
@@ -28,6 +29,7 @@ target_include_directories(rsymbolic2_core PUBLIC ${CORE_SRC})
 target_compile_features(rsymbolic2_core PUBLIC cxx_std_17)
 target_link_libraries(rsymbolic2_core PRIVATE Eigen3::Eigen)
 
+find_package(Threads REQUIRED)
 find_package(OpenMP)
 if(OpenMP_CXX_FOUND)
     target_link_libraries(rsymbolic2_core PUBLIC OpenMP::OpenMP_CXX)
@@ -48,6 +50,7 @@ if(RSYMBOLIC2_BUILD_TESTS)
 
     add_core_test(random_restart_optimizer tests/test_random_restart_optimizer.cpp)
     add_core_test(eigen_lm_optimizer       tests/test_eigen_lm_optimizer.cpp)
+    add_core_test(self_lm_optimizer        tests/test_self_lm_optimizer.cpp)
     add_core_test(dual                     tests/test_dual.cpp)
     add_core_test(tree_eval                tests/test_tree_eval.cpp)
     add_core_test(constant_fitting         tests/test_constant_fitting.cpp)
@@ -81,4 +84,21 @@ if(RSYMBOLIC2_BUILD_BENCHMARKS)
 
     add_executable(bench_parallel benchmarks/bench_parallel.cpp)
     target_link_libraries(bench_parallel PRIVATE rsymbolic2_core)
+
+    add_executable(bench_alloc benchmarks/bench_alloc.cpp)
+    target_link_libraries(bench_alloc PRIVATE rsymbolic2_core)
+    # Route malloc/free through __wrap_* so the probe can also count raw allocations
+    # (e.g. Eigen's, which bypass operator new). GNU ld / lld only.
+    target_link_options(bench_alloc PRIVATE
+        -Wl,--wrap=malloc -Wl,--wrap=free
+        -Wl,--wrap=calloc -Wl,--wrap=realloc)
+
+    add_executable(bench_heap benchmarks/bench_heap.cpp)
+    target_link_libraries(bench_heap PRIVATE rsymbolic2_core Threads::Threads)
+
+    add_executable(bench_eigen_reuse benchmarks/bench_eigen_reuse.cpp)
+    target_link_libraries(bench_eigen_reuse PRIVATE rsymbolic2_core Eigen3::Eigen)
+    target_link_options(bench_eigen_reuse PRIVATE
+        -Wl,--wrap=malloc -Wl,--wrap=free
+        -Wl,--wrap=calloc -Wl,--wrap=realloc)
 endif()

@@ -4,6 +4,7 @@
 
 #include "rsymbolic/optimization/eigen_lm_optimizer.hpp"
 #include "rsymbolic/optimization/random_restart_optimizer.hpp"
+#include "rsymbolic/optimization/self_lm_optimizer.hpp"
 
 namespace rsymbolic {
 
@@ -14,6 +15,8 @@ std::unique_ptr<ConstantOptimizer> OptimizerFactory::create(
             return std::make_unique<RandomRestartOptimizer>(config);
         case OptimizerType::EigenLM:
             return std::make_unique<EigenLMOptimizer>(config);
+        case OptimizerType::SelfLM:
+            return std::make_unique<SelfLMOptimizer>(config);
         case OptimizerType::CeresTinySolver:
         case OptimizerType::Ceres:
             throw std::runtime_error(
@@ -26,6 +29,7 @@ std::unique_ptr<ConstantOptimizer> OptimizerFactory::create(
 OptimizerType OptimizerFactory::from_string(const std::string& name) {
     if (name == "random_restart") return OptimizerType::RandomRestart;
     if (name == "eigen_lm") return OptimizerType::EigenLM;
+    if (name == "self_lm") return OptimizerType::SelfLM;
     if (name == "ceres_tiny") return OptimizerType::CeresTinySolver;
     if (name == "ceres") return OptimizerType::Ceres;
     throw std::invalid_argument(

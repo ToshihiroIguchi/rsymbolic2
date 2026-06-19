@@ -1,5 +1,6 @@
 #include "rsymbolic/optimization/eigen_lm_optimizer.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstddef>
@@ -20,10 +21,14 @@ namespace {
 // fit and steps away, rather than producing NaNs in the normal equations.
 constexpr double kLargeResidual = 1.0e10;
 
+// Copy Eigen's parameter vector into the reusable `params` buffer (no allocation:
+// `params` is pre-sized to k), evaluate residuals into the reusable `r` buffer, then
+// clamp non-finite values into Eigen's fvec.
 void fill_residuals(const ResidualFunction& residuals, const Eigen::VectorXd& x,
-                    int m, Eigen::VectorXd& fvec) {
-    std::vector<double> params(x.data(), x.data() + x.size());
-    std::vector<double> r(static_cast<std::size_t>(m), 0.0);
+                    int m, Eigen::VectorXd& fvec,
+                    std::vector<double>& params, std::vector<double>& r) {
+    for (int i = 0; i < static_cast<int>(x.size()); ++i)
+        params[static_cast<std::size_t>(i)] = x[i];
     residuals(params, r);
     for (int i = 0; i < m; ++i) {
         const double value = r[static_cast<std::size_t>(i)];
@@ -32,7 +37,8 @@ void fill_residuals(const ResidualFunction& residuals, const Eigen::VectorXd& x,
 }
 
 // Functor used when no analytic Jacobian is provided: residuals only, with the
-// Jacobian supplied by Eigen::NumericalDiff.
+// Jacobian supplied by Eigen::NumericalDiff. The params/residual scratch buffers are
+// owned by the optimizer and reused across evaluations and fits (docs/23 §4).
 struct NumericFunctor {
     using Scalar = double;
     using InputType = Eigen::VectorXd;
@@ -47,18 +53,22 @@ struct NumericFunctor {
     std::shared_ptr<std::atomic<bool>> aborted;
     int n_inputs;
     int n_values;
+    std::vector<double>& params;  // scratch (size n_inputs), owned by optimizer
+    std::vector<double>& rbuf;    // scratch (size n_values), owned by optimizer
 
     int inputs() const { return n_inputs; }
     int values() const { return n_values; }
 
     int operator()(const InputType& x, ValueType& fvec) const {
-        fill_residuals(residuals, x, n_values, fvec);
+        fill_residuals(residuals, x, n_values, fvec, params, rbuf);
         if (aborted && aborted->load(std::memory_order_relaxed)) return -1;
         return 0;
     }
 };
 
-// Functor used when an analytic Jacobian (e.g. from dual numbers) is available.
+// Functor used when an analytic Jacobian (e.g. from dual numbers) is available. The
+// params/residual/Jacobian scratch buffers are owned by the optimizer and reused
+// across evaluations and fits (docs/23 §4).
 struct AnalyticFunctor {
     using Scalar = double;
     using InputType = Eigen::VectorXd;
@@ -74,30 +84,34 @@ struct AnalyticFunctor {
     std::shared_ptr<std::atomic<bool>> aborted;
     int n_inputs;
     int n_values;
+    std::vector<double>& params;  // scratch (size n_inputs), owned by optimizer
+    std::vector<double>& rbuf;    // scratch (size n_values), owned by optimizer
+    std::vector<double>& jbuf;    // scratch (size n_values*n_inputs), owned by optimizer
 
     int inputs() const { return n_inputs; }
     int values() const { return n_values; }
 
     int operator()(const InputType& x, ValueType& fvec) const {
-        fill_residuals(residuals, x, n_values, fvec);
+        fill_residuals(residuals, x, n_values, fvec, params, rbuf);
         if (aborted && aborted->load(std::memory_order_relaxed)) return -1;
         return 0;
     }
 
     int df(const InputType& x, JacobianType& fjac) const {
-        std::vector<double> params(x.data(), x.data() + x.size());
-        std::vector<double> jac(
-            static_cast<std::size_t>(n_values) * static_cast<std::size_t>(n_inputs),
-            0.0);
-        jacobian(params, jac);
+        for (int i = 0; i < static_cast<int>(x.size()); ++i)
+            params[static_cast<std::size_t>(i)] = x[i];
+        // Re-zero the reused buffer: the jacobian closure may return early (abort)
+        // leaving entries unfilled, which must read as a defined 0.0.
+        std::fill(jbuf.begin(), jbuf.end(), 0.0);
+        jacobian(params, jbuf);
         if (aborted && aborted->load(std::memory_order_relaxed)) return -1;
         fjac.resize(n_values, n_inputs);
         for (int i = 0; i < n_values; ++i) {
             for (int j = 0; j < n_inputs; ++j) {
                 double value =
-                    jac[static_cast<std::size_t>(i) *
-                            static_cast<std::size_t>(n_inputs) +
-                        static_cast<std::size_t>(j)];
+                    jbuf[static_cast<std::size_t>(i) *
+                             static_cast<std::size_t>(n_inputs) +
+                         static_cast<std::size_t>(j)];
                 fjac(i, j) = std::isfinite(value) ? value : kLargeResidual;
             }
         }
@@ -179,16 +193,25 @@ OptimizationResult EigenLMOptimizer::optimize(
         problem.aborted->store(false, std::memory_order_relaxed);
     }
 
+    // Size the reusable scratch buffers. resize() only reallocates when the capacity
+    // is insufficient, so after the first few fits these never reallocate (m is fixed
+    // for a search; k grows to the largest tree seen, then stays) — eliminating the
+    // per-fit page faults that serialized island workers (docs/23 §4).
+    params_.resize(static_cast<std::size_t>(k));
+    rbuf_.resize(static_cast<std::size_t>(m));
+
     if (problem.jacobian) {
+        jbuf_.resize(static_cast<std::size_t>(m) * static_cast<std::size_t>(k));
         AnalyticFunctor functor{problem.residuals, problem.jacobian,
-                                problem.aborted, k, m};
+                                problem.aborted, k, m, params_, rbuf_, jbuf_};
         Eigen::LevenbergMarquardt<AnalyticFunctor> lm(functor);
         if (maxfev > 0) lm.parameters.maxfev = maxfev;
         const Eigen::LevenbergMarquardtSpace::Status status =
             run_lm(lm, x, stop_requested);
         finalize(lm, status, x, result);
     } else {
-        NumericFunctor functor{problem.residuals, problem.aborted, k, m};
+        NumericFunctor functor{problem.residuals, problem.aborted, k, m,
+                               params_, rbuf_};
         Eigen::NumericalDiff<NumericFunctor> num_diff(functor);
         Eigen::LevenbergMarquardt<Eigen::NumericalDiff<NumericFunctor>> lm(num_diff);
         if (maxfev > 0) lm.parameters.maxfev = maxfev;

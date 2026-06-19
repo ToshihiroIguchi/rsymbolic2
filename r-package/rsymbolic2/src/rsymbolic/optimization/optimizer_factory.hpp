@@ -13,7 +13,8 @@ namespace rsymbolic {
 // throws (see OptimizerFactory::create).
 enum class OptimizerType {
     RandomRestart,    // implemented: derivative-free baseline / lower bound
-    EigenLM,          // planned (Phase 2): Eigen MINPACK Levenberg-Marquardt
+    EigenLM,          // implemented: Eigen MINPACK Levenberg-Marquardt
+    SelfLM,           // implemented: allocation-free in-house Levenberg-Marquardt
     CeresTinySolver,  // planned (Phase 2): vendored Ceres TinySolver (header-only)
     Ceres,            // planned (Phase 2): full Ceres Solver
 };
