@@ -56,6 +56,15 @@ inline OptimizationProblem make_least_squares_problem(
         Tree tree;
         std::shared_ptr<const Dataset> data;
         int k;
+        // Per-problem scratch reused across all residual/Jacobian evaluations of
+        // this problem (docs/23 §4, docs/25). The problem (and its Model) is created
+        // locally per fit() call, never shared across threads, and the residual and
+        // Jacobian closures are called sequentially within one optimize() — so
+        // reusing these buffers across calls is safe. residual_stack and
+        // jacobian_stack hold different element types and never alias.
+        std::vector<double> residual_stack;
+        std::vector<Dual> jacobian_constants;
+        std::vector<Dual> jacobian_stack;
     };
 
     const int k = count_constants(tree);
@@ -83,9 +92,9 @@ inline OptimizationProblem make_least_squares_problem(
         const Dataset& d = *model->data;
         const std::size_t m = d.y.size();
         // One evaluation stack reused across all m points (docs/23 §4): the per-point
-        // evaluate() call no longer allocates. Local to this closure invocation, so
-        // it is never shared across threads.
-        std::vector<double> stack;
+        // evaluate() call no longer allocates. Held in the Model so the buffer is
+        // reused across optimize() iterations, not reallocated per call (docs/25).
+        std::vector<double>& stack = model->residual_stack;
         for (std::size_t i = 0; i < m; ++i) {
             // Poll stop predicate every kStride points (docs/22 §5.1 step 3).
             if (aborted && i % kStride == 0 && stop && stop()) {
@@ -107,10 +116,13 @@ inline OptimizationProblem make_least_squares_problem(
         const int k = model->k;
         const Dataset& d = *model->data;
         const std::size_t m = d.y.size();
-        std::vector<Dual> constants(static_cast<std::size_t>(k));
-        // Evaluation stack reused across all k*m dual-number evaluations (docs/23 §4).
-        // Local to this closure invocation — never shared across threads.
-        std::vector<Dual> stack;
+        // Constant buffer and evaluation stack held in the Model so they are reused
+        // across optimize() iterations, not reallocated per call (docs/23 §4,
+        // docs/25). resize() allocates on the first call only (no-op thereafter);
+        // every entry is overwritten before use, so no stale values are read.
+        std::vector<Dual>& constants = model->jacobian_constants;
+        constants.resize(static_cast<std::size_t>(k));
+        std::vector<Dual>& stack = model->jacobian_stack;
         for (int kk = 0; kk < k; ++kk) {
             // Seed constant kk with derivative 1, all others with 0.
             for (int j = 0; j < k; ++j) {

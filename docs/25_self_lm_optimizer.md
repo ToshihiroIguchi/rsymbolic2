@@ -41,9 +41,10 @@ that scales to 3.97 at 4 threads (hardware is healthy).
 
   SelfLM is ~7.6× faster per fit and lifts 4-thread `cpu/wall` from 1.41 to 2.92
   (≈8.8× the throughput at 4 threads). The remaining gap to the residual-only ceiling
-  (3.74) is the per-evaluation temporaries the residual/Jacobian closures still
-  allocate (~30 small vectors/fit in `least_squares_problem.hpp`); eliminating those
-  is deferred to a separate task.
+  (3.74) was hypothesized to be the per-evaluation temporaries the residual/Jacobian
+  closures still allocate (~30 small vectors/fit in `least_squares_problem.hpp`).
+  That hypothesis was later tested and **disproven** — see "Closure scratch reuse"
+  below: removing those allocations did not move `cpu/wall`.
 
 ## Design
 
@@ -117,10 +118,53 @@ solve if an ill-conditioned case ever demands it, without changing the interface
   epoch-barrier overhead the microbench excludes. Closing that gap is the deferred
   closure-allocation task below.
 
+## Closure scratch reuse — measured, did NOT move scaling
+
+The deferred follow-up above (remove the residual/Jacobian closures' per-evaluation
+allocations) was implemented and measured. The hypothesis — that those ~30 small
+vectors/fit were the remaining island-scaling lever — **is not supported by the
+measurements.** Recording the negative result here so it is not re-attempted.
+
+Change (`least_squares_problem.hpp`): the residual closure's `stack`, and the Jacobian
+closure's `constants` and `stack`, were moved from per-call locals into the `Model`
+struct (lifetime-managed by `shared_ptr`) and reused across calls. The `Model` is built
+locally per `fit()` and never shared across threads, and the two closures are called
+sequentially within one `optimize()`, so the reuse is safe under the same contract as
+the optimizer's own scratch. The change is **numerically identical** (same FP ops in the
+same order; buffers are fully overwritten before use). Same machine/build as above.
+
+- **`bench_alloc`** SelfLM `optimize`: **30 op-new / 30 malloc → 4 / 4** per fit (raw
+  Eigen-style allocations still 0). The per-evaluation allocations are gone as intended.
+- **`bench_heap`** SelfLM 4-thread `cpu/wall`: **2.92 → ~2.90** (2.89/2.90/2.93 over
+  three runs; residual-only ceiling ~3.7; pure-FP control 3.9). **Unchanged.**
+- **`diag_omp_check.R`** (center_mass), SelfLM default: np=4 `cpu/wall` **1.81 → 1.79**
+  (np=1 wall 3.4 s, np=4 wall 13.7 s). **Unchanged.**
+- **Recovery (no regression)**, standard suite pop=600 gen=100, 2 runs, identical seeds:
+  SelfLM **9/12 == EigenLM 9/12**, problem-for-problem identical. Standalone **16/16 on
+  Windows and Ubuntu (WSL)**.
+
+Interpretation: `bench_heap` is exactly the same-process multithreaded scenario where a
+heap-lock bottleneck would surface, and removing 26 allocations/fit there did not change
+`cpu/wall`. So the residual gap (SelfLM ~2.9 vs residual-only ceiling ~3.7) is **not**
+allocation contention — it is the heavier compute of the dual-number Jacobian (k passes
+of dual arithmetic + the LM solve, several × the residual-only FP/libm work) hitting the
+frequency/bandwidth ceiling. In the full island search (`diag_omp`) fits are only ~10%
+of the work (`optimize_probability=0.1`), so its `cpu/wall ≈ 1.8` is limited by other
+serial/contended sections (migration, epoch barriers, tree ops), not by fit allocations
+at all.
+
+The change is **kept** regardless: it is a genuine heap-churn reduction (lower malloc
+pressure, removes a latent malloc-lock risk under high island counts), numerically
+exact, no regression, low complexity. It simply is not the scaling lever that was
+hypothesized. Further island-scaling work must target the dual-Jacobian compute or the
+search's serial sections, not closure allocation.
+
 ## Status and follow-ups
 
 - `SelfLMOptimizer` is the **default** (`SearchOptions::optimizer_type`); `EigenLM`
   stays available via the factory for comparison.
-- Deferred (separate tasks): (1) remove the residual/Jacobian closures' per-evaluation
-  allocations to close the `cpu/wall` 2.92 → 3.74 gap; (2) Feynman/Nguyen recovery vs
-  PySR at documented defaults; (3) eventual removal of the Eigen dependency.
+- Closure per-evaluation allocations: **done** (above) — reduced 30 → 4/fit, but did not
+  improve `cpu/wall`; the bottleneck lies elsewhere (dual-Jacobian compute / search
+  serial sections).
+- Deferred (separate tasks): (1) Feynman/Nguyen recovery vs PySR at documented defaults;
+  (2) eventual removal of the Eigen dependency.
