@@ -135,6 +135,18 @@ default, which keeps all working storage persistent across fits: 4-thread `cpu/w
 rose 1.4 → 2.9 and per-fit Eigen allocations dropped 35 → 0, with no recovery-rate
 regression. See **docs/25** for the design and full measurements.
 
+**Update 2 (the *remaining* island-scaling loss localised and partly fixed — docs/26
+§3–4).** After SelfLM, the production island search still reached only `cpu/wall ≈ 1.80`
+at `n_populations=4`, even though both fit (`cpu/wall` 2.9) and the non-fit per-child
+path (a new probe, `bench_evolve.cpp`, 3.6) scale well in isolation. The candidate
+"per-child allocation contention" hypothesis was therefore **rejected by measurement**.
+The actual dominant loss was **serial island initialisation**: the island-build loop ran
+outside the OpenMP region, so `n_populations=4` did 4× the initial-population `fit()`s
+serially. Parallelising that loop (same team-size cap, determinism preserved) lifted
+`diag_omp_check` `cpu/wall` 1.80 → 2.40 (+33%). The residual gap to 4 is the remaining
+per-fit allocation traffic. Full evidence, the PySR head-to-head that motivated it, and
+the `bench_parallel` instrumentation bug are in **docs/26**.
+
 ## Proposed fix directions (deferred — require agreement before implementation)
 
 1. **Re-scale parsimony so it cannot collapse the population below the size

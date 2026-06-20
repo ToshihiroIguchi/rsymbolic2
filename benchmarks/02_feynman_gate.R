@@ -6,8 +6,13 @@
 #   Gate: >= 18/25 problems recovered (majority across 5 seeds).
 #
 # Usage (from project root, rsymbolic2 installed):
-#   Rscript benchmarks/02_feynman_gate.R            # Stage 0 smoke
-#   Rscript benchmarks/02_feynman_gate.R stage=1    # Stage 1 dev gate
+#   Rscript benchmarks/02_feynman_gate.R               # Stage 0 smoke
+#   Rscript benchmarks/02_feynman_gate.R stage=1       # Stage 1 dev gate (5 runs)
+#   Rscript benchmarks/02_feynman_gate.R stage=1 runs=1  # 1-seed sanity pass
+#
+# `runs=N` overrides the per-problem seed count (Stage 1 only); the default is 5.
+# A 1-seed pass de-risks the ~8h full gate by first checking whether a change
+# moved recovery at all before committing to all 5 seeds.
 #
 # See docs/19 for full protocol.
 
@@ -54,6 +59,16 @@ if (STAGE == 0L) {
   N_RUNS    <- 5L
   label     <- "feynman_gate"
   gate_desc <- "Stage 1 — dev gate"
+
+  # Optional runs=N override (Stage 1 only): reduce the seed count for a fast
+  # sanity pass. Default stays 5. Out-of-range or unparseable values are ignored.
+  for (a in args) {
+    m <- regmatches(a, regexpr("runs=[0-9]+", a))
+    if (length(m) > 0L) {
+      n <- as.integer(sub("runs=", "", m))
+      if (!is.na(n) && n >= 1L) N_RUNS <- n
+    }
+  }
 }
 
 # ---- Fixed hyperparameters (docs/19 §6) ------------------------------------

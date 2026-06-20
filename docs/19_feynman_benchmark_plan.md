@@ -250,8 +250,18 @@ that SymbolicRegression.jl `^` operator handles `x ≤ 0` with the same guard se
 as rsymbolic2 `safe_pow`. Any divergence is documented as a caveat of the shared-input
 assumption — **never** compensated by altering PySR settings.
 
-**Comparison harness:** `benchmarks/05_feynman_pysr_comparison.jl` (new, mirrors
-`benchmarks/03_sr_comparison.jl`). Created when Stage 2 rsymbolic2 run is ready.
+**Comparison harness:** `benchmarks/05_feynman_pysr_comparison.jl` (created, mirrors
+`benchmarks/03_sr_comparison.jl`). Following the docs/15 precedent, `neg` is omitted
+from the SR.jl unary set (expressible as `0 - x`) and `square` uses SR.jl's built-in;
+`pow` → `^`.
+
+**Result (1-seed dev reference, 2026-06-20):** rsymbolic2 **12/25** vs SR.jl (PySR)
+**15/25** on identical data/operators. 8 problems fail for *both* tools (intrinsically
+hard); the net gap is concentrated in throughput-limited near-misses that rsymbolic2
+timed out on. This motivated and is reported alongside an island-init parallelisation
+(+33% multi-island `cpu/wall`). Full head-to-head table, caveats (1-seed, `maxsize`
+asymmetry, `safe_pow`), and the throughput root-cause analysis are in **docs/26**. A
+full multi-seed run remains future work.
 
 ---
 
