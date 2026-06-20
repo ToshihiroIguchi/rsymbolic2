@@ -96,6 +96,9 @@ if(RSYMBOLIC2_BUILD_BENCHMARKS)
     add_executable(bench_heap benchmarks/bench_heap.cpp)
     target_link_libraries(bench_heap PRIVATE rsymbolic2_core Threads::Threads)
 
+    add_executable(bench_evolve benchmarks/bench_evolve.cpp)
+    target_link_libraries(bench_evolve PRIVATE rsymbolic2_core Threads::Threads)
+
     add_executable(bench_eigen_reuse benchmarks/bench_eigen_reuse.cpp)
     target_link_libraries(bench_eigen_reuse PRIVATE rsymbolic2_core Eigen3::Eigen)
     target_link_options(bench_eigen_reuse PRIVATE

@@ -1,5 +1,15 @@
 // Strong-scaling benchmark for the island model.
 //
+// !!! KNOWN-BROKEN INSTRUMENTATION (docs/26 §4) !!!
+// This probe sweeps omp_set_num_threads({1,2,3,4,6}), but run_evolution hard-caps the
+// team with num_threads(min(n, omp_get_num_procs())) (the timeout fix, commit 2e1a026).
+// omp_get_num_procs() is the hardware processor count and is NOT changed by
+// omp_set_num_threads, so every row below actually runs the same team size and the
+// efficiency column is an artifact (flat wall, fake-decaying efficiency). Use
+// benchmarks/diag_omp_check.R (vary n_populations, fixed per-island work) for the valid
+// multi-island scaling measurement. A proper rewrite of this probe — scale
+// n_populations and report medians — is a separate task; left here pending that.
+//
 // Fixed work: n_populations=12 always. Only omp_num_threads varies: {1,2,3,4,6}.
 // 12 divides evenly into each of these thread counts, so every thread gets
 // exactly the same number of islands — no load-imbalance artifact.

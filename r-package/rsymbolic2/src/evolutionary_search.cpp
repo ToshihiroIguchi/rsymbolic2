@@ -416,15 +416,32 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
 
     // Build islands. Island 0 always uses options.seed so that n_populations=1
     // produces exactly the same RNG sequence as the pre-island implementation.
+    //
+    // Island initialisation (population_size full fit()s per island) is the same
+    // share-nothing, embarrassingly parallel work as the evolution region: each
+    // island touches only islands[i] and reads the shared const dataset/options.
+    // Running it serially made init wall grow linearly with n_populations and
+    // directly starved the per-run generation budget — measured as the dominant
+    // multi-island scaling loss once SelfLM removed the per-fit heap contention
+    // (docs/23 §4 follow-up). Parallelise it with the same team-size cap as the
+    // evolution loop. Determinism is unaffected: every island is seeded
+    // deterministically before its (independent) initialisation, so the result is
+    // identical regardless of thread count or completion order.
     std::vector<Island> islands(n);
-    for (std::size_t i = 0; i < n; ++i) {
-        islands[i].rng.seed(i == 0
+#ifdef _OPENMP
+    const int init_threads = static_cast<int>(std::min<std::size_t>(
+        n, static_cast<std::size_t>(std::max(1, omp_get_num_procs()))));
+#   pragma omp parallel for schedule(dynamic) num_threads(init_threads) if(n > 1)
+#endif
+    for (std::int64_t i = 0; i < static_cast<std::int64_t>(n); ++i) {
+        const std::size_t idx = static_cast<std::size_t>(i);
+        islands[idx].rng.seed(idx == 0
             ? options.seed
-            : options.seed + i * UINT64_C(0x9e3779b97f4a7c15));
-        islands[i].optimizer =
+            : options.seed + idx * UINT64_C(0x9e3779b97f4a7c15));
+        islands[idx].optimizer =
             OptimizerFactory::create(options.optimizer_type,
                                      options.optimizer_config);
-        initialize_island(islands[i], data, options, init_stop);
+        initialize_island(islands[idx], data, options, init_stop);
     }
 
     const std::size_t interval = std::max<std::size_t>(1, options.migration_interval);
