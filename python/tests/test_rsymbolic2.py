@@ -142,6 +142,38 @@ def test_batch_size_must_be_positive():
         symbolic_regression(X, y, batching=True, batch_size=0)
 
 
+def test_warmup_maxsize_default_off_and_ramp():
+    """warmup_maxsize_by defaults to 0 (off, unchanged search); a non-zero value still
+    recovers the line, stays within max_nodes, and is deterministic for a fixed seed."""
+    assert inspect.signature(symbolic_regression).parameters["warmup_maxsize_by"].default == 0.0
+
+    X = np.linspace(-8, 8, 30).reshape(-1, 1)
+    y = 2.5 * X[:, 0] + 1.7
+    common = dict(unary_ops=[], population_size=60, n_populations=1, generations=40, seed=9)
+
+    # Default vs explicit 0: identical search.
+    base = symbolic_regression(X, y, **common)
+    off = symbolic_regression(X, y, warmup_maxsize_by=0.0, **common)
+    assert base.expression == off.expression
+    assert base.loss == off.loss
+
+    # Warmup on: recovers, capped, deterministic.
+    warm = dict(common, generations=80, warmup_maxsize_by=0.5)
+    r1 = symbolic_regression(X, y, **warm)
+    r2 = symbolic_regression(X, y, **warm)
+    assert r1.expression == r2.expression
+    assert r1.loss == r2.loss
+    assert r1.loss < 1e-6
+    assert all(m["complexity"] <= 30 for m in r1.pareto_front)
+
+
+def test_warmup_maxsize_rejects_negative():
+    X = np.linspace(-3, 3, 20).reshape(-1, 1)
+    y = 2 * X[:, 0] + 1
+    with pytest.raises(ValueError):
+        symbolic_regression(X, y, warmup_maxsize_by=-0.1)
+
+
 def test_input_validation():
     X = np.zeros((5, 1))
     y = np.zeros(4)

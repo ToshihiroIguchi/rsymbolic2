@@ -104,6 +104,14 @@
 #'   \code{TRUE} (PySR \code{batch_size}; default 50). Must be a positive integer;
 #'   values larger than \code{nrow(X)} are clamped to \code{nrow(X)}. Ignored when
 #'   \code{batching} is \code{FALSE}.
+#' @param warmup_maxsize_by Fraction of the run over which the maximum expression
+#'   size grows linearly from 3 up to \code{max_nodes}, then stays there (PySR
+#'   \code{warmup_maxsize_by}). Default \code{0} disables the ramp, so the size cap
+#'   is \code{max_nodes} throughout (PySR's default). A value such as \code{0.5}
+#'   reaches \code{max_nodes} halfway through the run; this biases the early search
+#'   toward small expressions. Must be a single finite number \code{>= 0}. Only the
+#'   mutation/crossover size cap ramps; the initial population is still drawn at
+#'   \code{max_nodes}.
 #' @param simplify Algebraically simplify fitted candidates (default
 #'   \code{TRUE}).
 #' @param crossover_probability Probability of subtree crossover vs. mutation
@@ -254,6 +262,7 @@ symbolic_regression.default <- function(
     weights               = NULL,
     batching              = FALSE,
     batch_size            = 50L,
+    warmup_maxsize_by     = 0.0,
     timeout_seconds       = 0,
     verbosity             = 1L,
     ...
@@ -273,6 +282,13 @@ symbolic_regression.default <- function(
     batch_size <- as.integer(batch_size)
     if (is.na(batch_size) || batch_size < 1L)
         stop("batch_size must be a positive integer")
+
+    # PySR warmup_maxsize_by: fraction (>= 0) of the run over which the size cap ramps from
+    # 3 up to max_nodes. 0 (default) disables the ramp (fixed maxsize, PySR default).
+    warmup_maxsize_by <- as.numeric(warmup_maxsize_by)
+    if (length(warmup_maxsize_by) != 1L || is.na(warmup_maxsize_by) ||
+        !is.finite(warmup_maxsize_by) || warmup_maxsize_by < 0)
+        stop("warmup_maxsize_by must be a single finite number >= 0")
 
     # Optional per-point weights; NULL => unweighted (passed as a length-0 vector).
     if (is.null(weights)) {
@@ -322,7 +338,8 @@ symbolic_regression.default <- function(
         as.double(early_stop_condition),
         as.double(weights),
         as.logical(batching),
-        as.integer(batch_size)
+        as.integer(batch_size),
+        as.double(warmup_maxsize_by)
     )
     result$n_features <- ncol(X)
     # Display-only feature names: the column names of X, kept so print()/summary()

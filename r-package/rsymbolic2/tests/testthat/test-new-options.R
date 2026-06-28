@@ -144,3 +144,41 @@ test_that("batch_size must be a positive integer", {
   expect_error(symbolic_regression(d$X, d$y, batching = TRUE, batch_size = 0L),
                "batch_size must be a positive integer")
 })
+
+# PySR warmup_maxsize_by: the size cap ramps from 3 up to max_nodes over the warmup
+# fraction. The default 0 leaves the search unchanged; a non-zero value must still
+# converge on an easy target and stay deterministic.
+test_that("warmup_maxsize_by = 0 (default) leaves the search unchanged", {
+  d <- line_data()
+  common <- list(
+    X = d$X, y = d$y, unary_ops = character(0),
+    population_size = 60L, n_populations = 1L, generations = 40L, seed = 9L
+  )
+  base <- do.call(symbolic_regression, common)
+  off  <- do.call(symbolic_regression, c(common, warmup_maxsize_by = 0))
+  expect_equal(base$expression, off$expression)
+  expect_equal(base$loss, off$loss)
+})
+
+test_that("warmup_maxsize_by recovers the line and is deterministic", {
+  d <- line_data()
+  common <- list(
+    X = d$X, y = d$y, unary_ops = character(0),
+    population_size = 60L, n_populations = 1L, generations = 80L, seed = 9L,
+    warmup_maxsize_by = 0.5
+  )
+  r1 <- do.call(symbolic_regression, common)
+  r2 <- do.call(symbolic_regression, common)
+  expect_equal(r1$expression, r2$expression)
+  expect_equal(r1$loss, r2$loss)
+  expect_true(r1$loss < 1e-6)
+  expect_true(all(r1$pareto_front$complexity <= 30L))  # never exceeds max_nodes
+})
+
+test_that("warmup_maxsize_by rejects negative or non-finite values", {
+  d <- line_data()
+  expect_error(symbolic_regression(d$X, d$y, warmup_maxsize_by = -0.1),
+               "warmup_maxsize_by")
+  expect_error(symbolic_regression(d$X, d$y, warmup_maxsize_by = NA_real_),
+               "warmup_maxsize_by")
+})

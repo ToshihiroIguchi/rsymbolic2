@@ -75,6 +75,12 @@ if(RSYMBOLIC2_BUILD_TESTS)
     target_link_libraries(test_island_model PRIVATE rsymbolic2_bench)
     add_test(NAME island_model COMMAND test_island_model)
     set_tests_properties(island_model PROPERTIES TIMEOUT 120)
+
+    # warmup_maxsize_by: get_cur_maxsize formula + off-path regression + warmup determinism.
+    add_executable(test_warmup_maxsize tests/test_warmup_maxsize.cpp)
+    target_link_libraries(test_warmup_maxsize PRIVATE rsymbolic2_bench)
+    add_test(NAME warmup_maxsize COMMAND test_warmup_maxsize)
+    set_tests_properties(warmup_maxsize PROPERTIES TIMEOUT 60)
 endif()
 
 option(RSYMBOLIC2_BUILD_BENCHMARKS "Build the standalone benchmark executable" ON)

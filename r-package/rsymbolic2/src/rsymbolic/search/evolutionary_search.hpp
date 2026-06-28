@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -216,6 +217,18 @@ struct SearchOptions {
     // row count (PySR caps batch_size at len(X)); must be >= 1.
     std::size_t batch_size = 50;
 
+    // PySR `warmup_maxsize_by` (SR.jl get_cur_maxsize, SearchUtils.jl). When > 0, the
+    // size cap applied during evolution grows linearly from 3 up to max_nodes (= maxsize)
+    // over the first `warmup_maxsize_by` fraction of the run, then stays at max_nodes:
+    //   cur_maxsize = 3 + floor((max_nodes - 3) * f / warmup_maxsize_by)  for f <= warmup_by
+    //   cur_maxsize = max_nodes                                            otherwise
+    // where f = generations_elapsed / generations. This only caps the mutation/crossover
+    // size limit (get_cur_maxsize); the frequency histogram, the initial population and the
+    // hall of fame stay at the full max_nodes, matching SR.jl (the Population is built before
+    // any cycle, so it uses maxsize, not the warmed-up size). 0.0 = off (PySR installed
+    // default), reproducing the fixed-maxsize path byte-for-byte. See docs/42.
+    double warmup_maxsize_by = 0.0;
+
     // Wall-clock timeout. 0 = no limit (fully deterministic; default). Any value > 0
     // stops the search after approximately this many seconds. A run that times out is
     // NOT reproducible across machines — document this in user-facing roxygen.
@@ -232,6 +245,26 @@ struct SearchOptions {
     // explicitly (rsymbolic2_r.cpp / rsymbolic2_py.cpp).
     int verbosity = 0;
 };
+
+// PySR `warmup_maxsize_by` (SR.jl get_cur_maxsize, SearchUtils.jl 1.11.0). Returns the size
+// cap to apply during an epoch's evolution. When warmup is on (> 0) and the run is within its
+// warmup fraction, the cap grows linearly from 3 up to max_nodes; otherwise it is the full
+// max_nodes. `fraction_elapsed` = generations_elapsed / generations; all islands evolve in
+// lockstep, so SR.jl's per-population fraction collapses to this single value (the population
+// count cancels — docs/42). The result is clamped to [1, max_nodes] so a max_nodes < 3
+// configuration (SR.jl's start value) cannot exceed the absolute cap. Pure; exposed for unit
+// testing and used per epoch in run_evolution.
+inline int get_cur_maxsize(int max_nodes, double fraction_elapsed,
+                           double warmup_maxsize_by) {
+    int cur = max_nodes;
+    if (warmup_maxsize_by > 0.0 && fraction_elapsed <= warmup_maxsize_by) {
+        cur = 3 + static_cast<int>(std::floor(
+                      (max_nodes - 3) * fraction_elapsed / warmup_maxsize_by));
+    }
+    if (cur < 1)         cur = 1;
+    if (cur > max_nodes) cur = max_nodes;
+    return cur;
+}
 
 // The outcome of a search: the best expression found (with constants fitted) plus the
 // accuracy/complexity Pareto front.

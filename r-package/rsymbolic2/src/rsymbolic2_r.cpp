@@ -112,7 +112,8 @@ cpp11::writable::list symbolic_regression_cpp(
     double          early_stop_condition,
     cpp11::doubles  weights,
     bool            batching,
-    int             batch_size
+    int             batch_size,
+    double          warmup_maxsize_by
 ) {
     // Convert R matrix → vector<vector<double>> (row-major)
     const int n = X.nrow();
@@ -163,6 +164,8 @@ cpp11::writable::list symbolic_regression_cpp(
     // hall of fame and final result are still computed on the full data (see SearchOptions).
     opts.batching              = batching;
     opts.batch_size            = static_cast<std::size_t>(std::max(1, batch_size));
+    // PySR warmup_maxsize_by: 0 = off (fixed maxsize). Negative is rejected on the R side.
+    opts.warmup_maxsize_by     = warmup_maxsize_by;
     // max_evals arrives as a double (R has no native 64-bit int); negative/zero => off.
     opts.max_evals = max_evals > 0.0
         ? static_cast<std::size_t>(max_evals)

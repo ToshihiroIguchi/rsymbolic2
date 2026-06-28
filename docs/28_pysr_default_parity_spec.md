@@ -40,7 +40,7 @@ micro-differences), see `docs/29`.
 | `ncycles_per_iteration` | 380 | per-epoch mutation cycles (see §C) | setting |
 | `maxsize` | 30 | `max_nodes` | setting |
 | `maxdepth` | None → `maxsize` (30) | `max_depth` | setting |
-| `warmup_maxsize_by` | None → 0.0 | (size warmup; off) | setting |
+| `warmup_maxsize_by` | None → 0.0 | `warmup_maxsize_by` (size-cap ramp; off by default, mechanism implemented — docs/42) | setting |
 | `parsimony` | 0.0 | `parsimony` | setting |
 | `use_frequency` | True | (freq histogram on) | setting |
 | `use_frequency_in_tournament` | True | adaptive parsimony on | setting |

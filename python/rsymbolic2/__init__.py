@@ -212,6 +212,7 @@ def symbolic_regression(
     weights: Optional[ArrayLike] = None,
     batching: bool = False,
     batch_size: int = 50,
+    warmup_maxsize_by: float = 0.0,
     timeout_seconds: float = 0.0,
     verbosity: int = 1,
 ) -> SymbolicRegressionResult:
@@ -305,6 +306,13 @@ def symbolic_regression(
         Rows sampled per iteration when ``batching`` is True (PySR ``batch_size``).
         Must be >= 1; values larger than ``len(y)`` are clamped to ``len(y)``. Ignored
         when ``batching`` is False.
+    warmup_maxsize_by : float, default 0.0
+        Fraction of the run over which the maximum expression size grows linearly from
+        3 up to ``max_nodes``, then stays there (PySR ``warmup_maxsize_by``). 0 (default)
+        disables the ramp, so the size cap is ``max_nodes`` throughout (PySR's default).
+        E.g. 0.5 reaches ``max_nodes`` halfway through the run, biasing the early search
+        toward small expressions. Must be a finite number >= 0. Only the
+        mutation/crossover size cap ramps; the initial population is drawn at ``max_nodes``.
     timeout_seconds : float, default 0.0
         Wall-clock limit; 0 = no limit. A timed-out run is not reproducible across
         machines (only runs that finish within budget are bit-reproducible).
@@ -371,6 +379,9 @@ def symbolic_regression(
     if int(batch_size) < 1:
         raise ValueError("batch_size must be a positive integer.")
 
+    if not np.isfinite(warmup_maxsize_by) or float(warmup_maxsize_by) < 0:
+        raise ValueError("warmup_maxsize_by must be a finite number >= 0.")
+
     raw = symbolic_regression_cpp(
         X_arr,
         y_arr,
@@ -401,6 +412,7 @@ def symbolic_regression(
         weights_arr,
         bool(batching),
         int(batch_size),
+        float(warmup_maxsize_by),
     )
     if feature_names is not None and len(feature_names) != int(X_arr.shape[1]):
         feature_names = None  # shape changed (e.g. 1-D promoted); drop mismatched names

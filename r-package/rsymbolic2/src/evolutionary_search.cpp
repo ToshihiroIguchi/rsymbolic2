@@ -487,9 +487,20 @@ bool evolve_island(Island& isl,
                    double deadline_sec,
                    double y_norm,
                    std::size_t island_eval_budget,
+                   int cur_maxsize,
                    HallOfFame& hof_target) {
     const std::size_t tournament =
         opts.tournament_size == 0 ? 1 : opts.tournament_size;
+    // PySR warmup_maxsize_by: the mutation/crossover size cap for this epoch is the warmed-up
+    // cur_maxsize, not opts.space.max_nodes. A local SearchSpace carries it into mutate() (its
+    // room/can_add/can_insert filter == SR.jl condition_mutation_weights! size zeroing) and the
+    // randomize mutation (gen_random_tree over 1..cur_maxsize); the crossover size check takes
+    // cur_maxsize directly. The frequency histogram (isl.stats) and the initial population are
+    // sized by the full max_nodes elsewhere and are deliberately left untouched (docs/42). At
+    // the default warmup_maxsize_by=0 the caller passes cur_maxsize == max_nodes, so cur_space
+    // equals opts.space and the path is byte-for-byte the pre-warmup behaviour.
+    SearchSpace cur_space   = opts.space;
+    cur_space.max_nodes     = cur_maxsize;
     const double parsimony = opts.parsimony;
     const double scaling   = opts.adaptive_parsimony_scaling;
     const double tsel_p    = opts.tournament_selection_p;
@@ -578,10 +589,10 @@ bool evolve_island(Island& isl,
                 pair = subtree_crossover_pair(
                     isl.population[parent].tree,
                     isl.population[parent2].tree,
-                    isl.rng, opts.space.max_nodes);
+                    isl.rng, cur_space.max_nodes);
             } else {
                 child_tree = isl.population[parent].tree;
-                mutated = mutate(child_tree, opts.space, isl.rng, opts.const_perturb_scale,
+                mutated = mutate(child_tree, cur_space, isl.rng, opts.const_perturb_scale,
                                  opts.mutation_weights, opts.probability_negate_constant);
             }
             RSYM_PROF_END(isl.prof.mutate_sec, isl.prof.mutate_n)
@@ -936,6 +947,15 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
         const std::size_t gens =
             std::min(interval, options.generations - done);
 
+        // PySR warmup_maxsize_by: size cap for this epoch's evolution. fraction_elapsed uses
+        // the generations completed at the epoch START (done), matching SR.jl, where the first
+        // iteration sees fraction 0 (cur_maxsize = 3 when warmup is on). At the default
+        // warmup_maxsize_by=0 this is always max_nodes, so evolve_island's path is unchanged.
+        const double fraction_elapsed =
+            options.generations > 0 ? static_cast<double>(done) / options.generations : 0.0;
+        const int cur_maxsize = get_cur_maxsize(
+            options.space.max_nodes, fraction_elapsed, options.warmup_maxsize_by);
+
 #ifdef _OPENMP
         // One worker thread per island, capped at the hardware. The default
         // OpenMP team size is the core count; when that exceeds the number of
@@ -969,7 +989,7 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
                 // update the island's hall of fame directly — byte-for-byte the pre-batching
                 // behaviour.
                 evolve_island(isl, data, options, gens, t_start, has_deadline,
-                              deadline_sec, y_norm, island_budget, isl.hof);
+                              deadline_sec, y_norm, island_budget, cur_maxsize, isl.hof);
                 optimize_and_simplify_population(isl, data, options, opt_stop,
                                                  island_budget, &isl.hof);
             } else {
@@ -983,7 +1003,7 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
                 const auto batch_reg = make_batch(*data, options.batch_size, isl.batch_rng);
                 HallOfFame best_seen;
                 evolve_island(isl, batch_reg, options, gens, t_start, has_deadline,
-                              deadline_sec, y_norm, island_budget, best_seen);
+                              deadline_sec, y_norm, island_budget, cur_maxsize, best_seen);
                 const auto batch_opt = make_batch(*data, options.batch_size, isl.batch_rng);
                 optimize_and_simplify_population(isl, batch_opt, options, opt_stop,
                                                  island_budget, nullptr);

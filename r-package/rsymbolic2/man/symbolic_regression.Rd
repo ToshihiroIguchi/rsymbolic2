@@ -36,6 +36,7 @@ symbolic_regression(X, ...)
   weights = NULL,
   batching = FALSE,
   batch_size = 50L,
+  warmup_maxsize_by = 0,
   timeout_seconds = 0,
   verbosity = 1L,
   ...
@@ -214,6 +215,15 @@ For most problems fewer than ~10,000 rows are enough without batching.}
 \code{TRUE} (PySR \code{batch_size}; default 50). Must be a positive integer;
 values larger than \code{nrow(X)} are clamped to \code{nrow(X)}. Ignored when
 \code{batching} is \code{FALSE}.}
+
+\item{warmup_maxsize_by}{Fraction of the run over which the maximum expression
+size grows linearly from 3 up to \code{max_nodes}, then stays there (PySR
+\code{warmup_maxsize_by}). Default \code{0} disables the ramp, so the size cap
+is \code{max_nodes} throughout (PySR's default). A value such as \code{0.5}
+reaches \code{max_nodes} halfway through the run; this biases the early search
+toward small expressions. Must be a single finite number \code{>= 0}. Only the
+mutation/crossover size cap ramps; the initial population is still drawn at
+\code{max_nodes}.}
 
 \item{timeout_seconds}{Wall-clock time limit in seconds (default 0 = no
 limit). When positive, the search stops after approximately this many

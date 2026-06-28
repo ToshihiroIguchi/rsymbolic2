@@ -117,7 +117,8 @@ py::dict symbolic_regression_cpp(
     double                   early_stop_condition,
     py::array_t<double, py::array::c_style | py::array::forcecast> weights,
     bool                     batching,
-    int                      batch_size) {
+    int                      batch_size,
+    double                   warmup_maxsize_by) {
     // --- Marshal X (2-D) and y (1-D) ------------------------------------------------
     if (X.ndim() != 2)
         throw std::invalid_argument("X must be a 2-D array (rows = observations, "
@@ -181,6 +182,8 @@ py::dict symbolic_regression_cpp(
     // hall of fame and final result stay full-data (see SearchOptions).
     opts.batching                   = batching;
     opts.batch_size                 = static_cast<std::size_t>(std::max(1, batch_size));
+    // PySR warmup_maxsize_by: 0 = off (fixed maxsize); the Python wrapper rejects negatives.
+    opts.warmup_maxsize_by          = warmup_maxsize_by;
     // max_evals arrives as a double (mirrors the R bridge, where R has no 64-bit int);
     // negative/zero => off.
     opts.max_evals = max_evals > 0.0 ? static_cast<std::size_t>(max_evals) : 0;
