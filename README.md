@@ -303,9 +303,14 @@ result$expression     # lowest-loss formula, e.g. ((square(x0) * 2.5) - 1.3)
 result$loss           # training sum-of-squared-errors
 result$recommended    # Pareto "best" trade-off
 result$pareto_front   # data frame: complexity, loss, expression
+
+print(result)         # compact view: recommended, best, and the Pareto front
+summary(result)       # full Pareto front with a per-member score
+as.data.frame(result) # the front as a tidy data frame (cf. Python .to_pandas())
 ```
 
-**Step 4 — predict on new data.**
+**Step 4 — predict on new data.** `predict` evaluates the recommended formula by
+default (pass `expression = result$expression` for the lowest-loss one):
 
 ```r
 X_new <- matrix(c(0, 1, -2), ncol = 1)
@@ -451,8 +456,9 @@ same names). **Every default below equals PySR's documented default** — see
 
 **Result object.** Both languages return: `expression` (lowest-loss formula),
 `loss`, `complexity`, `recommended` (Pareto pick), `best_index`, and `pareto_front`
-(complexity / loss / expression). Python additionally exposes `.predict()` and
-`.to_pandas()`; R provides S3 `predict()` and `plot()` methods.
+(complexity / loss / expression). Python additionally exposes `.predict()`,
+`print(result)`, and `.to_pandas()`; R provides S3 `predict()`, `print()`,
+`summary()`, `as.data.frame()`, and `plot()` methods.
 
 ---
 

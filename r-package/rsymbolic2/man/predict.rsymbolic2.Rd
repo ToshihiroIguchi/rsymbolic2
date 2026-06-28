@@ -4,7 +4,7 @@
 \alias{predict.rsymbolic2}
 \title{Predict from a symbolic regression fit}
 \usage{
-\method{predict}{rsymbolic2}(object, newdata, ...)
+\method{predict}{rsymbolic2}(object, newdata, expression = NULL, ...)
 }
 \arguments{
 \item{object}{An object of class \code{"rsymbolic2"} returned by
@@ -14,14 +14,24 @@
 Must have \code{object$n_features} columns in the same order as the
 training matrix \code{X}.}
 
+\item{expression}{Which fitted expression to evaluate. \code{NULL} (default)
+uses \code{object$recommended} (the Pareto "best" accuracy/complexity
+trade-off chosen by \code{model_selection}). Otherwise pass an expression
+string, e.g. \code{object$expression} for the lowest-loss model or any row of
+\code{object$pareto_front$expression} for a specific Pareto member. This
+mirrors the Python interface's \code{predict(..., expression=)} and PySR's
+\code{.predict()}, which evaluate the selected model by default.}
+
 \item{...}{Ignored (present for S3 compatibility).}
 }
 \value{
 Numeric vector of predicted values, one per row of \code{newdata}.
 }
 \description{
-Evaluate the best expression returned by \code{\link{symbolic_regression}}
-on new input data.
+Evaluate a fitted expression returned by \code{\link{symbolic_regression}}
+on new input data. By default the recommended (Pareto "best") expression is
+used; see the \code{which} argument to evaluate the lowest-loss expression or
+any other member of the Pareto front.
 }
 \details{
 The expression is evaluated using R's standard arithmetic operators and math
@@ -39,7 +49,8 @@ y <- 2 * X[, 1]^2 - 1
 res <- symbolic_regression(X, y, population_size = 200L, generations = 40L,
                            seed = 1L)
 X_new <- matrix(seq(-1, 1, length.out = 5), ncol = 1)
-predict(res, X_new)
+predict(res, X_new)                                # recommended (default)
+predict(res, X_new, expression = res$expression)  # lowest-loss expression
 }
 
 }
