@@ -34,6 +34,7 @@ flowchart LR
 - [Installation](#installation)
   - [Prerequisites: a C++ toolchain](#prerequisites-a-c-toolchain)
   - [Python](#install-python)
+  - [Google Colab (no local setup)](#try-it-in-google-colab-no-local-setup)
   - [R](#install-r)
 - [Tutorial](#tutorial)
   - [Python tutorial](#python-tutorial)
@@ -141,6 +142,29 @@ python -c "import rsymbolic2; print(rsymbolic2.__version__)"
   `pip install "rsymbolic2[pandas,plot] @ git+https://github.com/ToshihiroIguchi/rsymbolic2.git#subdirectory=python"`.
 
 </details>
+
+### Try it in Google Colab (no local setup)
+
+You don't need a local C++ toolchain to try rsymbolic2 — [Google
+Colab](https://colab.research.google.com) already provides one. Paste this into a
+Colab cell; it compiles the C++ core (about 1–2 minutes the first time) and runs a
+tiny search:
+
+```python
+!pip install -q "git+https://github.com/ToshihiroIguchi/rsymbolic2.git#subdirectory=python"
+
+import numpy as np
+from rsymbolic2 import symbolic_regression
+
+X = np.linspace(-3, 3, 60).reshape(-1, 1)
+y = 2.5 * X[:, 0] ** 2 - 1.3            # the formula we hope to recover
+result = symbolic_regression(X, y, unary_ops=["square"], seed=1)
+print(result.expression)               # e.g. ((square(x0) * 2.5) - 1.3)
+```
+
+The same `pip install` works in any Jupyter environment or a plain virtualenv. For a
+thorough run use the full PySR defaults; for a quick first look lower them, e.g.
+`population_size=200, generations=60`.
 
 ### Install: R
 
