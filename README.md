@@ -5,19 +5,17 @@ C++ engine with an R interface and a Python interface. It searches the space of
 mathematical expressions with genetic programming and tunes the constants in each
 candidate with a Levenberg–Marquardt least-squares optimiser.
 
-The defaults are **matched to [PySR](https://github.com/MilesCranmer/PySR)'s
-documented defaults**, so results are directly comparable; only the *implementation*
-differs. Unlike PySR, the engine is pure C++ with **no Julia runtime** — there is no
-JIT warm-up — and the **search engine itself has no third-party C++ dependency**: the
-search and its self-contained Levenberg–Marquardt constant optimiser are plain C++/STL
-(the engine builds with just a C++17 compiler, plus OpenMP if available for
-parallelism). The language bindings use one small helper each — `Rcpp` for R, `pybind11`
-for Python.
+- **Pure C++ engine, no Julia runtime** — and therefore no JIT warm-up.
+- **Zero third-party C++ dependency in the engine** — the search and its self-contained
+  Levenberg–Marquardt constant optimiser are plain C++/STL (just a C++17 compiler, plus
+  OpenMP if available for parallelism).
+- **Defaults matched to [PySR](https://github.com/MilesCranmer/PySR)** — results are
+  directly comparable; only the *implementation* differs.
+- **Thin language bindings** — one small helper each: `Rcpp` for R, `pybind11` for Python.
 
-> rsymbolic2 is an **independent re-implementation** and is **not affiliated with,
-> endorsed by, or sponsored by PySR / SymbolicRegression.jl**. It is licensed under the
-> Apache License 2.0; see [`NOTICE`](NOTICE) for attribution. "PySR" is referenced only
-> to describe default compatibility.
+> An **independent re-implementation**, **not affiliated with or endorsed by** PySR /
+> SymbolicRegression.jl. Apache-2.0; attribution in [`NOTICE`](NOTICE). See
+> [License](#license) for details.
 
 ```mermaid
 flowchart LR
@@ -30,22 +28,48 @@ flowchart LR
 
 ## Table of contents
 
+- [Quickstart (Google Colab)](#quickstart-google-colab-no-local-setup)
 - [What is symbolic regression?](#what-is-symbolic-regression)
 - [Installation](#installation)
   - [Prerequisites: a C++ toolchain](#prerequisites-a-c-toolchain)
   - [Python](#install-python)
-  - [Google Colab (no local setup)](#try-it-in-google-colab-no-local-setup)
   - [R](#install-r)
 - [Tutorial](#tutorial)
   - [Python tutorial](#python-tutorial)
   - [R tutorial](#r-tutorial)
 - [Worked examples](#worked-examples)
-- [Function reference (parameters)](#function-reference-parameters)
 - [Operators](#operators)
+- [Function reference (parameters)](#function-reference-parameters)
 - [How the algorithm works](#how-the-algorithm-works)
 - [PySR default parity](#pysr-default-parity)
 - [References](#references)
 - [License](#license)
+
+---
+
+## Quickstart (Google Colab, no local setup)
+
+You don't need a local C++ toolchain to try rsymbolic2 — [Google
+Colab](https://colab.research.google.com) already provides one. Paste this into a
+Colab cell (or any Jupyter environment); it compiles the C++ core (about 1–2 minutes
+the first time) and runs a tiny search:
+
+```python
+!pip install -q "git+https://github.com/ToshihiroIguchi/rsymbolic2.git#subdirectory=python"
+
+import numpy as np
+from rsymbolic2 import symbolic_regression
+
+X = np.linspace(-3, 3, 60).reshape(-1, 1)
+y = 2.5 * X[:, 0] ** 2 - 1.3            # the formula we hope to recover
+result = symbolic_regression(X, y, unary_ops=["square"], seed=1)
+print(result.expression)               # e.g. ((square(x0) * 2.5) - 1.3)
+```
+
+The same `pip install` works in a plain virtualenv. For a thorough run use the full
+PySR defaults; for a quick first look lower them, e.g.
+`population_size=200, generations=60`. For local installation (Python or R) see
+[Installation](#installation).
 
 ---
 
@@ -69,7 +93,8 @@ constants inside each candidate. See [How the algorithm works](#how-the-algorith
 
 rsymbolic2 is currently installed **from source** (a clone of this repository). Both
 the Python and R packages compile the same C++ core, so they share one prerequisite: a
-working C++17 compiler.
+working C++17 compiler. To try it without any local setup, use
+[Google Colab](#quickstart-google-colab-no-local-setup) instead.
 
 ### Prerequisites: a C++ toolchain
 
@@ -142,29 +167,6 @@ python -c "import rsymbolic2; print(rsymbolic2.__version__)"
   `pip install "rsymbolic2[pandas,plot] @ git+https://github.com/ToshihiroIguchi/rsymbolic2.git#subdirectory=python"`.
 
 </details>
-
-### Try it in Google Colab (no local setup)
-
-You don't need a local C++ toolchain to try rsymbolic2 — [Google
-Colab](https://colab.research.google.com) already provides one. Paste this into a
-Colab cell; it compiles the C++ core (about 1–2 minutes the first time) and runs a
-tiny search:
-
-```python
-!pip install -q "git+https://github.com/ToshihiroIguchi/rsymbolic2.git#subdirectory=python"
-
-import numpy as np
-from rsymbolic2 import symbolic_regression
-
-X = np.linspace(-3, 3, 60).reshape(-1, 1)
-y = 2.5 * X[:, 0] ** 2 - 1.3            # the formula we hope to recover
-result = symbolic_regression(X, y, unary_ops=["square"], seed=1)
-print(result.expression)               # e.g. ((square(x0) * 2.5) - 1.3)
-```
-
-The same `pip install` works in any Jupyter environment or a plain virtualenv. For a
-thorough run use the full PySR defaults; for a quick first look lower them, e.g.
-`population_size=200, generations=60`.
 
 ### Install: R
 
@@ -390,6 +392,28 @@ print(result.expression)
 
 ---
 
+## Operators
+
+Operators are the **one input you choose per problem** — they define the search space.
+They are *not* a tuning knob and PySR ships no default operator set either, so for a
+fair comparison the same operator set is given to both tools.
+
+- **Binary:** `add` (`+`), `sub` (`−`), `mul` (`×`), `div` (`÷`), `pow` (`^`).
+- **Unary:** `neg` (`−x`), `exp`, `log`, `sin`, `cos`, `sqrt`, `tanh`, `abs`,
+  `square` (`x²` as a single cheap node).
+
+Two operators are **protected** so that an invalid intermediate value cannot poison the
+least-squares solver with `NaN` (matching SymbolicRegression.jl's `safe_*` semantics):
+
+- `sqrt(x)` returns `0` for `x < 0`.
+- `pow(x, y)` returns `0` when `x ≤ 0` and the result would be undefined.
+
+> Note: during **prediction**, `pow` uses the host language's ordinary power operator
+> (`**` / `^`), which can return `NaN` for a negative base with a fractional exponent.
+> This only matters if your data domain includes such inputs.
+
+---
+
 ## Function reference (parameters)
 
 The Python `symbolic_regression(...)` and R `symbolic_regression(...)` take the same
@@ -429,28 +453,6 @@ same names). **Every default below equals PySR's documented default** — see
 `loss`, `complexity`, `recommended` (Pareto pick), `best_index`, and `pareto_front`
 (complexity / loss / expression). Python additionally exposes `.predict()` and
 `.to_pandas()`; R provides S3 `predict()` and `plot()` methods.
-
----
-
-## Operators
-
-Operators are the **one input you choose per problem** — they define the search space.
-They are *not* a tuning knob and PySR ships no default operator set either, so for a
-fair comparison the same operator set is given to both tools.
-
-- **Binary:** `add` (`+`), `sub` (`−`), `mul` (`×`), `div` (`÷`), `pow` (`^`).
-- **Unary:** `neg` (`−x`), `exp`, `log`, `sin`, `cos`, `sqrt`, `tanh`, `abs`,
-  `square` (`x²` as a single cheap node).
-
-Two operators are **protected** so that an invalid intermediate value cannot poison the
-least-squares solver with `NaN` (matching SymbolicRegression.jl's `safe_*` semantics):
-
-- `sqrt(x)` returns `0` for `x < 0`.
-- `pow(x, y)` returns `0` when `x ≤ 0` and the result would be undefined.
-
-> Note: during **prediction**, `pow` uses the host language's ordinary power operator
-> (`**` / `^`), which can return `NaN` for a negative base with a fractional exponent.
-> This only matters if your data domain includes such inputs.
 
 ---
 
@@ -547,12 +549,10 @@ dominated ones discarded. From this front, `model_selection` chooses what to rec
 
 The full front is always returned so you can apply your own judgement.
 
-### Differences from PySR (implementation only)
-
-Same *search and defaults*, different *engine*: C++ with no Julia runtime (no JIT
-warm-up); a self-implemented LM constant optimiser instead of BFGS; Float64 throughout;
-and OpenMP island parallelism. These change *how* a result is computed, never *which*
-settings define the search. The full design rationale lives in [`docs/`](docs/).
+> **Implementation vs. PySR.** Same *search and defaults*, different *engine*. The
+> allowed implementation divergences are listed in
+> [PySR default parity](#pysr-default-parity); the full design rationale lives in
+> [`docs/`](docs/).
 
 ---
 
@@ -566,10 +566,11 @@ mechanisms (frequency-adaptive parsimony normalisation, cost formula, mutation-w
 set, tournament, migration), and the rationale are documented in
 [`docs/28_pysr_default_parity_spec.md`](docs/28_pysr_default_parity_spec.md).
 
-Allowed *implementation* divergences (these change *how*, not *what*): the C++ core with
-no Julia runtime; the constant optimiser (self-LM vs. PySR's BFGS); Float64 vs. PySR's
-`precision=32`; and the parallelism mechanism / RNG stream. Operators are the shared
-problem input, given identically to both tools, not a default to copy.
+Allowed *implementation* divergences (these change *how* a result is computed, never
+*which* settings define the search): the C++ core with no Julia runtime (no JIT
+warm-up); the constant optimiser (self-LM vs. PySR's BFGS); Float64 throughout vs.
+PySR's `precision=32`; and the parallelism mechanism / RNG stream. Operators are the
+shared problem input, given identically to both tools, not a default to copy.
 
 ---
 
