@@ -3,7 +3,7 @@
 # -I. makes `#include "rsymbolic/..."` resolve against src/rsymbolic/ (the
 # bundled core headers). The library has no third-party C++ dependency: the
 # default self-LM constant optimizer is pure C++/STL, so no Eigen (and no
-# RcppEigen LinkingTo) is required.
+# LinkingTo for a linear-algebra package) is required.
 #
 # SHLIB_OPENMP_CXXFLAGS expands to -fopenmp on toolchains that support it and
 # to nothing on those that don't (e.g. macOS CRAN builds), giving a correct
