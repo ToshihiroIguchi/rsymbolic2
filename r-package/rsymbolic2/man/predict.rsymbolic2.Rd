@@ -10,9 +10,13 @@
 \item{object}{An object of class \code{"rsymbolic2"} returned by
 \code{\link{symbolic_regression}}.}
 
-\item{newdata}{Numeric matrix (or coercible to one) of new input features.
-Must have \code{object$n_features} columns in the same order as the
-training matrix \code{X}.}
+\item{newdata}{New input features. For a model fitted via the matrix
+interface, a numeric matrix (or coercible to one) with \code{object$n_features}
+columns in the same order as the training matrix \code{X}. For a model fitted
+via the \code{\link{symbolic_regression}} formula interface, a
+\code{data.frame} containing the predictor columns named in the formula; they
+are selected by name in the fitted order, so column order in \code{newdata}
+does not matter.}
 
 \item{expression}{Which fitted expression to evaluate. \code{NULL} (default)
 uses \code{object$recommended} (the Pareto "best" accuracy/complexity

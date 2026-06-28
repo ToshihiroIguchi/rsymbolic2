@@ -2,9 +2,13 @@
 % Please edit documentation in R/symbolic_regression.R
 \name{symbolic_regression}
 \alias{symbolic_regression}
+\alias{symbolic_regression.default}
+\alias{symbolic_regression.formula}
 \title{Symbolic Regression}
 \usage{
-symbolic_regression(
+symbolic_regression(X, ...)
+
+\method{symbolic_regression}{default}(
   X,
   y,
   population_size = 27L,
@@ -31,12 +35,20 @@ symbolic_regression(
   model_selection = c("best", "accuracy", "score"),
   weights = NULL,
   timeout_seconds = 0,
-  verbosity = 1L
+  verbosity = 1L,
+  ...
 )
+
+\method{symbolic_regression}{formula}(formula, data, ...)
 }
 \arguments{
 \item{X}{Numeric matrix of input features (rows = observations, columns =
-features). A numeric vector is treated as a single-column matrix.}
+features). A numeric vector is treated as a single-column matrix. Passing a
+\code{formula} as the first argument dispatches to the formula method.}
+
+\item{...}{For the generic and the formula method, further arguments (such as
+\code{population_size}, \code{seed}, \code{weights}) passed on to the default
+method; ignored by the default method itself.}
 
 \item{y}{Numeric vector of target values; \code{length(y)} must equal
 \code{nrow(X)}.}
@@ -200,6 +212,13 @@ emitted from the C++ core via \code{stderr}, so it cannot be captured with
 R's \code{sink()}/\code{capture.output()}; redirect the process \code{stderr}
 at launch to log it. The rendering (a compact one-liner) differs from PySR's
 live table; only the on/off default is matched.}
+
+\item{formula}{A two-sided formula such as \code{y ~ x1 + x2} or \code{y ~ .}
+naming the response and the predictor columns in \code{data}. Predictors
+must be bare variables (see Details).}
+
+\item{data}{A data frame (or environment) in which to evaluate the variables
+referenced by \code{formula}.}
 }
 \value{
 A list of class \code{"rsymbolic2"} with elements:
@@ -227,6 +246,18 @@ A list of class \code{"rsymbolic2"} with elements:
 Discover a mathematical expression that fits the data using genetic
 programming with Levenberg-Marquardt constant optimisation.
 }
+\details{
+\code{symbolic_regression} is generic. The default method takes a feature
+matrix \code{X} and target vector \code{y}; a \code{\link[stats]{formula}}
+method takes \code{formula} and \code{data} and is the idiomatic R entry
+point. The formula method only accepts \emph{bare variables} on the
+right-hand side: transformations (\code{log(x)}, \code{I(x^2)}), interactions
+(\code{a:b}, \code{a*b}), and factor predictors are rejected, because
+discovering such structure is the job of the search itself. An intercept term
+(the implicit \code{+1}, or an explicit \code{-1}/\code{+0} to drop it) has no
+effect: no design matrix is built and the constant offset, if any, is found by
+the search.
+}
 \examples{
 \donttest{
 # Single-variable linear: y = 2.5*x + 1.7
@@ -236,6 +267,13 @@ res <- symbolic_regression(X, y, unary_ops = character(0),
                            population_size = 200L, generations = 40L,
                            seed = 42L)
 cat(res$expression, "\n")
+
+# Same fit through the formula interface
+df <- data.frame(z = X[, 1], y = y)
+res2 <- symbolic_regression(y ~ z, data = df, unary_ops = character(0),
+                            population_size = 200L, generations = 40L,
+                            seed = 42L)
+cat(res2$expression, "\n")
 }
 
 }

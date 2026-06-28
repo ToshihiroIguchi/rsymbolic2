@@ -19,9 +19,13 @@
 #'
 #' @param object An object of class \code{"rsymbolic2"} returned by
 #'   \code{\link{symbolic_regression}}.
-#' @param newdata Numeric matrix (or coercible to one) of new input features.
-#'   Must have \code{object$n_features} columns in the same order as the
-#'   training matrix \code{X}.
+#' @param newdata New input features. For a model fitted via the matrix
+#'   interface, a numeric matrix (or coercible to one) with \code{object$n_features}
+#'   columns in the same order as the training matrix \code{X}. For a model fitted
+#'   via the \code{\link{symbolic_regression}} formula interface, a
+#'   \code{data.frame} containing the predictor columns named in the formula; they
+#'   are selected by name in the fitted order, so column order in \code{newdata}
+#'   does not matter.
 #' @param expression Which fitted expression to evaluate. \code{NULL} (default)
 #'   uses \code{object$recommended} (the Pareto "best" accuracy/complexity
 #'   trade-off chosen by \code{model_selection}). Otherwise pass an expression
@@ -46,7 +50,15 @@
 #'
 #' @export
 predict.rsymbolic2 <- function(object, newdata, expression = NULL, ...) {
-    X <- as.matrix(newdata)
+    # A formula-fitted model carries `terms`: use them to pull the predictor
+    # columns out of a data.frame newdata by name, in the fitted order (so the
+    # caller's column order is irrelevant). Otherwise treat newdata as a matrix in
+    # column order, preserving the matrix-interface behaviour.
+    if (is.data.frame(newdata) && !is.null(object$terms)) {
+        X <- as.matrix(stats::model.frame(object$terms, newdata))
+    } else {
+        X <- as.matrix(newdata)
+    }
     p <- object$n_features
     if (is.null(p)) {
         stop("object$n_features is missing. Re-fit using the current version of symbolic_regression().")

@@ -7,10 +7,30 @@
 #' Discover a mathematical expression that fits the data using genetic
 #' programming with Levenberg-Marquardt constant optimisation.
 #'
+#' \code{symbolic_regression} is generic. The default method takes a feature
+#' matrix \code{X} and target vector \code{y}; a \code{\link[stats]{formula}}
+#' method takes \code{formula} and \code{data} and is the idiomatic R entry
+#' point. The formula method only accepts \emph{bare variables} on the
+#' right-hand side: transformations (\code{log(x)}, \code{I(x^2)}), interactions
+#' (\code{a:b}, \code{a*b}), and factor predictors are rejected, because
+#' discovering such structure is the job of the search itself. An intercept term
+#' (the implicit \code{+1}, or an explicit \code{-1}/\code{+0} to drop it) has no
+#' effect: no design matrix is built and the constant offset, if any, is found by
+#' the search.
+#'
 #' @param X Numeric matrix of input features (rows = observations, columns =
-#'   features). A numeric vector is treated as a single-column matrix.
+#'   features). A numeric vector is treated as a single-column matrix. Passing a
+#'   \code{formula} as the first argument dispatches to the formula method.
 #' @param y Numeric vector of target values; \code{length(y)} must equal
 #'   \code{nrow(X)}.
+#' @param formula A two-sided formula such as \code{y ~ x1 + x2} or \code{y ~ .}
+#'   naming the response and the predictor columns in \code{data}. Predictors
+#'   must be bare variables (see Details).
+#' @param data A data frame (or environment) in which to evaluate the variables
+#'   referenced by \code{formula}.
+#' @param ... For the generic and the formula method, further arguments (such as
+#'   \code{population_size}, \code{seed}, \code{weights}) passed on to the default
+#'   method; ignored by the default method itself.
 #' @param population_size Number of candidate expressions kept in each island
 #'   population (default 27, PySR \code{population_size}).
 #' @param n_populations Number of independent island populations to evolve in
@@ -177,10 +197,23 @@
 #'                            population_size = 200L, generations = 40L,
 #'                            seed = 42L)
 #' cat(res$expression, "\n")
+#'
+#' # Same fit through the formula interface
+#' df <- data.frame(z = X[, 1], y = y)
+#' res2 <- symbolic_regression(y ~ z, data = df, unary_ops = character(0),
+#'                             population_size = 200L, generations = 40L,
+#'                             seed = 42L)
+#' cat(res2$expression, "\n")
 #' }
 #'
 #' @export
-symbolic_regression <- function(
+symbolic_regression <- function(X, ...) {
+    UseMethod("symbolic_regression")
+}
+
+#' @rdname symbolic_regression
+#' @export
+symbolic_regression.default <- function(
     X,
     y,
     population_size       = 27L,
@@ -207,7 +240,8 @@ symbolic_regression <- function(
     model_selection       = c("best", "accuracy", "score"),
     weights               = NULL,
     timeout_seconds       = 0,
-    verbosity             = 1L
+    verbosity             = 1L,
+    ...
 ) {
     X <- as.matrix(X)
     y <- as.numeric(y)
@@ -273,4 +307,56 @@ symbolic_regression <- function(
     # into the evaluable expression. NULL when X carries no column names.
     result$feature_names <- colnames(X)
     result
+}
+
+#' @rdname symbolic_regression
+#' @export
+symbolic_regression.formula <- function(formula, data, ...) {
+    if (missing(data)) data <- environment(formula)
+
+    # terms() with `data` expands a `.` RHS to the data's columns and records the
+    # response position and per-term interaction order. We deliberately do NOT use
+    # model.matrix(): that would add an intercept column, evaluate transformations
+    # like log(x)/I(x^2), expand interactions, and dummy-code factors -- all of
+    # which fight symbolic regression's job of discovering that structure.
+    tt <- stats::terms(formula, data = data)
+
+    if (attr(tt, "response") == 0L)
+        stop("formula must have a response on the left-hand side, e.g. y ~ x1 + x2")
+
+    if (any(attr(tt, "order") > 1L))
+        stop("interaction terms (e.g. a:b, a*b) are not supported; ",
+             "rsymbolic2 discovers products itself, so list bare variables only")
+
+    # Each predictor term must be a bare variable (a symbol). A call such as
+    # log(x), I(x^2), or poly(x, 2) is rejected: the search is meant to discover
+    # the transformation, not have it fixed in advance.
+    labels <- attr(tt, "term.labels")
+    is_bare <- vapply(labels, function(l) is.name(str2lang(l)), logical(1))
+    if (!all(is_bare))
+        stop("predictor term(s) must be bare variables, got: ",
+             paste(labels[!is_bare], collapse = ", "),
+             ". rsymbolic2 discovers transformations itself; ",
+             "pass a pre-transformed column if a fixed transform is intended.")
+
+    mf   <- stats::model.frame(tt, data)
+    resp <- attr(tt, "response")
+    y     <- as.numeric(stats::model.response(mf))
+    preds <- mf[-resp]
+
+    nonnum <- !vapply(preds, is.numeric, logical(1))
+    if (any(nonnum))
+        stop("non-numeric predictor(s): ", paste(names(preds)[nonnum], collapse = ", "),
+             ". rsymbolic2 requires numeric features; ",
+             "convert factors/characters to numeric columns first.")
+
+    X <- as.matrix(preds)
+
+    res <- symbolic_regression.default(X = X, y = y, ...)
+    # Store the response-free terms so predict() can pull the right columns (by
+    # name, in the fitted order) out of a data.frame newdata; keep the formula for
+    # display/inspection.
+    res$terms   <- stats::delete.response(tt)
+    res$formula <- formula
+    res
 }

@@ -317,6 +317,22 @@ X_new <- matrix(c(0, 1, -2), ncol = 1)
 predict(result, X_new)         # ≈ c(-1.3, 1.2, 8.7)
 ```
 
+**Formula interface (optional).** Instead of a matrix and vector you can fit from a
+data frame with an R formula, the idiomatic `lm()`-style call:
+
+```r
+df  <- data.frame(x = seq(-3, 3, length.out = 60))
+df$y <- 2.5 * df$x^2 - 1.3
+result <- symbolic_regression(y ~ x, data = df,           # or y ~ . for all columns
+                              unary_ops = c("square"), seed = 1L)
+predict(result, df)            # newdata is a data.frame; columns matched by name
+```
+
+Only bare variables are allowed on the right-hand side: transformations
+(`log(x)`, `I(x^2)`), interactions (`a:b`, `a*b`), and factor columns are rejected,
+because discovering that structure is the search's job. An intercept term has no
+effect — the constant offset, if any, is found by the search.
+
 **Step 5 (optional) — plot the Pareto front** (requires ggplot2):
 
 ```r
