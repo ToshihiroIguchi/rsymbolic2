@@ -1,0 +1,42 @@
+[build-system]
+requires = ["scikit-build-core>=0.8", "pybind11>=2.11"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "rsymbolic2"
+version = "0.1.0"
+description = "Native symbolic regression (C++ core) with defaults matched to PySR (independent, unaffiliated)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "Toshihiro Iguchi", email = "toshihiro.iguchi.mail@gmail.com" },
+]
+keywords = ["symbolic regression", "genetic programming", "machine learning"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: C++",
+    "License :: OSI Approved :: Apache Software License",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = ["numpy>=1.20"]
+
+[project.optional-dependencies]
+# Extras used only by examples / convenience helpers, never by the core search.
+pandas = ["pandas>=1.0"]
+plot = ["matplotlib>=3.3"]
+test = ["pytest>=7.0"]
+
+[project.urls]
+Homepage = "https://github.com/ToshihiroIguchi/rsymbolic2"
+Issues = "https://github.com/ToshihiroIguchi/rsymbolic2/issues"
+
+[tool.scikit-build]
+# The Python package lives next to this file; the compiled _core extension is
+# installed into it by CMake (see CMakeLists.txt).
+wheel.packages = ["rsymbolic2"]
+# Ship the Apache-2.0 license text and the attribution NOTICE in the wheel.
+wheel.license-files = ["LICENSE", "NOTICE"]
+cmake.version = ">=3.20"
+minimum-version = "0.8"

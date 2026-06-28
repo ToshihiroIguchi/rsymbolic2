@@ -1,0 +1,4 @@
+# R CMD check artifacts
+*.Rcheck/
+# Built tarballs
+*.tar.gz

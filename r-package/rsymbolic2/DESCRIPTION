@@ -1,0 +1,25 @@
+Package: rsymbolic2
+Type: Package
+Title: Symbolic Regression via Genetic Programming
+Version: 0.1.0
+Authors@R: person("Toshihiro", "Iguchi", role = c("aut", "cre"),
+                  email = "toshihiro.iguchi.mail@gmail.com")
+Description: Discovers mathematical expressions that fit data using a
+    steady-state genetic programming algorithm with Levenberg-Marquardt
+    constant optimization. The search engine is implemented in C++ and
+    exposed through a single R function. The default configuration and
+    search behaviour are matched to the documented defaults of 'PySR'
+    (Cranmer, 2023, <doi:10.48550/arXiv.2305.01582>) and
+    'SymbolicRegression.jl'; this
+    package is an independent re-implementation and is not affiliated with
+    or endorsed by those projects. See the NOTICE file for attribution.
+License: Apache License 2.0
+Encoding: UTF-8
+URL: https://github.com/ToshihiroIguchi/rsymbolic2
+BugReports: https://github.com/ToshihiroIguchi/rsymbolic2/issues
+Depends: R (>= 4.2.0)
+Imports: Rcpp
+LinkingTo: Rcpp
+Suggests: testthat (>= 3.0.0), ggplot2
+Config/testthat/edition: 3
+RoxygenNote: 8.0.0

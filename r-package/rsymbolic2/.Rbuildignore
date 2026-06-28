@@ -1,0 +1,8 @@
+^rsymbolic2\.Rcheck$
+^rsymbolic2_.*\.tar\.gz$
+^cran-comments\.md$
+^src/.*\.o$
+^src/.*\.dll$
+^src/.*\.so$
+^\.git$
+^\.gitignore$

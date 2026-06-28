@@ -1,0 +1,43 @@
+rsymbolic2
+Copyright 2026 Toshihiro Iguchi
+
+This product includes software developed by Toshihiro Iguchi.
+Licensed under the Apache License, Version 2.0 (see the LICENSE file).
+
+-------------------------------------------------------------------------------
+Attribution for derived design (Apache License 2.0, Section 4)
+-------------------------------------------------------------------------------
+
+rsymbolic2 is an independent re-implementation in C++. Its default
+configuration, search behaviour, and several internal mechanisms are derived
+from, and were developed by closely studying, the following projects, both of
+which are licensed under the Apache License, Version 2.0:
+
+  * PySR
+    Copyright 2020 Miles Cranmer
+    https://github.com/MilesCranmer/PySR
+
+  * SymbolicRegression.jl
+    Copyright Miles Cranmer and the SymbolicRegression.jl contributors
+    https://github.com/MilesCranmer/SymbolicRegression.jl
+
+The above copyright notices are reproduced here pursuant to Section 4(c) of the
+Apache License, Version 2.0. The default values and the search/mutation
+mechanisms in rsymbolic2 are deliberately matched to PySR's documented
+defaults; the implementation (a Julia-free C++ core, a self-contained
+Levenberg-Marquardt constant optimiser, and OpenMP island parallelism) is the
+original work of this project.
+
+rsymbolic2 is NOT affiliated with, endorsed by, or sponsored by PySR,
+SymbolicRegression.jl, or their authors. "PySR" is used only nominatively to
+describe interoperability and default compatibility.
+
+-------------------------------------------------------------------------------
+Third-party components used to build or bind rsymbolic2
+-------------------------------------------------------------------------------
+
+  * Rcpp (R bindings only) - GPL (>= 2)        https://www.rcpp.org
+  * pybind11 (Python bindings only) - BSD-3    https://github.com/pybind/pybind11
+  * OpenMP runtime (optional, for parallelism) https://www.openmp.org
+
+The symbolic-regression engine itself depends only on the C++ standard library.
