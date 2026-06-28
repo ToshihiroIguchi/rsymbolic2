@@ -78,6 +78,22 @@ test_that("max_evals is deterministic and bounds the search", {
   expect_true(full$loss <= cap1$loss + 1e-12)
 })
 
+test_that("verbosity does not affect the search result (display-only setting)", {
+  d <- line_data()
+  common <- list(
+    X = d$X, y = d$y, unary_ops = character(0),
+    population_size = 60L, n_populations = 1L, generations = 40L, seed = 5L
+  )
+  # verbosity only controls the per-epoch stderr log; for a fixed seed the
+  # discovered expression, loss, and Pareto front must be identical at 0 and 1.
+  res_silent  <- do.call(symbolic_regression, c(common, verbosity = 0L))
+  res_verbose <- do.call(symbolic_regression, c(common, verbosity = 1L))
+
+  expect_equal(res_silent$expression, res_verbose$expression)
+  expect_equal(res_silent$loss, res_verbose$loss)
+  expect_equal(res_silent$pareto_front, res_verbose$pareto_front)
+})
+
 test_that("early_stop_condition halts once the loss crosses the threshold", {
   d <- line_data()
   common <- list(

@@ -28,6 +28,19 @@ def test_defaults_match_pysr():
     assert d["fraction_replaced_hof"] == 0.0614
     assert d["parsimony"] == 0.0
     assert d["model_selection"] == "best"
+    assert d["verbosity"] == 1  # PySR installed default (verbosity=1 / progress=True)
+
+
+def test_verbosity_does_not_change_result():
+    """verbosity is display-only: for a fixed seed the result is identical at 0 and 1."""
+    X = np.linspace(-5, 5, 30).reshape(-1, 1)
+    y = 2.5 * X[:, 0] + 1.7
+    common = dict(unary_ops=[], population_size=60, generations=40, seed=5)
+    res_silent = symbolic_regression(X, y, verbosity=0, **common)
+    res_verbose = symbolic_regression(X, y, verbosity=1, **common)
+    assert res_silent.expression == res_verbose.expression
+    assert res_silent.loss == res_verbose.loss
+    assert res_silent.pareto_front == res_verbose.pareto_front
 
 
 def test_linear_recovery_and_predict():

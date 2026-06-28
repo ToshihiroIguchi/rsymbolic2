@@ -31,7 +31,7 @@ symbolic_regression(
   model_selection = c("best", "accuracy", "score"),
   weights = NULL,
   timeout_seconds = 0,
-  verbosity = 0L
+  verbosity = 1L
 )
 }
 \arguments{
@@ -192,10 +192,14 @@ seconds and returns the best expression found so far. \strong{Note:} a run
 that hits the timeout is not reproducible across machines; only runs that
 complete within the budget are bit-reproducible for a fixed seed.}
 
-\item{verbosity}{Integer verbosity level (default 0 = silent). Set to 1 to
-print one diagnostic line per epoch on stderr showing elapsed time, best
-loss, and population shape (median/max tree size and constant count). Useful
-for diagnosing slow runs.}
+\item{verbosity}{Integer verbosity level. Default 1 matches PySR's default
+(\code{verbosity=1}), printing one diagnostic line per epoch on stderr
+showing elapsed time, best loss, and population shape (median/max tree size
+and constant count); set to 0 for a silent run. \strong{Note:} the line is
+emitted from the C++ core via \code{stderr}, so it cannot be captured with
+R's \code{sink()}/\code{capture.output()}; redirect the process \code{stderr}
+at launch to log it. The rendering (a compact one-liner) differs from PySR's
+live table; only the on/off default is matched.}
 }
 \value{
 A list of class \code{"rsymbolic2"} with elements:

@@ -206,6 +206,12 @@ struct SearchOptions {
     // Verbosity. 0 = silent. 1 = one diagnostic line per epoch on stderr:
     //   [epoch N  t=Xs] best=Y  size med/max=A/B  nconst med/max=C/D
     // Higher values reserved for future use (treated same as 1).
+    // This core default is intentionally 0 (silent) so standalone benchmarks /
+    // tests stay quiet; the R and Python wrappers override it to 1 to match
+    // PySR's installed verbosity=1 default (the public-API default that the
+    // parity rule governs). Keeping the core silent while the public API
+    // defaults to 1 is the deliberate asymmetry — wrappers always pass the value
+    // explicitly (rsymbolic2_r.cpp / rsymbolic2_py.cpp).
     int verbosity = 0;
 };
 

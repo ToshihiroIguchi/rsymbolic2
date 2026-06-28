@@ -452,7 +452,7 @@ same names). **Every default below equals PySR's documented default** — see
 | `simplify` | `True` | Algebraically simplify candidates. |
 | `seed` | `0` | Random seed (`0` = nondeterministic). |
 | `timeout_seconds` | `0.0` | Wall-clock limit, `0` = none. |
-| `verbosity` | `0` | `1` prints one line per epoch to stderr. |
+| `verbosity` | `1` | Matches PySR's default; prints one line per epoch to stderr. `0` = silent. |
 
 **Result object.** Both languages return: `expression` (lowest-loss formula),
 `loss`, `complexity`, `recommended` (Pareto pick), `best_index`, and `pareto_front`

@@ -191,7 +191,7 @@ def symbolic_regression(
     model_selection: str = "best",
     weights: Optional[ArrayLike] = None,
     timeout_seconds: float = 0.0,
-    verbosity: int = 0,
+    verbosity: int = 1,
 ) -> SymbolicRegressionResult:
     """Discover a mathematical expression that fits ``y`` from ``X``.
 
@@ -273,8 +273,12 @@ def symbolic_regression(
     timeout_seconds : float, default 0.0
         Wall-clock limit; 0 = no limit. A timed-out run is not reproducible across
         machines (only runs that finish within budget are bit-reproducible).
-    verbosity : int, default 0
-        0 = silent; 1 prints one diagnostic line per epoch to stderr.
+    verbosity : int, default 1
+        Default 1 matches PySR's default (``verbosity=1``), printing one
+        diagnostic line per epoch to stderr; 0 = silent. The line is emitted by
+        the C++ core to ``stderr``; redirect the process ``stderr`` to log it.
+        The compact one-liner rendering differs from PySR's live table; only the
+        on/off default is matched.
 
     Returns
     -------
