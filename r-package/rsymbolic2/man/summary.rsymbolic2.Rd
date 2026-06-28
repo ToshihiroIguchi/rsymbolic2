@@ -26,6 +26,8 @@ An object of class \code{"summary.rsymbolic2"}: a list with elements
       \eqn{(\log L_{i-1} - \log L_i) / (c_i - c_{i-1})}; \code{NA} for the
       simplest member.}
     \item{n_features}{Number of input features used during fitting.}
+    \item{feature_names}{Column names of \code{X} (display-only), or \code{NULL}
+      when \code{X} had none.}
     \item{n_members}{Number of Pareto-front members.}
     \item{best_index}{Row of \code{pareto} flagged as \code{recommended}.}
     \item{recommended_expression, best_expression}{The recommended (Pareto

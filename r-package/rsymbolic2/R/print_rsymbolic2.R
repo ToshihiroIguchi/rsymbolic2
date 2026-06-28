@@ -27,6 +27,16 @@ format_pareto_lines <- function(df, best_index, indent = "  ", max_rows = 20L) {
       rows[(n - tail_n + 1L):n])
 }
 
+# Build "x0 = name0, x1 = name1" legend strings mapping the 0-based variables used
+# in the expression strings to the column names of X. Returns NULL when no names are
+# available (or they don't match n_features), in which case callers print no legend
+# and the expressions read in their x0-based form. Shared by print() and summary().
+format_feature_legend <- function(feature_names, n_features = NULL) {
+    if (is.null(feature_names) || length(feature_names) == 0L) return(NULL)
+    if (!is.null(n_features) && length(feature_names) != n_features) return(NULL)
+    paste0("x", seq_along(feature_names) - 1L, " = ", feature_names)
+}
+
 #' Print a symbolic regression fit
 #'
 #' Compactly summarises an \code{\link{symbolic_regression}} result: the
@@ -55,6 +65,9 @@ print.rsymbolic2 <- function(x, ...) {
     cat(sprintf("<rsymbolic2: %d Pareto member%s, n_features=%s>\n",
                 nrow(df), if (nrow(df) == 1L) "" else "s",
                 if (is.null(x$n_features)) "?" else x$n_features))
+    legend <- format_feature_legend(x$feature_names, x$n_features)
+    if (!is.null(legend))
+        cat("  variables:          ", paste(legend, collapse = ", "), "\n", sep = "")
     cat("  recommended:        ", x$recommended, "\n", sep = "")
     cat(sprintf("  best (lowest loss): %s  (loss=%s, complexity=%s)\n",
                 x$expression, fmt_g(x$loss), x$complexity))

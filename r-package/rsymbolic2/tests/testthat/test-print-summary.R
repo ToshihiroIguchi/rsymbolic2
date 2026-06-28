@@ -82,6 +82,40 @@ test_that("as.data.frame.rsymbolic2 returns the front with a single recommended 
   expect_false("score" %in% names(df2))
 })
 
+test_that("feature names are kept and shown as a legend by print/summary", {
+  X <- cbind(seq(-3, 3, length.out = 20), seq(0, 1, length.out = 20))
+  colnames(X) <- c("speed", "mass")
+  y <- 2 * X[, 1] + X[, 2]
+  res <- symbolic_regression(
+    X, y,
+    unary_ops       = character(0),
+    population_size = 100L,
+    generations     = 15L,
+    seed            = 6L
+  )
+  expect_identical(res$feature_names, c("speed", "mass"))
+  # Legend maps the 0-based variables to the column names.
+  expect_output(print(res), "x0 = speed, x1 = mass")
+  expect_output(print(summary(res)), "x0 = speed, x1 = mass")
+  # The fitted expression strings remain 0-based; names are display-only.
+  expect_false(any(grepl("speed", res$pareto_front$expression)))
+})
+
+test_that("no legend is printed when X carries no column names", {
+  X <- matrix(seq(-3, 3, length.out = 20), ncol = 1)
+  y <- 2 * X[, 1] + 1
+  res <- symbolic_regression(
+    X, y,
+    unary_ops       = character(0),
+    population_size = 100L,
+    generations     = 15L,
+    seed            = 7L
+  )
+  expect_null(res$feature_names)
+  out <- paste(capture.output(print(res)), collapse = "\n")
+  expect_false(grepl("variables:", out))
+})
+
 test_that("predict defaults to recommended and honours expression=", {
   X <- matrix(seq(-2, 2, length.out = 30), ncol = 1)
   y <- 3 * X[, 1] - 2

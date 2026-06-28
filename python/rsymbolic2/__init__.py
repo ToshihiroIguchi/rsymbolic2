@@ -59,9 +59,19 @@ class SymbolicRegressionResult:
         increasing complexity.
     n_features : int
         Number of input features (columns of ``X``) used during fitting.
+    feature_names : Optional[list[str]]
+        Column names of ``X`` when it is a pandas DataFrame (or otherwise carries
+        names), else ``None``. Display-only metadata shown by ``repr()`` as an
+        ``x0 = name`` legend; the fitted expression strings stay 0-based
+        (``x0, x1, ...``) and :meth:`predict` is unaffected.
     """
 
-    def __init__(self, raw: dict, n_features: int):
+    def __init__(
+        self,
+        raw: dict,
+        n_features: int,
+        feature_names: Optional[Sequence[str]] = None,
+    ):
         self.expression: str = raw["expression"]
         self.loss: float = raw["loss"]
         self.complexity: int = raw["complexity"]
@@ -73,6 +83,9 @@ class SymbolicRegressionResult:
             for c, l, e in zip(pf["complexity"], pf["loss"], pf["expression"])
         ]
         self.n_features: int = n_features
+        self.feature_names: Optional[list] = (
+            list(feature_names) if feature_names is not None else None
+        )
 
     def predict(
         self, newdata: ArrayLike, *, expression: Optional[str] = None
@@ -112,6 +125,13 @@ class SymbolicRegressionResult:
         lines = [
             f"<SymbolicRegressionResult: {len(self.pareto_front)} Pareto members, "
             f"n_features={self.n_features}>",
+        ]
+        if self.feature_names is not None and len(self.feature_names) == self.n_features:
+            legend = ", ".join(
+                f"x{i} = {name}" for i, name in enumerate(self.feature_names)
+            )
+            lines.append(f"  variables: {legend}")
+        lines += [
             f"  recommended: {self.recommended}",
             f"  best (lowest loss): {self.expression}  "
             f"(loss={self.loss:.6g}, complexity={self.complexity})",
@@ -286,6 +306,12 @@ def symbolic_regression(
         Best expression, Pareto front, and a :meth:`~SymbolicRegressionResult.predict`
         method.
     """
+    # Capture display-only column names before coercion (pandas DataFrame carries
+    # them in `.columns`). They are surfaced in repr() as an `x0 = name` legend and
+    # never fed back into the evaluable expression strings, which stay 0-based.
+    columns = getattr(X, "columns", None)
+    feature_names = [str(c) for c in columns] if columns is not None else None
+
     X_arr = np.atleast_2d(np.asarray(X, dtype=float))
     if X_arr.ndim == 1:
         X_arr = X_arr.reshape(-1, 1)
@@ -356,4 +382,8 @@ def symbolic_regression(
         float(early_stop_condition),
         weights_arr,
     )
-    return SymbolicRegressionResult(raw, n_features=int(X_arr.shape[1]))
+    if feature_names is not None and len(feature_names) != int(X_arr.shape[1]):
+        feature_names = None  # shape changed (e.g. 1-D promoted); drop mismatched names
+    return SymbolicRegressionResult(
+        raw, n_features=int(X_arr.shape[1]), feature_names=feature_names
+    )

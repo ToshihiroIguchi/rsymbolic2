@@ -22,6 +22,8 @@
 #'       \eqn{(\log L_{i-1} - \log L_i) / (c_i - c_{i-1})}; \code{NA} for the
 #'       simplest member.}
 #'     \item{n_features}{Number of input features used during fitting.}
+#'     \item{feature_names}{Column names of \code{X} (display-only), or \code{NULL}
+#'       when \code{X} had none.}
 #'     \item{n_members}{Number of Pareto-front members.}
 #'     \item{best_index}{Row of \code{pareto} flagged as \code{recommended}.}
 #'     \item{recommended_expression, best_expression}{The recommended (Pareto
@@ -54,6 +56,7 @@ summary.rsymbolic2 <- function(object, ...) {
         list(
             pareto                 = pareto,
             n_features             = object$n_features,
+            feature_names          = object$feature_names,
             n_members              = nrow(df),
             best_index             = object$best_index,
             recommended_expression = object$recommended,
@@ -73,6 +76,9 @@ print.summary.rsymbolic2 <- function(x, ...) {
     cat("Symbolic regression fit (rsymbolic2)\n")
     cat(sprintf("  features: %s   Pareto members: %d\n",
                 if (is.null(x$n_features)) "?" else x$n_features, x$n_members))
+    legend <- format_feature_legend(x$feature_names, x$n_features)
+    if (!is.null(legend))
+        cat("  variables:        ", paste(legend, collapse = ", "), "\n", sep = "")
     if (x$n_members > 0L) {
         cat(sprintf("  loss range:       %s ... %s\n",
                     fmt_g(min(x$pareto$loss)), fmt_g(max(x$pareto$loss))))

@@ -217,6 +217,10 @@ A list of class \code{"rsymbolic2"} with elements:
       expression) trade-offs from accuracy-vs-complexity Pareto front.}
     \item{n_features}{Number of input features (columns of \code{X}) used
       during fitting; required by \code{\link{predict.rsymbolic2}}.}
+    \item{feature_names}{Column names of \code{X}, or \code{NULL} when \code{X}
+      has none. Display-only metadata used by \code{print}/\code{summary} to
+      show an \code{x0 = name} legend; the fitted expression strings stay
+      0-based (\code{x0, x1, ...}) and prediction is unaffected.}
   }
 }
 \description{

@@ -162,6 +162,10 @@
 #'       expression) trade-offs from accuracy-vs-complexity Pareto front.}
 #'     \item{n_features}{Number of input features (columns of \code{X}) used
 #'       during fitting; required by \code{\link{predict.rsymbolic2}}.}
+#'     \item{feature_names}{Column names of \code{X}, or \code{NULL} when \code{X}
+#'       has none. Display-only metadata used by \code{print}/\code{summary} to
+#'       show an \code{x0 = name} legend; the fitted expression strings stay
+#'       0-based (\code{x0, x1, ...}) and prediction is unaffected.}
 #'   }
 #'
 #' @examples
@@ -263,5 +267,10 @@ symbolic_regression <- function(
         as.double(weights)
     )
     result$n_features <- ncol(X)
+    # Display-only feature names: the column names of X, kept so print()/summary()
+    # can show an "x0 = name" legend. The fitted expression strings remain 0-based
+    # (x0, x1, ...) and predict() is unaffected; this is metadata, never fed back
+    # into the evaluable expression. NULL when X carries no column names.
+    result$feature_names <- colnames(X)
     result
 }

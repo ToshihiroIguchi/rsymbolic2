@@ -79,6 +79,36 @@ def test_pareto_front_and_repr():
     assert isinstance(repr(res), str)
 
 
+def test_feature_names_from_dataframe_are_display_only():
+    """A pandas DataFrame's columns become a display-only legend, not part of the
+    fitted expression strings, and predict() is unaffected."""
+    pd = pytest.importorskip("pandas")
+    X = pd.DataFrame(
+        {"speed": np.linspace(-3, 3, 20), "mass": np.linspace(0, 1, 20)}
+    )
+    y = 2.0 * X["speed"].to_numpy() + X["mass"].to_numpy()
+    res = symbolic_regression(
+        X, y, unary_ops=[], population_size=100, generations=15, seed=6
+    )
+    assert res.feature_names == ["speed", "mass"]
+    assert "x0 = speed" in repr(res)
+    # Expression strings stay 0-based; names never leak into them.
+    assert all("speed" not in m["expression"] for m in res.pareto_front)
+    # predict() still works positionally on a plain array.
+    pred = res.predict(np.array([[1.0, 0.5], [0.0, 0.0]]))
+    assert pred.shape == (2,)
+
+
+def test_no_feature_names_for_plain_array():
+    X = np.linspace(-3, 3, 20).reshape(-1, 1)
+    y = 2 * X[:, 0] + 1
+    res = symbolic_regression(
+        X, y, unary_ops=[], population_size=100, generations=15, seed=7
+    )
+    assert res.feature_names is None
+    assert "variables:" not in repr(res)
+
+
 def test_input_validation():
     X = np.zeros((5, 1))
     y = np.zeros(4)
