@@ -198,6 +198,24 @@ struct SearchOptions {
     // are re-considered next iteration. Default 0.14 = PySR installed default.
     double optimize_probability = 0.14;
 
+    // PySR `batching` / `batch_size` (docs/28, SR.jl SingleIteration.jl). When on, the
+    // evolution (reg-evol mutation/crossover scoring) and the per-iteration constant
+    // optimisation are evaluated on a fresh random subsample of `batch_size` rows instead
+    // of the full dataset, so each per-candidate evaluation costs O(batch_size) rather than
+    // O(n) — the lever for large row counts. The hall of fame, early-stop test and final
+    // result are ALWAYS decided on the FULL dataset: each batched epoch's population and
+    // its per-epoch best-seen archive are recomputed on the full data before being merged
+    // into the archive, exactly mirroring SR.jl's finalize_costs + best_seen recompute
+    // (SymbolicRegression.jl:1129). So batching only affects *which candidates the search
+    // explores*, never the accuracy attributed to a reported model. Rows are sampled WITH
+    // REPLACEMENT (SR.jl batch()); two batches are drawn per epoch (one for evolution, one
+    // for optimisation). batching=false (default, PySR parity) reproduces the full-data path
+    // byte-for-byte: no batch is built, no best-seen archive or finalize pass runs.
+    bool batching = false;
+    // Subsample size used when batching is on (PySR batch_size default 50). Clamped to the
+    // row count (PySR caps batch_size at len(X)); must be >= 1.
+    std::size_t batch_size = 50;
+
     // Wall-clock timeout. 0 = no limit (fully deterministic; default). Any value > 0
     // stops the search after approximately this many seconds. A run that times out is
     // NOT reproducible across machines — document this in user-facing roxygen.

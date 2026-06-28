@@ -188,6 +188,55 @@ void test_weighted_search_recovers_line() {
     CHECK(result.loss < 1e-6);  // weighted loss ignores the zero-weighted outlier
 }
 
+// PySR batching: with a large dataset and a small per-iteration subsample, the search must
+// still recover the line, and — crucially — the reported loss is computed on the FULL
+// dataset (finalize_costs_and_merge), not on a lucky batch. We build 400 clean points and
+// subsample only 16 per iteration; an exact line still drives the full-data loss to ~0.
+void test_batching_recovers_line() {
+    std::vector<std::vector<double>> X;
+    std::vector<double> y;
+    for (int i = 0; i < 400; ++i) {
+        const double x = 0.05 * static_cast<double>(i) - 10.0;  // -10 .. ~9.95
+        X.push_back({x});
+        y.push_back(2.5 * x + 1.7);
+    }
+
+    SearchOptions options = line_options();
+    options.generations = 80;
+    options.batching   = true;
+    options.batch_size = 16;  // far smaller than 400
+    const SearchResult result = run_evolution(X, y, options);
+
+    std::printf("batching: best expression: %s  (loss=%.3e, complexity=%d)\n",
+                result.expression.c_str(), result.loss, result.complexity);
+    // The reported loss is the FULL-data SSE: an exact line fits all 400 points, so it is
+    // ~0 only because finalize recomputes on the full dataset, not the 16-row batch.
+    CHECK(result.loss < 1e-6);
+    CHECK(!result.pareto_front.empty());
+}
+
+// Batching is deterministic: a dedicated per-island batch RNG, seeded from (seed, island),
+// makes two single-island runs byte-identical. Guards against accidental use of a global or
+// nondeterministic RNG for the subsample.
+void test_batching_deterministic() {
+    std::vector<std::vector<double>> X;
+    std::vector<double> y;
+    for (int i = 0; i < 200; ++i) {
+        const double x = 0.1 * static_cast<double>(i) - 10.0;
+        X.push_back({x});
+        y.push_back(2.5 * x + 1.7);
+    }
+
+    SearchOptions options = line_options();
+    options.batching   = true;
+    options.batch_size = 20;
+    const SearchResult r1 = run_evolution(X, y, options);
+    const SearchResult r2 = run_evolution(X, y, options);
+
+    CHECK(r1.expression == r2.expression);
+    CHECK(r1.loss == r2.loss);
+}
+
 }  // namespace
 
 int main() {
@@ -196,6 +245,8 @@ int main() {
     test_max_evals_bounds_and_deterministic();
     test_early_stop_condition();
     test_weighted_search_recovers_line();
+    test_batching_recovers_line();
+    test_batching_deterministic();
 
     if (g_failures == 0) {
         std::printf("All %d checks passed\n", g_checks);

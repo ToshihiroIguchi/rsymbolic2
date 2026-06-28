@@ -91,6 +91,19 @@
 #'   When supplied, \code{length(weights)} must equal \code{length(y)} and the loss
 #'   becomes the weighted SSE \eqn{\sum_i w_i (\hat y_i - y_i)^2}. Weights must be
 #'   non-negative.
+#' @param batching Evaluate the evolution and constant-optimisation passes on a
+#'   random subsample of \code{batch_size} rows per iteration instead of the full
+#'   dataset (PySR \code{batching}; default \code{FALSE}). This is the lever for
+#'   large row counts: each candidate evaluation costs \eqn{O(\code{batch\_size})}
+#'   rather than \eqn{O(\code{nrow(X)})}. The hall of fame, early-stop test and the
+#'   reported result are \strong{always} computed on the full dataset, so batching
+#'   changes only which candidates are explored, never the accuracy attributed to a
+#'   returned model. Rows are sampled with replacement and re-sampled each iteration.
+#'   For most problems fewer than ~10,000 rows are enough without batching.
+#' @param batch_size Number of rows sampled per iteration when \code{batching} is
+#'   \code{TRUE} (PySR \code{batch_size}; default 50). Must be a positive integer;
+#'   values larger than \code{nrow(X)} are clamped to \code{nrow(X)}. Ignored when
+#'   \code{batching} is \code{FALSE}.
 #' @param simplify Algebraically simplify fitted candidates (default
 #'   \code{TRUE}).
 #' @param crossover_probability Probability of subtree crossover vs. mutation
@@ -239,6 +252,8 @@ symbolic_regression.default <- function(
     max_evals             = 0,
     model_selection       = c("best", "accuracy", "score"),
     weights               = NULL,
+    batching              = FALSE,
+    batch_size            = 50L,
     timeout_seconds       = 0,
     verbosity             = 1L,
     ...
@@ -251,6 +266,13 @@ symbolic_regression.default <- function(
     if (!is.numeric(X)) stop("X must be numeric")
 
     model_selection <- match.arg(model_selection)
+
+    # PySR batching controls. batch_size must be a positive integer; PySR caps it at the
+    # number of rows internally, so larger values are harmless (the core clamps to nrow(X)).
+    batching <- isTRUE(batching)
+    batch_size <- as.integer(batch_size)
+    if (is.na(batch_size) || batch_size < 1L)
+        stop("batch_size must be a positive integer")
 
     # Optional per-point weights; NULL => unweighted (passed as a length-0 vector).
     if (is.null(weights)) {
@@ -298,7 +320,9 @@ symbolic_regression.default <- function(
         as.character(model_selection),
         as.double(max_evals),
         as.double(early_stop_condition),
-        as.double(weights)
+        as.double(weights),
+        as.logical(batching),
+        as.integer(batch_size)
     )
     result$n_features <- ncol(X)
     # Display-only feature names: the column names of X, kept so print()/summary()

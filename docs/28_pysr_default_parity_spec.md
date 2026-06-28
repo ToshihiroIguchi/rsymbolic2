@@ -78,7 +78,9 @@ micro-differences), see `docs/29`.
 | `optimizer_f_calls_limit` | None | (BFGS-specific) | implementation |
 | `precision` | 32 (Float32) | Float64 core | **implementation** |
 | `parallelism` | (multithreading in bench) | OpenMP islands | implementation |
-| `batching`,`turbo`,`bumper`,`fast_cycle` | False | off | setting (off) |
+| `batching` | False | implemented, default off (B5) | setting (off) |
+| `batch_size` | 50 | `batch_size` (used iff batching) | setting |
+| `turbo`,`bumper`,`fast_cycle` | False | off | setting (off) |
 
 The mutation weights are **normalised to sum to 1** before sampling
 (`MutationWeights.jl`, `sample_mutation`), so only the *ratios* matter. Note these
@@ -127,6 +129,31 @@ with probability `p(1-p)^r`, `p = tournament_selection_p` (**0.982**). rsymbolic
 ### B4. Migration
 - Ring migration every iteration (`fraction_replaced = 0.00036`, `topn = 12`).
 - HOF migration (`fraction_replaced_hof = 0.0614`, `hof_migration = True`).
+
+### B5. Batching (`SingleIteration.jl`, `Dataset.jl::batch`, default off)
+Implemented as an opt-in feature; the default stays `batching = False` (parity). When on,
+SR.jl draws a fresh `SubDataset` of `batch_size` row indices **with replacement**
+(`rand(rng, 1:n, batch_size)`) **once per iteration** for the reg-evol cycle, and a
+**second** batch for the per-iteration constant-optimisation pass. Crucially the global
+hall of fame only ever receives **full-dataset** costs: `finalize_costs` recomputes the
+whole population on the full data and the per-iteration `best_seen` archive is recomputed
+on the full data (`SymbolicRegression.jl:1129`) before either is merged. `loss_to_cost`
+reads the **full** dataset's `baseline_loss` even for a `SubDataset`, and the loss itself is
+a per-point **mean** (`normalize=true`), so the batched cost is
+`mean_loss_batch / full_baseline`.
+
+rsymbolic2 mapping (one epoch ↔ one PySR iteration, §C): per epoch, per island, draw a reg
+batch and an opt batch from a dedicated per-island batch RNG (with replacement); evolve and
+optimise on them, accumulating an epoch-local `best_seen` hall of fame instead of touching
+`isl.hof`; then recompute the population and `best_seen` on the full dataset and merge into
+`isl.hof` (`finalize_costs_and_merge`). The full-data path (`batching = false`) is byte-for-
+byte unchanged. Because rsymbolic2's loss is an **SSE** (sum) not a mean, the batch is built
+with each sampled point's weight rescaled by `n_full / batch_size`; paired with the full-data
+`y_norm`, the batched selection cost equals `(SSE_batch / batch_size) / (SST_full / n_full)`,
+which is algebraically identical to SR.jl's `mean_loss_batch / full_baseline`. Rows are
+sampled with replacement; the only divergence from SR.jl is the RNG stream (an allowed
+implementation difference, CLAUDE.md). `batch_size` is clamped to `n_full` (PySR caps it at
+`len(X)`).
 
 ## C. Cycles vs generations mapping (resolved)
 

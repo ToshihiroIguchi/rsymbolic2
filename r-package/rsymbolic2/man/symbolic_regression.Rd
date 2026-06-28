@@ -34,6 +34,8 @@ symbolic_regression(X, ...)
   max_evals = 0,
   model_selection = c("best", "accuracy", "score"),
   weights = NULL,
+  batching = FALSE,
+  batch_size = 50L,
   timeout_seconds = 0,
   verbosity = 1L,
   ...
@@ -197,6 +199,21 @@ least-squares fit (PySR \code{weights}); \code{NULL} (default) fits unweighted.
 When supplied, \code{length(weights)} must equal \code{length(y)} and the loss
 becomes the weighted SSE \eqn{\sum_i w_i (\hat y_i - y_i)^2}. Weights must be
 non-negative.}
+
+\item{batching}{Evaluate the evolution and constant-optimisation passes on a
+random subsample of \code{batch_size} rows per iteration instead of the full
+dataset (PySR \code{batching}; default \code{FALSE}). This is the lever for
+large row counts: each candidate evaluation costs \eqn{O(\code{batch\_size})}
+rather than \eqn{O(\code{nrow(X)})}. The hall of fame, early-stop test and the
+reported result are \strong{always} computed on the full dataset, so batching
+changes only which candidates are explored, never the accuracy attributed to a
+returned model. Rows are sampled with replacement and re-sampled each iteration.
+For most problems fewer than ~10,000 rows are enough without batching.}
+
+\item{batch_size}{Number of rows sampled per iteration when \code{batching} is
+\code{TRUE} (PySR \code{batch_size}; default 50). Must be a positive integer;
+values larger than \code{nrow(X)} are clamped to \code{nrow(X)}. Ignored when
+\code{batching} is \code{FALSE}.}
 
 \item{timeout_seconds}{Wall-clock time limit in seconds (default 0 = no
 limit). When positive, the search stops after approximately this many

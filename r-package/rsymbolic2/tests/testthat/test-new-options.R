@@ -107,3 +107,40 @@ test_that("early_stop_condition halts once the loss crosses the threshold", {
   expect_true(early$loss < 0.5)              # the threshold was crossed before returning
   expect_true(full$loss <= early$loss + 1e-12)  # early run stopped no later than full
 })
+
+# PySR batching: with many rows and a small per-iteration subsample, the search still
+# recovers the line and — because the hall of fame and final result are recomputed on the
+# full dataset — the reported loss reflects all rows, not a lucky batch.
+test_that("batching recovers the line and reports a full-data loss", {
+  n <- 300L
+  X <- matrix(seq(-10, 10, length.out = n), ncol = 1)
+  y <- 2.5 * X[, 1] + 1.7
+  res <- symbolic_regression(
+    X, y, unary_ops = character(0),
+    population_size = 60L, n_populations = 1L, generations = 80L, seed = 13L,
+    batching = TRUE, batch_size = 16L
+  )
+  expect_true(res$loss < 1e-6)               # exact line => full-data SSE ~ 0
+  expect_true(nrow(res$pareto_front) >= 1L)
+})
+
+test_that("batching is deterministic for a fixed seed", {
+  n <- 200L
+  X <- matrix(seq(-10, 10, length.out = n), ncol = 1)
+  y <- 2.5 * X[, 1] + 1.7
+  common <- list(
+    X = X, y = y, unary_ops = character(0),
+    population_size = 50L, n_populations = 1L, generations = 40L, seed = 21L,
+    batching = TRUE, batch_size = 20L
+  )
+  r1 <- do.call(symbolic_regression, common)
+  r2 <- do.call(symbolic_regression, common)
+  expect_equal(r1$expression, r2$expression)
+  expect_equal(r1$loss, r2$loss)
+})
+
+test_that("batch_size must be a positive integer", {
+  d <- line_data()
+  expect_error(symbolic_regression(d$X, d$y, batching = TRUE, batch_size = 0L),
+               "batch_size must be a positive integer")
+})

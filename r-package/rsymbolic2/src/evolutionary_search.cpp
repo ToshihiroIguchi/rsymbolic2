@@ -188,6 +188,11 @@ struct Island {
     std::vector<PopMember>              population;
     HallOfFame                          hof;
     std::mt19937_64                     rng;
+    // Dedicated RNG for PySR batching's row subsampling (options.batching). Kept separate
+    // from the evolution `rng` so the batch index stream is reproducible and does not
+    // perturb the mutation/selection RNG sequence; seeded per island in run_evolution with
+    // its own salt so each island's batches are deterministic and thread-count independent.
+    std::mt19937_64                     batch_rng;
     std::unique_ptr<ConstantOptimizer>  optimizer;
     RunningSearchStatistics             stats;
     // Monotonic age counter for regularized-evolution replacement. Initial members take
@@ -272,6 +277,42 @@ double compute_y_norm(const std::vector<double>& y, const std::vector<double>& w
         ss += w[i] * d * d;
     }
     return ss > 0.0 ? ss : 1.0;
+}
+
+// Build a batched dataset for one PySR-batching evolution or optimisation pass (SR.jl
+// batch(): SymbolicRegression.jl Dataset.jl::batch). Samples `batch_size` row indices
+// uniformly WITH REPLACEMENT, then rescales each sampled point's weight by n_full/batch_size
+// so the weighted SSE over the batch is an unbiased estimate of the full-dataset SSE. Paired
+// with the FULL-dataset y_norm in the selection cost, this makes the batched cost equal
+//   (SSE_batch / batch_size) / (SST_full / n_full),
+// which is bit-for-bit SR.jl's mean_loss_batch / full_baseline (loss_to_cost reads the full
+// dataset's baseline even for a SubDataset). Folding the rescale into the per-point weight
+// means the hot-path evaluators (sse_current / fit) need no batching-specific code — they
+// already apply sqrt(weight) — and member.loss stays in full-equivalent SSE units, so it is
+// directly comparable to the full-data losses written by finalize_costs_and_merge and to
+// target_loss. Rows are gathered into a fresh owned Dataset (small: batch_size rows), shared
+// by const pointer exactly like the full dataset.
+std::shared_ptr<const Dataset> make_batch(const Dataset& full, std::size_t batch_size,
+                                          std::mt19937_64& rng) {
+    const std::size_t n  = full.y.size();
+    const std::size_t bs = std::min(std::max<std::size_t>(1, batch_size), n);
+    const double scale   = static_cast<double>(n) / static_cast<double>(bs);
+    const bool weighted  = !full.sqrt_weights.empty();
+    std::vector<std::vector<double>> Xb(bs);
+    std::vector<double> yb(bs), wb(bs);
+    std::uniform_int_distribution<std::size_t> pick(0, n - 1);
+    for (std::size_t i = 0; i < bs; ++i) {
+        const std::size_t idx = pick(rng);
+        Xb[i] = full.X[idx];
+        yb[i] = full.y[idx];
+        // The Dataset ctor takes raw weights (it sqrt's them); recover the original weight
+        // w = sqrt_weights^2 (1 when unweighted) and scale it. With replacement, a repeated
+        // index contributes its weight once per draw — matching SR.jl's repeated indices.
+        const double w = weighted ? full.sqrt_weights[idx] * full.sqrt_weights[idx] : 1.0;
+        wb[i] = w * scale;
+    }
+    return std::make_shared<const Dataset>(
+        Dataset{std::move(Xb), std::move(yb), std::move(wb)});
 }
 
 // Base selection cost: loss/y_norm + parsimony*complexity.
@@ -429,6 +470,14 @@ inline double elapsed_sec(const TimePoint& start) {
 
 // Evolve island for exactly n_gens generations (or until early stop / timeout).
 // Returns true if the early-stop threshold was reached.
+// `data` is the dataset children are scored on (the full dataset normally, or an epoch
+// batch under PySR batching) and `y_norm` is the matching selection-cost denominator
+// (always the full-data y_norm — see make_batch). `hof_target` receives every evaluated
+// candidate: it is the island's own hall of fame on the full-data path, or a per-epoch
+// best-seen archive under batching (whose members are later recomputed on the full dataset
+// by finalize_costs_and_merge before reaching isl.hof). The early-stop test still reads
+// isl.hof, which under batching holds only full-data losses, so the search never stops on a
+// lucky batch.
 bool evolve_island(Island& isl,
                    const std::shared_ptr<const Dataset>& data,
                    const SearchOptions& opts,
@@ -437,7 +486,8 @@ bool evolve_island(Island& isl,
                    bool has_deadline,
                    double deadline_sec,
                    double y_norm,
-                   std::size_t island_eval_budget) {
+                   std::size_t island_eval_budget,
+                   HallOfFame& hof_target) {
     const std::size_t tournament =
         opts.tournament_size == 0 ? 1 : opts.tournament_size;
     const double parsimony = opts.parsimony;
@@ -474,7 +524,7 @@ bool evolve_island(Island& isl,
         child.complexity = static_cast<int>(child.tree.size());
         const int child_complexity = child.complexity;
         child.birth = isl.next_birth++;
-        RSYM_TIMED(isl.prof.hof_sec, isl.prof.hof_n, isl.hof.update(child));
+        RSYM_TIMED(isl.prof.hof_sec, isl.prof.hof_n, hof_target.update(child));
         const std::size_t oldest = oldest_index(isl.population);
         isl.population[oldest] = std::move(child);
         isl.stats.update(child_complexity);
@@ -598,7 +648,7 @@ bool evolve_island(Island& isl,
             // overwrite (CLAUDE.md Correctness; cf. migration's same rationale).
             const int child_complexity = child.complexity;  // child is moved below
             child.birth = isl.next_birth++;
-            RSYM_TIMED(isl.prof.hof_sec, isl.prof.hof_n, isl.hof.update(child));
+            RSYM_TIMED(isl.prof.hof_sec, isl.prof.hof_n, hof_target.update(child));
             const std::size_t oldest = oldest_index(isl.population);
             isl.population[oldest] = std::move(child);
 
@@ -628,11 +678,17 @@ bool evolve_island(Island& isl,
 // simplified tree's SSE with its inherited constants. Members whose simplify/optimise step
 // produced a non-finite loss are left unchanged. Every resulting member is offered to the
 // hall of fame. Deadline-guarded via `stop` (LM polls it mid-evaluation).
+// `data` is the dataset constants are optimised on (full data normally, an epoch batch under
+// batching) and `hof_target` receives each finalised member, or is nullptr under batching —
+// where the hall-of-fame merge is deferred to finalize_costs_and_merge so that only
+// full-data losses ever enter the archive (SR.jl optimises on the batch, then finalize_costs
+// recomputes the population on the full dataset before the global hall of fame is updated).
 void optimize_and_simplify_population(Island& isl,
                                       const std::shared_ptr<const Dataset>& data,
                                       const SearchOptions& opts,
                                       const StopRequested& stop,
-                                      std::size_t island_eval_budget) {
+                                      std::size_t island_eval_budget,
+                                      HallOfFame* hof_target) {
     const bool track_evals = island_eval_budget > 0;  // max_evals enabled
     std::uniform_real_distribution<double> unit(0.0, 1.0);
     for (PopMember& m : isl.population) {
@@ -664,7 +720,39 @@ void optimize_and_simplify_population(Island& isl,
         }
         m.loss = loss;
         m.complexity = static_cast<int>(m.tree.size());
+        if (hof_target) hof_target->update(m);
+    }
+}
+
+// PySR batching finalize: SR.jl finalize_costs (Population.jl) plus the best_seen full-data
+// recompute (SymbolicRegression.jl:1129). After a batched epoch the population members and
+// the per-epoch best_seen archive carry batched (full-equivalent-estimate) losses; recompute
+// every one on the FULL dataset — a forward pass only, no re-optimisation, exactly as SR.jl's
+// eval_cost — and merge the full-data members into the island's hall of fame. This is the
+// single point where batched-epoch results reach the archive, guaranteeing the hall of fame,
+// early-stop test and final result are decided on the full data just as in PySR. Members
+// whose full-data loss is non-finite are skipped. The population's own member.loss is updated
+// to the full-data value so the next epoch's tournament starts from full-data parent costs
+// (SR.jl: finalize_costs writes member.cost/loss back into the population).
+void finalize_costs_and_merge(Island& isl,
+                              const std::shared_ptr<const Dataset>& full,
+                              const HallOfFame& best_seen,
+                              std::size_t island_eval_budget) {
+    const bool track_evals = island_eval_budget > 0;
+    for (PopMember& m : isl.population) {
+        const double loss = sse_current(m.tree, *full, isl.sse_pool, isl.sse_stk);
+        if (track_evals) ++isl.eval_count;
+        if (!std::isfinite(loss)) continue;
+        m.loss = loss;
+        m.complexity = static_cast<int>(m.tree.size());
         isl.hof.update(m);
+    }
+    for (PopMember bm : best_seen.members()) {
+        const double loss = sse_current(bm.tree, *full, isl.sse_pool, isl.sse_stk);
+        if (track_evals) ++isl.eval_count;
+        if (!std::isfinite(loss)) continue;
+        bm.loss = loss;
+        isl.hof.update(bm);
     }
 }
 
@@ -803,6 +891,13 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
                               UINT64_C(0xA5A5A5A5A5A5A5A5);
         islands[idx].optimizer =
             OptimizerFactory::create(options.optimizer_type, isl_opt_config);
+        // Per-island batch-sampling RNG (PySR batching). Distinct salt from the evolution,
+        // optimizer-restart and migration streams so the batch index sequence is decorrelated
+        // from them yet fully determined by (seed, island index) — reproducible and
+        // thread-count independent. Unused when options.batching is false.
+        islands[idx].batch_rng.seed(options.seed ^
+                                    (idx * UINT64_C(0x9e3779b97f4a7c15)) ^
+                                    UINT64_C(0x243F6A8885A308D3));
         initialize_island(islands[idx], data, options, init_stop);
     }
 
@@ -860,20 +955,39 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
 #endif
         for (std::int64_t i = 0; i < static_cast<std::int64_t>(n); ++i) {
             Island& isl = islands[static_cast<std::size_t>(i)];
-            evolve_island(isl, data, options, gens, t_start, has_deadline,
-                          deadline_sec, y_norm, island_budget);
+            const StopRequested opt_stop = [&] {
+                return has_deadline && elapsed_sec(t_start) >= deadline_sec;
+            };
             // PySR optimize_and_simplify_population: once per iteration, simplify every
             // population member and (with probability optimize_probability, gated by
             // should_optimize_constants) LM-optimise its constants — the single place
             // constant optimisation runs during evolution. Same order as SR.jl (simplify
             // before optimise), inside the share-nothing parallel region; the deadline
             // closure reads only immutable state, safe across threads.
-            {
-                const StopRequested opt_stop = [&] {
-                    return has_deadline && elapsed_sec(t_start) >= deadline_sec;
-                };
+            if (!options.batching) {
+                // Full-data path (default): score and optimise on the whole dataset, and
+                // update the island's hall of fame directly — byte-for-byte the pre-batching
+                // behaviour.
+                evolve_island(isl, data, options, gens, t_start, has_deadline,
+                              deadline_sec, y_norm, island_budget, isl.hof);
                 optimize_and_simplify_population(isl, data, options, opt_stop,
-                                                 island_budget);
+                                                 island_budget, &isl.hof);
+            } else {
+                // PySR batching (SR.jl SingleIteration.jl): one epoch = one PySR iteration.
+                // Draw a fresh batch for the reg-evol cycle, evolving against a per-epoch
+                // best_seen archive (NOT isl.hof); draw a second batch for the constant
+                // optimisation pass (hof_target = nullptr); then recompute the population and
+                // best_seen on the full dataset and merge into isl.hof. The full y_norm is
+                // used throughout because make_batch rescales the batch weights to keep the
+                // batched cost on the full-data scale.
+                const auto batch_reg = make_batch(*data, options.batch_size, isl.batch_rng);
+                HallOfFame best_seen;
+                evolve_island(isl, batch_reg, options, gens, t_start, has_deadline,
+                              deadline_sec, y_norm, island_budget, best_seen);
+                const auto batch_opt = make_batch(*data, options.batch_size, isl.batch_rng);
+                optimize_and_simplify_population(isl, batch_opt, options, opt_stop,
+                                                 island_budget, nullptr);
+                finalize_costs_and_merge(isl, data, best_seen, island_budget);
             }
         }
 

@@ -462,6 +462,8 @@ same names). **Every default below equals PySR's documented default** — see
 | `mutation_weights` | `None` | Override relative mutation-kind weights (`MutationWeights`). |
 | `model_selection` | `"best"` | Which Pareto member is `recommended` (`model_selection`). |
 | `weights` | `None` | Per-point weights for weighted least squares (`weights`). |
+| `batching` | `False` | Score evolution/optimisation on a random `batch_size`-row subsample per iteration for large datasets (`batching`); the hall of fame and result stay full-data. |
+| `batch_size` | `50` | Rows sampled per iteration when `batching` is on (`batch_size`). |
 | `early_stop_condition` | `0.0` | Extra early-stop loss threshold (`early_stop_condition`). |
 | `max_evals` | `0` | Cap on total evaluations, `0` = off (`max_evals`). |
 | `target_loss` | `1e-10` | Early-stop loss threshold. |

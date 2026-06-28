@@ -110,7 +110,9 @@ cpp11::writable::list symbolic_regression_cpp(
     std::string     model_selection,
     double          max_evals,
     double          early_stop_condition,
-    cpp11::doubles  weights
+    cpp11::doubles  weights,
+    bool            batching,
+    int             batch_size
 ) {
     // Convert R matrix → vector<vector<double>> (row-major)
     const int n = X.nrow();
@@ -157,6 +159,10 @@ cpp11::writable::list symbolic_regression_cpp(
     opts.mutation_weights      = parse_mutation_weights(mutation_weights);
     opts.model_selection       = parse_model_selection(model_selection);
     opts.early_stop_condition  = early_stop_condition;
+    // PySR batching: subsample batch_size rows for the evolution/optimisation passes. The
+    // hall of fame and final result are still computed on the full data (see SearchOptions).
+    opts.batching              = batching;
+    opts.batch_size            = static_cast<std::size_t>(std::max(1, batch_size));
     // max_evals arrives as a double (R has no native 64-bit int); negative/zero => off.
     opts.max_evals = max_evals > 0.0
         ? static_cast<std::size_t>(max_evals)

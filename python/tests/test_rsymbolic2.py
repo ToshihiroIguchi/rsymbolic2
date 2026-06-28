@@ -109,6 +109,39 @@ def test_no_feature_names_for_plain_array():
     assert "variables:" not in repr(res)
 
 
+def test_batching_recovers_line_full_data_loss():
+    """With many rows and a small per-iteration subsample, batching still recovers the
+    line; the reported loss is computed on the full dataset, so an exact line gives ~0."""
+    X = np.linspace(-10, 10, 300).reshape(-1, 1)
+    y = 2.5 * X[:, 0] + 1.7
+    res = symbolic_regression(
+        X, y, unary_ops=[], population_size=60, n_populations=1, generations=80,
+        seed=13, batching=True, batch_size=16,
+    )
+    assert res.loss < 1e-6
+    assert len(res.pareto_front) >= 1
+
+
+def test_batching_is_deterministic():
+    X = np.linspace(-10, 10, 200).reshape(-1, 1)
+    y = 2.5 * X[:, 0] + 1.7
+    common = dict(
+        unary_ops=[], population_size=50, n_populations=1, generations=40,
+        seed=21, batching=True, batch_size=20,
+    )
+    r1 = symbolic_regression(X, y, **common)
+    r2 = symbolic_regression(X, y, **common)
+    assert r1.expression == r2.expression
+    assert r1.loss == r2.loss
+
+
+def test_batch_size_must_be_positive():
+    X = np.linspace(-3, 3, 20).reshape(-1, 1)
+    y = 2 * X[:, 0] + 1
+    with pytest.raises(ValueError):
+        symbolic_regression(X, y, batching=True, batch_size=0)
+
+
 def test_input_validation():
     X = np.zeros((5, 1))
     y = np.zeros(4)

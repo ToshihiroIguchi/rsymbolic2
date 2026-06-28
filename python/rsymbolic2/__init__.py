@@ -210,6 +210,8 @@ def symbolic_regression(
     max_evals: float = 0,
     model_selection: str = "best",
     weights: Optional[ArrayLike] = None,
+    batching: bool = False,
+    batch_size: int = 50,
     timeout_seconds: float = 0.0,
     verbosity: int = 1,
 ) -> SymbolicRegressionResult:
@@ -290,6 +292,19 @@ def symbolic_regression(
     weights : array-like, optional
         Per-point non-negative weights for a weighted least-squares fit (PySR
         ``weights``); None fits unweighted.
+    batching : bool, default False
+        Evaluate the evolution and constant-optimisation passes on a random subsample
+        of ``batch_size`` rows per iteration instead of the full dataset (PySR
+        ``batching``) — the lever for large row counts, making each candidate
+        evaluation cost ``O(batch_size)`` rather than ``O(len(y))``. The hall of fame,
+        early-stop test and the reported result are always computed on the full
+        dataset, so batching changes only which candidates are explored, never the
+        accuracy attributed to a returned model. Rows are sampled with replacement and
+        re-sampled each iteration. Fewer than ~10,000 rows are usually enough without it.
+    batch_size : int, default 50
+        Rows sampled per iteration when ``batching`` is True (PySR ``batch_size``).
+        Must be >= 1; values larger than ``len(y)`` are clamped to ``len(y)``. Ignored
+        when ``batching`` is False.
     timeout_seconds : float, default 0.0
         Wall-clock limit; 0 = no limit. A timed-out run is not reproducible across
         machines (only runs that finish within budget are bit-reproducible).
@@ -353,6 +368,9 @@ def symbolic_regression(
 
     mw_dict = {} if mutation_weights is None else {str(k): float(v) for k, v in mutation_weights.items()}
 
+    if int(batch_size) < 1:
+        raise ValueError("batch_size must be a positive integer.")
+
     raw = symbolic_regression_cpp(
         X_arr,
         y_arr,
@@ -381,6 +399,8 @@ def symbolic_regression(
         float(max_evals),
         float(early_stop_condition),
         weights_arr,
+        bool(batching),
+        int(batch_size),
     )
     if feature_names is not None and len(feature_names) != int(X_arr.shape[1]):
         feature_names = None  # shape changed (e.g. 1-D promoted); drop mismatched names
