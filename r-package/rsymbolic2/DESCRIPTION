@@ -18,8 +18,7 @@ Encoding: UTF-8
 URL: https://github.com/ToshihiroIguchi/rsymbolic2
 BugReports: https://github.com/ToshihiroIguchi/rsymbolic2/issues
 Depends: R (>= 4.2.0)
-Imports: Rcpp
-LinkingTo: Rcpp
+LinkingTo: cpp11
 Suggests: testthat (>= 3.0.0), ggplot2
 Config/testthat/edition: 3
 RoxygenNote: 8.0.0

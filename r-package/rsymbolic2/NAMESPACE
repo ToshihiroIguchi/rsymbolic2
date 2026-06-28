@@ -3,5 +3,4 @@
 S3method(plot,rsymbolic2)
 S3method(predict,rsymbolic2)
 export(symbolic_regression)
-importFrom(Rcpp,evalCpp)
 useDynLib(rsymbolic2, .registration = TRUE)

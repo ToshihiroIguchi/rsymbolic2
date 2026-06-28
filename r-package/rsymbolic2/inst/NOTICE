@@ -35,7 +35,7 @@ SymbolicRegression.jl, or their authors.
 Third-party components
 -------------------------------------------------------------------------------
 
-  * Rcpp (R bindings) - GPL (>= 2)             https://www.rcpp.org
+  * cpp11 (R bindings only) - MIT              https://github.com/r-lib/cpp11
   * OpenMP runtime (optional, for parallelism) https://www.openmp.org
 
 The symbolic-regression engine itself depends only on the C++ standard library.

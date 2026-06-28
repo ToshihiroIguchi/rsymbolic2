@@ -36,7 +36,7 @@ describe interoperability and default compatibility.
 Third-party components used to build or bind rsymbolic2
 -------------------------------------------------------------------------------
 
-  * Rcpp (R bindings only) - GPL (>= 2)        https://www.rcpp.org
+  * cpp11 (R bindings only) - MIT              https://github.com/r-lib/cpp11
   * pybind11 (Python bindings only) - BSD-3    https://github.com/pybind/pybind11
   * OpenMP runtime (optional, for parallelism) https://www.openmp.org
 

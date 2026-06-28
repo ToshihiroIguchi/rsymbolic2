@@ -6,7 +6,7 @@
 \alias{rsymbolic2-package}
 \title{rsymbolic2: Symbolic Regression via Genetic Programming}
 \description{
-Discovers mathematical expressions that fit data using a steady-state genetic programming algorithm with Levenberg-Marquardt constant optimization. The search engine is implemented in C++ and exposed through a single R function. The default configuration and search behaviour are matched to the documented defaults of 'PySR' (Cranmer, 2023, \href{https://arxiv.org/abs/2305.01582}{arXiv:2305.01582}) and 'SymbolicRegression.jl'; this package is an independent re-implementation and is not affiliated with or endorsed by those projects. See the NOTICE file for attribution.
+Discovers mathematical expressions that fit data using a steady-state genetic programming algorithm with Levenberg-Marquardt constant optimization. The search engine is implemented in C++ and exposed through a single R function. The default configuration and search behaviour are matched to the documented defaults of 'PySR' (Cranmer, 2023, \doi{10.48550/arXiv.2305.01582}) and 'SymbolicRegression.jl'; this package is an independent re-implementation and is not affiliated with or endorsed by those projects. See the NOTICE file for attribution.
 }
 \seealso{
 Useful links:

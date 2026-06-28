@@ -3,7 +3,6 @@
 # Defaults matched to PySR / SymbolicRegression.jl (Apache-2.0); see NOTICE.
 
 #' @useDynLib rsymbolic2, .registration = TRUE
-#' @importFrom Rcpp evalCpp
 "_PACKAGE"
 
 # Column names of the Pareto-front data frame, referenced by non-standard

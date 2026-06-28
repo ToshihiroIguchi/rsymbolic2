@@ -3,19 +3,21 @@
 // Defaults and search/mutation mechanisms are matched to SymbolicRegression.jl /
 // PySR (Apache-2.0, (C) Miles Cranmer); see the NOTICE file for attribution.
 
-// Rcpp bridge: exposes run_evolution() to R as symbolic_regression_cpp().
+// cpp11 bridge: exposes run_evolution() to R as symbolic_regression_cpp().
 // All type conversions between R and C++ happen here; the core library is
-// unchanged from the standalone C++ build.
+// unchanged from the standalone C++ build. cpp11 (MIT) is used instead of Rcpp
+// so the shipped R package carries no GPL build dependency, keeping it
+// consistent with the project's Apache-2.0 licensing.
 
-#include <Rcpp.h>
-// [[Rcpp::plugins(cpp17)]]
+#include <cpp11.hpp>
 
 #include "rsymbolic/evolution/mutation_weights.hpp"
 #include "rsymbolic/evolution/search_space.hpp"
 #include "rsymbolic/search/evolutionary_search.hpp"
 #include "rsymbolic/expression/tree.hpp"
 
-using namespace Rcpp;
+using namespace cpp11;
+using namespace cpp11::literals;
 using namespace rsymbolic;
 
 namespace {
@@ -23,14 +25,14 @@ namespace {
 // Overlay a named numeric vector (e.g. c(insert_node = 6, rotate_tree = 5)) onto a
 // MutationWeights, leaving unnamed/absent fields at their PySR defaults. Unknown names
 // are rejected so typos surface immediately rather than silently doing nothing.
-MutationWeights parse_mutation_weights(const NumericVector& w) {
+MutationWeights parse_mutation_weights(const cpp11::doubles& w) {
     MutationWeights mw;
     if (w.size() == 0) return mw;
-    const CharacterVector names = w.names();
+    const cpp11::strings names = w.names();
     if (names.size() != w.size())
-        Rcpp::stop("mutation_weights must be a *named* numeric vector");
+        cpp11::stop("mutation_weights must be a *named* numeric vector");
     for (R_xlen_t i = 0; i < w.size(); ++i) {
-        const std::string key = Rcpp::as<std::string>(names[i]);
+        const std::string key = static_cast<std::string>(names[i]);
         const double v = w[i];
         if      (key == "mutate_constant") mw.mutate_constant = v;
         else if (key == "mutate_operator") mw.mutate_operator = v;
@@ -42,7 +44,7 @@ MutationWeights parse_mutation_weights(const NumericVector& w) {
         else if (key == "do_nothing")      mw.do_nothing      = v;
         else if (key == "simplify")        mw.simplify        = v;
         else if (key == "randomize")       mw.randomize       = v;
-        else Rcpp::stop("Unknown mutation weight name: '%s'.", key.c_str());
+        else cpp11::stop("Unknown mutation weight name: '%s'.", key.c_str());
     }
     return mw;
 }
@@ -57,7 +59,7 @@ UnaryOp parse_unary(const std::string& s) {
     if (s == "tanh")   return UnaryOp::Tanh;
     if (s == "abs")    return UnaryOp::Abs;
     if (s == "square") return UnaryOp::Square;
-    Rcpp::stop(
+    cpp11::stop(
         "Unknown unary operator: '%s'. Use neg/exp/log/sin/cos/sqrt/tanh/abs/square.",
         s.c_str());
 }
@@ -68,47 +70,47 @@ BinaryOp parse_binary(const std::string& s) {
     if (s == "mul") return BinaryOp::Mul;
     if (s == "div") return BinaryOp::Div;
     if (s == "pow") return BinaryOp::Pow;
-    Rcpp::stop("Unknown binary operator: '%s'. Use add/sub/mul/div/pow.", s.c_str());
+    cpp11::stop("Unknown binary operator: '%s'. Use add/sub/mul/div/pow.", s.c_str());
 }
 
 ModelSelection parse_model_selection(const std::string& s) {
     if (s == "best")     return ModelSelection::Best;
     if (s == "accuracy") return ModelSelection::Accuracy;
     if (s == "score")    return ModelSelection::Score;
-    Rcpp::stop("Unknown model_selection: '%s'. Use best/accuracy/score.", s.c_str());
+    cpp11::stop("Unknown model_selection: '%s'. Use best/accuracy/score.", s.c_str());
 }
 
 }  // namespace
 
-// [[Rcpp::export]]
-List symbolic_regression_cpp(
-    NumericMatrix X,
-    NumericVector y,
-    int           population_size,
-    int           generations,
-    int           tournament_size,
-    CharacterVector unary_ops,
-    CharacterVector binary_ops,
-    int           max_depth,
-    int           max_nodes,
-    double        target_loss,
-    bool          simplify,
-    double        crossover_probability,
-    double        seed,
-    int           n_populations,
-    double        timeout_seconds,
-    int           verbosity,
-    double        optimize_probability,
-    double        parsimony,
-    double        adaptive_parsimony_scaling,
-    double        tournament_selection_p,
-    bool          should_optimize_constants,
-    double        fraction_replaced_hof,
-    NumericVector mutation_weights,
-    std::string   model_selection,
-    double        max_evals,
-    double        early_stop_condition,
-    NumericVector weights
+[[cpp11::register]]
+cpp11::writable::list symbolic_regression_cpp(
+    cpp11::doubles_matrix<> X,
+    cpp11::doubles  y,
+    int             population_size,
+    int             generations,
+    int             tournament_size,
+    cpp11::strings  unary_ops,
+    cpp11::strings  binary_ops,
+    int             max_depth,
+    int             max_nodes,
+    double          target_loss,
+    bool            simplify,
+    double          crossover_probability,
+    double          seed,
+    int             n_populations,
+    double          timeout_seconds,
+    int             verbosity,
+    double          optimize_probability,
+    double          parsimony,
+    double          adaptive_parsimony_scaling,
+    double          tournament_selection_p,
+    bool            should_optimize_constants,
+    double          fraction_replaced_hof,
+    cpp11::doubles  mutation_weights,
+    std::string     model_selection,
+    double          max_evals,
+    double          early_stop_condition,
+    cpp11::doubles  weights
 ) {
     // Convert R matrix → vector<vector<double>> (row-major)
     const int n = X.nrow();
@@ -127,12 +129,12 @@ List symbolic_regression_cpp(
     space.max_depth    = max_depth;
     space.max_nodes    = max_nodes;
     for (const auto& s : unary_ops)
-        space.unary_ops.push_back(parse_unary(Rcpp::as<std::string>(s)));
+        space.unary_ops.push_back(parse_unary(static_cast<std::string>(s)));
     space.binary_ops.clear();
     for (const auto& s : binary_ops)
-        space.binary_ops.push_back(parse_binary(Rcpp::as<std::string>(s)));
+        space.binary_ops.push_back(parse_binary(static_cast<std::string>(s)));
     if (space.binary_ops.empty())
-        Rcpp::stop("binary_ops must contain at least one operator");
+        cpp11::stop("binary_ops must contain at least one operator");
 
     SearchOptions opts;
     opts.space                 = space;
@@ -163,17 +165,17 @@ List symbolic_regression_cpp(
     // other length must equal the number of observations.
     if (weights.size() > 0) {
         if (weights.size() != y.size())
-            Rcpp::stop("weights must have length nrow(X) (= length(y)); got %d, expected %d.",
-                       static_cast<int>(weights.size()), static_cast<int>(y.size()));
+            cpp11::stop("weights must have length nrow(X) (= length(y)); got %d, expected %d.",
+                        static_cast<int>(weights.size()), static_cast<int>(y.size()));
         opts.weights.assign(weights.begin(), weights.end());
     }
 
     const SearchResult res = run_evolution(X_cpp, y_cpp, opts);
 
     // Pareto front → data.frame
-    IntegerVector    pf_complexity;
-    NumericVector    pf_loss;
-    CharacterVector  pf_expr;
+    cpp11::writable::integers pf_complexity;
+    cpp11::writable::doubles  pf_loss;
+    cpp11::writable::strings  pf_expr;
     for (const auto& m : res.pareto_front) {
         pf_complexity.push_back(m.complexity);
         pf_loss.push_back(m.loss);
@@ -189,19 +191,20 @@ List symbolic_regression_cpp(
     if (res.best_index >= 0 && res.best_index < n_front)
         recommended = to_string(res.pareto_front[static_cast<std::size_t>(res.best_index)].tree);
 
-    List result = List::create(
-        Named("expression")   = res.expression,
-        Named("loss")         = res.loss,
-        Named("complexity")   = res.complexity,
-        Named("recommended")  = recommended,
-        Named("best_index")   = best_index_r,
-        Named("pareto_front") = DataFrame::create(
-            Named("complexity")  = pf_complexity,
-            Named("loss")        = pf_loss,
-            Named("expression")  = pf_expr,
-            Named("stringsAsFactors") = false
-        )
-    );
+    cpp11::writable::data_frame pareto_front({
+        "complexity"_nm = pf_complexity,
+        "loss"_nm       = pf_loss,
+        "expression"_nm = pf_expr
+    });
+
+    cpp11::writable::list result({
+        "expression"_nm   = res.expression,
+        "loss"_nm         = res.loss,
+        "complexity"_nm   = res.complexity,
+        "recommended"_nm  = recommended,
+        "best_index"_nm   = best_index_r,
+        "pareto_front"_nm = pareto_front
+    });
     result.attr("class") = "rsymbolic2";
     return result;
 }

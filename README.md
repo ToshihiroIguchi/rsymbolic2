@@ -11,7 +11,7 @@ candidate with a Levenberg–Marquardt least-squares optimiser.
   OpenMP if available for parallelism).
 - **Defaults matched to [PySR](https://github.com/MilesCranmer/PySR)** — results are
   directly comparable; only the *implementation* differs.
-- **Thin language bindings** — one small helper each: `Rcpp` for R, `pybind11` for Python.
+- **Thin language bindings** — one small helper each: `cpp11` for R, `pybind11` for Python.
 
 > An **independent re-implementation**, **not affiliated with or endorsed by** PySR /
 > SymbolicRegression.jl. Apache-2.0; attribution in [`NOTICE`](NOTICE). See
@@ -111,7 +111,7 @@ working C++17 compiler. To try it without any local setup, use
 There is **no third-party C++ library to install for the engine** — it depends only on
 the C++ standard library (and OpenMP, if present, for island parallelism). The language
 bindings pull in one build-time helper each, handled automatically by the installer:
-`Rcpp` (R) and `pybind11` (Python).
+`cpp11` (R) and `pybind11` (Python).
 
 ### Install: Python
 
@@ -182,7 +182,7 @@ remotes::install_github("ToshihiroIguchi/rsymbolic2",
 ```
 
 `remotes` builds a clean source package and installs it; the only build-time
-dependency it pulls in is `Rcpp`. `devtools::install_github(..., subdir = ...)` works
+dependency it pulls in is `cpp11`. `devtools::install_github(..., subdir = ...)` works
 the same way if you already have devtools.
 
 **From a local clone**, no `remotes`/`devtools` needed — install the source directory
@@ -190,7 +190,7 @@ directly:
 
 ```r
 # From an R session at the repository root:
-install.packages("Rcpp")                          # the only build-time dependency
+install.packages("cpp11")                         # the only build-time dependency
 install.packages("r-package/rsymbolic2", repos = NULL, type = "source")
 ```
 
@@ -630,5 +630,5 @@ re-implementation matched to the documented defaults of **PySR** and
 `NOTICE` per Apache License 2.0 §4. rsymbolic2 is not affiliated with or endorsed by
 those projects.
 
-The engine depends only on the C++ standard library. The language bindings use `Rcpp`
-(R; GPL ≥ 2) and `pybind11` (Python; BSD-3) — see `NOTICE`.
+The engine depends only on the C++ standard library. The language bindings use `cpp11`
+(R; MIT) and `pybind11` (Python; BSD-3) — see `NOTICE`.

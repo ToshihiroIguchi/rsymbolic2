@@ -48,8 +48,8 @@ search behaviour are an independent re-implementation matched to the documented
 defaults of 'PySR' and 'SymbolicRegression.jl' (both Apache-2.0); attribution to
 those projects (copyright Miles Cranmer) is provided in `inst/NOTICE` per Apache
 License 2.0 Section 4. The package is not affiliated with or endorsed by them.
-The C++ engine depends only on the C++ standard library; `LinkingTo: Rcpp` is the
-only build-time dependency.
+The C++ engine depends only on the C++ standard library; `LinkingTo: cpp11`
+(MIT-licensed, header-only) is the only build-time dependency.
 
 ## Reverse dependencies
 

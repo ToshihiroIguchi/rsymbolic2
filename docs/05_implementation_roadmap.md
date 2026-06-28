@@ -15,7 +15,7 @@ before the Phase 3 milestone gate can be passed.
 | 0 | **Complete** | Linear target recovery confirmed in testthat |
 | 1 | **~70% complete** | Core done; missing: sqrt/tanh/abs operators, round-trip parser, AD vs finite-diff verification |
 | 2 | **Gate PASSED (2026-06-06)** | Nguyen N1–N7 recovered 5/5, N9 4/5 → 8/9, far below NMSE 1e-4. See `docs/11`. Missing: adaptive parsimony; runtime-blowup (bloat) on some seeds is the top open issue. |
-| 3 | **~55% complete** | Rcpp bridge, OpenMP island model, testthat done; missing: `R CMD check` clean, formal benchmarks, visualization, SRBench runner |
+| 3 | **~55% complete** | cpp11 bridge, OpenMP island model, testthat done; missing: `R CMD check` clean, formal benchmarks, visualization, SRBench runner |
 | 4–5 | Not started | |
 
 ### Immediate priorities (in order)
