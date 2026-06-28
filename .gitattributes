@@ -1,0 +1,9 @@
+# GitHub Linguist overrides.
+#
+# The shipped library and its runtime never depend on Julia. The only Julia in
+# this repository is benchmark/comparison tooling that drives PySR /
+# SymbolicRegression.jl in the development environment to compare against
+# rsymbolic2 (permitted by the project's benchmarking policy). Mark it as
+# vendored so it does not appear in the repository's language statistics and
+# cannot be mistaken for a dependency of the library.
+benchmarks/*.jl linguist-vendored

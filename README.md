@@ -19,11 +19,11 @@ for Python.
 > Apache License 2.0; see [`NOTICE`](NOTICE) for attribution. "PySR" is referenced only
 > to describe default compatibility.
 
-```text
-   data (X, y)                                 discovered formula
-  ┌───────────┐     genetic programming      ┌───────────────────────┐
-  │ x0  x1  y │  ─────────────────────────▶  │  y ≈ 2.5·x0² − 1.3     │
-  └───────────┘   + LM constant fitting       └───────────────────────┘
+```mermaid
+flowchart LR
+    D["data (X, y)<br/>columns x0, x1 → y"]
+    F["discovered formula<br/>y ≈ 2.5·x0² − 1.3"]
+    D -->|"genetic programming<br/>+ LM constant fitting"| F
 ```
 
 ---
