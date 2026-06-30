@@ -45,6 +45,25 @@ trade-off to weigh — do **not** substitute a value chosen by our own benchmark
   is still a bug. Parity defines *what* the search is; the Project Priorities govern
   *how* it is built.
 
+### Opt-in high-accuracy options (the second layer)
+
+The parity rule above binds **defaults**. On top of the PySR-identical default layer,
+rsymbolic2 may add **opt-in features that deliberately diverge from PySR to improve
+accuracy** (e.g. a stronger constant optimiser, larger `maxsize`, more optimiser
+restarts, an alternative least-squares backend). This is a sanctioned design direction,
+not speculative scope expansion. Such a feature is permitted only when **all** of:
+
+1. **Off by default.** The shipped default value reproduces PySR's behaviour exactly.
+   Turning the option on is the only thing that changes the search.
+2. **Documented with evidence.** Its purpose, the divergence from PySR, and its measured
+   accuracy effect are recorded in `docs/` before it is trusted (Benchmarking Requirements
+   still apply — medians over runs, not a single best).
+3. **Parity preserved when unused.** With every such option left at its default, the
+   default-parity comparison against PySR must be unchanged.
+
+When this layer and the default-parity rule appear to conflict, the resolution is always:
+defaults match PySR, the divergence lives behind an explicit opt-in.
+
 ## Language Requirements
 
 - Discussion with the user: **Japanese**.
@@ -109,7 +128,10 @@ portability for speed unless a benchmark shows the speed matters and the user ag
 - Prefer a simple correct design over a clever fast one until measurements
   demand otherwise.
 - Do not expand scope speculatively. Build what the current phase needs, not what
-  a future phase might. Confirm with the user before widening scope.
+  a future phase might. Confirm with the user before widening scope. Note: adding an
+  **opt-in high-accuracy option** (per "Opt-in high-accuracy options" above) is a
+  sanctioned direction, not speculative scope — provided it stays off by default and
+  is backed by measured evidence.
 - Correctness is verified, not assumed: unit tests for every component, numerical
   checks for automatic differentiation (compare against finite differences), and
   comparison against known-answer problems before trusting the search.
