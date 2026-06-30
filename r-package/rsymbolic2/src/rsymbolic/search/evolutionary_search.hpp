@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -103,6 +104,15 @@ struct SearchOptions {
     // path exactly (island 0 uses seed directly; RNG sequence is identical).
     // Default 31 = PySR `populations` (docs/28 §A).
     std::size_t n_populations      = 31;  // number of parallel islands
+    // OpenMP team size for the island-parallel regions (init + evolution). 0 = auto:
+    // use the OpenMP default (omp_get_max_threads(), which honours OMP_NUM_THREADS and
+    // otherwise defaults to the machine's core count) — this is the default and reproduces
+    // the prior behaviour exactly. A positive value requests exactly that many island
+    // workers. The team is always capped at n_populations because islands are the only unit
+    // of parallelism (see resolve_team_size). Pure wall-clock knob: the island model is
+    // bit-deterministic across thread counts (test_island_model), so n_threads changes only
+    // speed, never the result (docs/37).
+    int n_threads = 0;
     // Cycle mapping (docs/28 §C): PySR runs niterations=100 iterations, each
     // ncycles_per_iteration=380 reg-evol cycles, with each cycle doing
     // ceil(population_size / tournament_selection_n) mutations and migrating once per
@@ -264,6 +274,22 @@ inline int get_cur_maxsize(int max_nodes, double fraction_elapsed,
     if (cur < 1)         cur = 1;
     if (cur > max_nodes) cur = max_nodes;
     return cur;
+}
+
+// Resolve the OpenMP team size for the island-parallel regions (init + evolution).
+// `n_threads` is the user request (SearchOptions::n_threads): 0 (or negative) = auto,
+// meaning use `auto_threads` (the caller passes omp_get_max_threads(), which honours
+// OMP_NUM_THREADS and otherwise defaults to the core count); a positive value is taken
+// literally. The team is always capped at `n_islands` because islands are the only unit of
+// parallelism — a larger team leaves surplus threads with no loop iteration, busy-waiting at
+// the implicit barrier, which can balloon a node evaluation's wall time and make the timeout
+// poll miss its deadline (docs/22). The result is clamped to >= 1. Pure (no OpenMP call) so
+// it is unit-testable without a runtime.
+inline int resolve_team_size(std::size_t n_islands, int n_threads, int auto_threads) {
+    const int desired = n_threads > 0 ? n_threads : std::max(1, auto_threads);
+    const std::size_t capped =
+        std::min<std::size_t>(n_islands, static_cast<std::size_t>(std::max(1, desired)));
+    return std::max(1, static_cast<int>(capped));
 }
 
 // The outcome of a search: the best expression found (with constants fitted) plus the

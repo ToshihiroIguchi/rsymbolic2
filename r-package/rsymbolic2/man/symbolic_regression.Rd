@@ -13,6 +13,7 @@ symbolic_regression(X, ...)
   y,
   population_size = 27L,
   n_populations = 31L,
+  n_threads = NULL,
   generations = 2800L,
   tournament_size = 15L,
   unary_ops = c("neg", "exp", "log", "sin", "cos"),
@@ -63,6 +64,17 @@ population (default 27, PySR \code{population_size}).}
 parallel (default 31, PySR \code{populations}). Values greater than 1 enable
 OpenMP-parallel island evolution with periodic ring migration. When OpenMP is
 unavailable the islands still run but sequentially.}
+
+\item{n_threads}{Number of OpenMP worker threads for the island-parallel
+search. \code{NULL} (default) uses every available core (the OpenMP default,
+overridable with the \code{OMP_NUM_THREADS} environment variable); a positive
+integer requests exactly that many. The team is capped internally at
+\code{n_populations} (islands are the only unit of parallelism). This is a pure
+wall-clock knob: the island model is bit-deterministic across thread counts, so
+\code{n_threads} changes only speed, never the result. Has no effect when the
+package was built without OpenMP. Note that more logical (hyper-threaded) cores
+finish sooner than restricting to physical cores, so the default is intentionally
+"use all cores", not "physical cores" (see \code{docs/37}).}
 
 \item{generations}{Number of evolution generations (default 2800). One
 generation performs \code{population_size} tournament-and-replace mutation

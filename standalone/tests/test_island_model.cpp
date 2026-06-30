@@ -97,6 +97,38 @@ int main() {
     }
 
     // -----------------------------------------------------------------
+    // Gate 3b: the explicit n_threads knob must not change results.
+    // n_threads is a pure wall-clock knob (docs/37); a run with an explicit
+    // team size must return the identical expression to the auto default.
+    // -----------------------------------------------------------------
+    {
+        SearchOptions auto_opts = linear_opts(4);   // n_threads = 0 (auto)
+        SearchOptions two_opts  = linear_opts(4);
+        two_opts.n_threads = 2;                      // explicit half-team
+        const std::string expr_auto = run_evolution(prob.X, prob.y, auto_opts).expression;
+        const std::string expr_two  = run_evolution(prob.X, prob.y, two_opts).expression;
+        std::printf("n_threads=auto expr: %s\n", expr_auto.c_str());
+        std::printf("n_threads=2    expr: %s\n", expr_two.c_str());
+        CHECK(expr_auto == expr_two);
+    }
+
+    // -----------------------------------------------------------------
+    // Gate 3c: resolve_team_size — the pure team-size resolver shared by
+    // both island-parallel regions. 0/negative n_threads => auto (the
+    // omp_get_max_threads() value the caller passes); positive => literal;
+    // always capped at the island count and clamped to >= 1.
+    // -----------------------------------------------------------------
+    {
+        CHECK(resolve_team_size(31, 0, 12) == 12);   // auto, fits under island cap
+        CHECK(resolve_team_size(4, 0, 12) == 4);     // auto, capped at islands
+        CHECK(resolve_team_size(31, 6, 12) == 6);    // explicit honoured
+        CHECK(resolve_team_size(31, 100, 12) == 31); // explicit capped at islands
+        CHECK(resolve_team_size(31, -1, 12) == 12);  // negative => auto
+        CHECK(resolve_team_size(1, 0, 12) == 1);     // single island
+        CHECK(resolve_team_size(31, 0, 0) == 1);     // auto clamps >= 1
+    }
+
+    // -----------------------------------------------------------------
     // Gate 4: HallOfFame::merge is correct.
     // -----------------------------------------------------------------
     {

@@ -37,6 +37,16 @@
 #'   parallel (default 31, PySR \code{populations}). Values greater than 1 enable
 #'   OpenMP-parallel island evolution with periodic ring migration. When OpenMP is
 #'   unavailable the islands still run but sequentially.
+#' @param n_threads Number of OpenMP worker threads for the island-parallel
+#'   search. \code{NULL} (default) uses every available core (the OpenMP default,
+#'   overridable with the \code{OMP_NUM_THREADS} environment variable); a positive
+#'   integer requests exactly that many. The team is capped internally at
+#'   \code{n_populations} (islands are the only unit of parallelism). This is a pure
+#'   wall-clock knob: the island model is bit-deterministic across thread counts, so
+#'   \code{n_threads} changes only speed, never the result. Has no effect when the
+#'   package was built without OpenMP. Note that more logical (hyper-threaded) cores
+#'   finish sooner than restricting to physical cores, so the default is intentionally
+#'   "use all cores", not "physical cores" (see \code{docs/37}).
 #' @param generations Number of evolution generations (default 2800). One
 #'   generation performs \code{population_size} tournament-and-replace mutation
 #'   steps. The default reproduces PySR's per-population mutation budget: PySR runs
@@ -239,6 +249,7 @@ symbolic_regression.default <- function(
     y,
     population_size       = 27L,
     n_populations         = 31L,
+    n_threads             = NULL,
     generations           = 2800L,
     tournament_size       = 15L,
     unary_ops             = c("neg", "exp", "log", "sin", "cos"),
@@ -290,6 +301,16 @@ symbolic_regression.default <- function(
         !is.finite(warmup_maxsize_by) || warmup_maxsize_by < 0)
         stop("warmup_maxsize_by must be a single finite number >= 0")
 
+    # OpenMP team size. NULL (default) => 0 = auto (all cores, honouring OMP_NUM_THREADS);
+    # a positive integer caps the worker threads. The core caps it at n_populations.
+    if (is.null(n_threads)) {
+        n_threads <- 0L
+    } else {
+        n_threads <- as.integer(n_threads)
+        if (length(n_threads) != 1L || is.na(n_threads) || n_threads < 1L)
+            stop("n_threads must be NULL or a positive integer")
+    }
+
     # Optional per-point weights; NULL => unweighted (passed as a length-0 vector).
     if (is.null(weights)) {
         weights <- numeric(0)
@@ -339,7 +360,8 @@ symbolic_regression.default <- function(
         as.double(weights),
         as.logical(batching),
         as.integer(batch_size),
-        as.double(warmup_maxsize_by)
+        as.double(warmup_maxsize_by),
+        as.integer(n_threads)
     )
     result$n_features <- ncol(X)
     # Display-only feature names: the column names of X, kept so print()/summary()

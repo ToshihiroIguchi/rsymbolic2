@@ -174,6 +174,30 @@ def test_warmup_maxsize_rejects_negative():
         symbolic_regression(X, y, warmup_maxsize_by=-0.1)
 
 
+def test_n_threads_default_none_and_result_invariant():
+    """n_threads defaults to None (auto = all cores) and is a pure wall-clock knob:
+    for a fixed seed an explicit thread count returns the identical result."""
+    assert inspect.signature(symbolic_regression).parameters["n_threads"].default is None
+    X = np.linspace(-5, 5, 30).reshape(-1, 1)
+    y = 2.5 * X[:, 0] + 1.7
+    common = dict(unary_ops=[], n_populations=4, population_size=100,
+                  generations=20, seed=99)
+    auto = symbolic_regression(X, y, **common)            # n_threads=None
+    one = symbolic_regression(X, y, n_threads=1, **common)
+    two = symbolic_regression(X, y, n_threads=2, **common)
+    assert auto.expression == one.expression == two.expression
+    assert auto.loss == one.loss == two.loss
+
+
+def test_n_threads_rejects_non_positive():
+    X = np.linspace(-3, 3, 20).reshape(-1, 1)
+    y = 2 * X[:, 0] + 1
+    with pytest.raises(ValueError):
+        symbolic_regression(X, y, generations=1, n_threads=0)
+    with pytest.raises(ValueError):
+        symbolic_regression(X, y, generations=1, n_threads=-2)
+
+
 def test_input_validation():
     X = np.zeros((5, 1))
     y = np.zeros(4)

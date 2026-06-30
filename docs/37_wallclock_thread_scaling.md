@@ -93,6 +93,34 @@ only remaining lever (SLEEF) is not justified for a speed-only goal. No code cha
 the actionable guidance is operational (set `OMP_NUM_THREADS` to the physical core count, not the
 4-thread benchmark cap).
 
+## Follow-up decisions (2026-06-30)
+
+After reviewing this file with the user, two decisions were taken:
+
+1. **Expose an explicit `n_threads` argument** (R + Python + a thin C++ plumb), default
+   `NULL`/`None` = auto = the prior behaviour (`omp_get_max_threads()`, i.e. all logical
+   cores, capped at `n_populations`). A positive value requests exactly that many island
+   workers. This only surfaces the knob that was already reachable via `OMP_NUM_THREADS`;
+   it is a pure wall-clock knob with zero parity/recovery impact (the island model is
+   bit-deterministic across thread counts — `test_island_model`). The default is unchanged,
+   so **the shipped default already uses every logical core** (measured here:
+   `omp_get_max_threads() = 12` on the 6c/12t dev box). We deliberately do **not** default
+   to the *physical* core count: §Findings shows 12 logical (38 s) beats 6 physical (57 s)
+   in wall-clock — physical is the efficiency sweet spot, not the throughput optimum — and
+   portable physical-core detection is not available through OpenMP. `resolve_team_size`
+   (evolutionary_search.hpp) centralises the `min(n_islands, requested-or-auto)` cap shared
+   by both parallel regions.
+
+2. **SLEEF: reaffirmed not to adopt** (re-confirmed with the user, not reopened). The
+   `docs/30` reasoning stands: PySR's default `turbo=False` does not vectorise
+   transcendentals, so matching PySR means *not* using SLEEF; it is pure Performance (#5)
+   against a real Rtools/MinGW/UCRT dependency cost with a mandatory serial fallback; and —
+   unlike the bit-exact SoA/MultiDual levers — SLEEF's transcendentals are not bit-identical
+   to libm, so adopting it would shift the constant-fitting trajectory and require a full
+   Feynman recovery re-validation, for zero result improvement under goal A. Revisit only if
+   a *measured* real workload is transcendental-bound, wall-clock is the binding pain, and
+   the recovery re-validation + dependency cost are accepted.
+
 ## Reproduction
 
 ```

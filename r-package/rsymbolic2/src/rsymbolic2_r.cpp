@@ -113,7 +113,8 @@ cpp11::writable::list symbolic_regression_cpp(
     cpp11::doubles  weights,
     bool            batching,
     int             batch_size,
-    double          warmup_maxsize_by
+    double          warmup_maxsize_by,
+    int             n_threads
 ) {
     // Convert R matrix → vector<vector<double>> (row-major)
     const int n = X.nrow();
@@ -166,6 +167,10 @@ cpp11::writable::list symbolic_regression_cpp(
     opts.batch_size            = static_cast<std::size_t>(std::max(1, batch_size));
     // PySR warmup_maxsize_by: 0 = off (fixed maxsize). Negative is rejected on the R side.
     opts.warmup_maxsize_by     = warmup_maxsize_by;
+    // OpenMP team size. 0 (the R wrapper's NULL default) = auto (all cores, honouring
+    // OMP_NUM_THREADS); positive = that many island workers, capped at n_populations. The
+    // R wrapper rejects non-positive non-NULL values, so any value here is 0 or positive.
+    opts.n_threads             = n_threads;
     // max_evals arrives as a double (R has no native 64-bit int); negative/zero => off.
     opts.max_evals = max_evals > 0.0
         ? static_cast<std::size_t>(max_evals)

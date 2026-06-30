@@ -883,8 +883,7 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
     // identical regardless of thread count or completion order.
     std::vector<Island> islands(n);
 #ifdef _OPENMP
-    const int init_threads = static_cast<int>(std::min<std::size_t>(
-        n, static_cast<std::size_t>(std::max(1, omp_get_max_threads()))));
+    const int init_threads = resolve_team_size(n, options.n_threads, omp_get_max_threads());
 #   pragma omp parallel for schedule(dynamic) num_threads(init_threads) if(n > 1)
 #endif
     for (std::int64_t i = 0; i < static_cast<std::int64_t>(n); ++i) {
@@ -965,12 +964,15 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
         // the deadline poll (which runs on the starved worker) cannot fire and the
         // run grossly overshoots its timeout (docs/22). Islands are the only unit
         // of parallelism here, so capping the team at n loses no useful concurrency.
-        // Use omp_get_max_threads() (not omp_get_num_procs()): it honours OMP_NUM_THREADS
-        // / omp_set_num_threads, so a user (or a benchmark equalizing the compute budget
-        // against another tool) can cap the team via the standard env var. With the env
-        // unset it still defaults to the core count, so default behaviour is unchanged.
-        const int omp_threads = static_cast<int>(std::min<std::size_t>(
-            n, static_cast<std::size_t>(std::max(1, omp_get_max_threads()))));
+        // Team size = resolve_team_size(islands, options.n_threads, omp_get_max_threads()).
+        // options.n_threads == 0 (default) falls back to omp_get_max_threads() (not
+        // omp_get_num_procs()): it honours OMP_NUM_THREADS / omp_set_num_threads, so a user
+        // (or a benchmark equalizing the compute budget against another tool) can cap the team
+        // via the standard env var, and with the env unset it defaults to the core count — so
+        // the default behaviour is unchanged. A positive options.n_threads (the explicit
+        // R/Python n_threads argument) overrides that. Either way the team is capped at the
+        // island count (surplus threads only busy-wait — docs/22).
+        const int omp_threads = resolve_team_size(n, options.n_threads, omp_get_max_threads());
 #       pragma omp parallel for schedule(dynamic) num_threads(omp_threads) if(n > 1)
 #endif
         for (std::int64_t i = 0; i < static_cast<std::int64_t>(n); ++i) {

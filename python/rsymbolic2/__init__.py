@@ -189,6 +189,7 @@ def symbolic_regression(
     *,
     population_size: int = 27,
     n_populations: int = 31,
+    n_threads: Optional[int] = None,
     generations: int = 2800,
     tournament_size: int = 15,
     unary_ops: Sequence[str] = ("neg", "exp", "log", "sin", "cos"),
@@ -235,6 +236,15 @@ def symbolic_regression(
         Number of island populations evolved in parallel with ring migration (PySR
         ``populations``). >1 enables OpenMP parallelism; islands still run (serially)
         when OpenMP is unavailable.
+    n_threads : int, optional
+        OpenMP worker threads for the island-parallel search. ``None`` (default) uses
+        every available core (the OpenMP default, overridable with the ``OMP_NUM_THREADS``
+        environment variable); a positive integer requests exactly that many. The team is
+        capped internally at ``n_populations``. Pure wall-clock knob: the island model is
+        bit-deterministic across thread counts, so ``n_threads`` changes only speed, never
+        the result. No effect when built without OpenMP. More logical (hyper-threaded) cores
+        finish sooner than restricting to physical cores, so the default is "all cores", not
+        "physical cores" (see docs/37).
     generations : int, default 2800
         Evolution generations. One generation performs ``population_size``
         tournament-and-replace steps. The default reproduces PySR's per-population
@@ -382,6 +392,15 @@ def symbolic_regression(
     if not np.isfinite(warmup_maxsize_by) or float(warmup_maxsize_by) < 0:
         raise ValueError("warmup_maxsize_by must be a finite number >= 0.")
 
+    # OpenMP team size. None (default) => 0 = auto (all cores, honouring OMP_NUM_THREADS);
+    # a positive integer caps the worker threads. The core caps it at n_populations.
+    if n_threads is None:
+        n_threads_val = 0
+    else:
+        n_threads_val = int(n_threads)
+        if n_threads_val < 1:
+            raise ValueError("n_threads must be None or a positive integer.")
+
     raw = symbolic_regression_cpp(
         X_arr,
         y_arr,
@@ -413,6 +432,7 @@ def symbolic_regression(
         bool(batching),
         int(batch_size),
         float(warmup_maxsize_by),
+        int(n_threads_val),
     )
     if feature_names is not None and len(feature_names) != int(X_arr.shape[1]):
         feature_names = None  # shape changed (e.g. 1-D promoted); drop mismatched names
