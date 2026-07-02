@@ -254,6 +254,12 @@ struct SearchOptions {
     // defaults to 1 is the deliberate asymmetry — wrappers always pass the value
     // explicitly (rsymbolic2_r.cpp / rsymbolic2_py.cpp).
     int verbosity = 0;
+
+    // Internal hook for the Phase-0 seeding oracle (diagnostic; not exposed via the
+    // R/Python bindings). When non-empty, the first seed_trees.size() members of each
+    // island's initial population are copies of these trees instead of random trees.
+    // Empty (the default) leaves the default search path byte-identical.
+    std::vector<Tree> seed_trees;
 };
 
 // PySR `warmup_maxsize_by` (SR.jl get_cur_maxsize, SearchUtils.jl 1.11.0). Returns the size

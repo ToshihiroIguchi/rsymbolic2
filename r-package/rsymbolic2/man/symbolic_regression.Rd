@@ -77,14 +77,21 @@ finish sooner than restricting to physical cores, so the default is intentionall
 "use all cores", not "physical cores" (see \code{docs/37}).}
 
 \item{generations}{Number of evolution generations (default 2800). One
-generation performs \code{population_size} tournament-and-replace mutation
-steps. The default reproduces PySR's per-population mutation budget: PySR runs
-\code{niterations = 100} iterations of \code{ncycles_per_iteration = 380}
-reg-evolution cycles, each cycle doing
-\code{ceil(population_size / tournament_size)} mutations and migrating once per
-iteration, so one iteration is \code{380 * ceil(27/15) = 760} mutations =
-\code{round(760/27) = 28} generations and the whole run is
-\code{100 * 28 = 2800} (see \code{docs/28} \eqn{C}).}
+  generation performs \code{population_size} tournament-and-replace mutation
+  steps. The default reproduces PySR's per-population mutation budget: PySR runs
+  \code{niterations = 100} iterations of \code{ncycles_per_iteration = 380}
+  reg-evolution cycles, each cycle doing
+  \code{ceil(population_size / tournament_size)} mutations and migrating once per
+  iteration, so one iteration is \code{380 * ceil(27/15) = 760} mutations =
+  \code{round(760/27) = 28} generations and the whole run is
+  \code{100 * 28 = 2800} (see \code{docs/28} \eqn{C}).
+
+  Raising \code{generations} is the sanctioned opt-in accuracy lever: recovery
+  scales with budget on trajectory-limited problems (measured at 5x budget on
+  the Feynman set: newtons_grav 0 to 0.9, center_mass 0.3 to 0.8,
+  boltzmann_dist 0.1 to 0.4 structurally-verified recovery; some problems do
+  not respond — see \code{docs/44}). Compute cost grows linearly. The default
+  stays at PySR parity.}
 
 \item{tournament_size}{Tournament size for selection and replacement
 (default 15, PySR \code{tournament_selection_n}).}

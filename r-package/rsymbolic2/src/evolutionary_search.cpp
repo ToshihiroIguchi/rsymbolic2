@@ -438,7 +438,11 @@ void initialize_island(Island& isl,
         // SR.jl seeds the initial population with gen_random_tree(nlength=3): a small tree of
         // ~3 operators grown by append_random_op, NOT a depth-bounded recursive tree. nlength=3
         // is hardcoded in SR.jl (Configure.jl / SymbolicRegression.jl), not a PySR-tunable knob.
-        Tree tree = gen_random_tree(3, opts.space, isl.rng);
+        // Phase-0 seeding oracle hook (diagnostic only): if a seed tree is supplied for this
+        // member slot, inject a copy of it instead of a random tree. Empty seed_trees (the
+        // default) never takes this branch, so the default search path is unaffected.
+        Tree tree = (i < opts.seed_trees.size()) ? opts.seed_trees[i]
+                                                  : gen_random_tree(3, opts.space, isl.rng);
         // Score the initial member with its random constants via a single forward pass —
         // NOT an LM fit. SR.jl builds the initial population with eval_cost only (its
         // PopMember constructor; Population.jl), never optimising constants at birth; the

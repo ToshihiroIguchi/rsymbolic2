@@ -113,4 +113,10 @@ if(RSYMBOLIC2_BUILD_BENCHMARKS)
     # -O2-vs-O3 comparison compile it directly with the g++ command in the file header.
     add_executable(bench_opt_precision benchmarks/bench_opt_precision.cpp)
     target_link_libraries(bench_opt_precision PRIVATE rsymbolic2_core)
+
+    # Phase 0-C seed-expression oracle (docs/44): throwaway diagnostic driver
+    # using the internal SearchOptions::seed_trees hook. Not a ctest target — it is run
+    # manually with problem-specific CLI args (see the file header).
+    add_executable(diag_seed_oracle benchmarks/diag_seed_oracle.cpp)
+    target_link_libraries(diag_seed_oracle PRIVATE rsymbolic2_core)
 endif()

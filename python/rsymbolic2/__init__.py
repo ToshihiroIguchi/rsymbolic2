@@ -249,6 +249,11 @@ def symbolic_regression(
         Evolution generations. One generation performs ``population_size``
         tournament-and-replace steps. The default reproduces PySR's per-population
         mutation budget (``niterations=100`` x 28; see README / docs/28).
+        Raising ``generations`` is the sanctioned opt-in accuracy lever: recovery
+        scales with budget on trajectory-limited problems (measured at 5x budget:
+        newtons_grav 0 -> 0.9, center_mass 0.3 -> 0.8, boltzmann_dist 0.1 -> 0.4
+        structurally-verified recovery; some problems do not respond — docs/44).
+        Compute cost grows linearly; the default stays at PySR parity.
     tournament_size : int, default 15
         Tournament size for selection/replacement (PySR ``tournament_selection_n``).
     unary_ops : sequence of str, default ("neg","exp","log","sin","cos")
