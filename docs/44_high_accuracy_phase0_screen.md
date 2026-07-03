@@ -187,15 +187,22 @@ p = 1.0. planck additionally needs subset-homogeneity detection
 trivially solved); with it, planck's oracle chain also ends at 5/5.
 interference remains out of reach for every lever tested in this doc.
 
-**Verdict: GO.** Next step per the approved plan: a separate implementation
-plan for an opt-in decomposition layer (R/Python wrapper around the core
-search — detect merges/separability numerically on (X, y), recurse on the
-reduced problem, recombine; C++ core untouched), including subset-homogeneity
-to cover planck. Off by default; when off, nothing changes.
+**Verdict: GO (oracle ceiling only — superseded by docs/45).** This proves that
+*if* the merges are detected and the exact residual factor is known, the residual
+is solvable. Detection here used oracle access to the true `fn` at constructed
+off-sample points and hand-derived residual factors — capabilities a shipped
+feature (which has only sampled `(X, y)`) lacks. The follow-up detection-from-data
+screen (**docs/45, Phase 0-E**) measured that missing piece and found merges are
+**not reliably detectable from `(X, y)` alone** without a heavy surrogate/NN
+dependency (true merges co-fire with false ones — e.g. bose's product merges are
+indistinguishable from a spurious sum merge). **Net verdict for the shippable
+feature: NO-GO.** No decomposition wrapper was built.
 
 ## 7. Decisions
 
-1. **Build**: separability decomposition (opt-in, wrapper layer) — its own plan.
+1. ~~**Build**: separability decomposition (opt-in, wrapper layer) — its own plan.~~
+   **Superseded by docs/45: NO-GO for the shippable feature** — merges are not
+   reliably detectable from `(X, y)` alone. Closed as measured-and-rejected.
 2. **Document**: `generations` as the accuracy-vs-compute lever with the
    structural numbers from §3 (done in the R/Python docs alongside this doc).
 3. **Close as measured-and-rejected**: seed_expressions, nested_constraints /
