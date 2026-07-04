@@ -93,9 +93,10 @@ finish sooner than restricting to physical cores, so the default is intentionall
   Raising \code{generations} is the sanctioned opt-in accuracy lever: recovery
   scales with budget on trajectory-limited problems (measured at 5x budget on
   the Feynman set: newtons_grav 0 to 0.9, center_mass 0.3 to 0.8,
-  boltzmann_dist 0.1 to 0.4 structurally-verified recovery; some problems do
-  not respond — see \code{docs/44}). Compute cost grows linearly. The default
-  stays at PySR parity.}
+  boltzmann_dist 0.1 to 0.4, interference 0 to 0.27 structurally-verified
+  recovery; some problems do not respond — see \code{docs/44} and
+  \code{docs/47}). Compute cost grows linearly. The default stays at PySR
+  parity.}
 
 \item{tournament_size}{Tournament size for selection and replacement
 (default 15, PySR \code{tournament_selection_n}).}

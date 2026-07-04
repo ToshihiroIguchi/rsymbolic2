@@ -21,6 +21,15 @@
 #
 # Both train (seed DATA_SEED) and test (seed DATA_SEED+1) splits use the same
 # variable domains and n. The split argument selects which seed is used.
+#
+# Each problem also carries SI unit metadata for the opt-in dimensional-analysis
+# screen (docs/46 section 6): `units` is a named character vector in `domains`
+# order (rsymbolic2 X_units) and `y_unit` is the target's unit (y_units). The
+# strings use the DynamicQuantities-style grammar of units/unit_parser.hpp;
+# "1" and "rad" are dimensionless. This is measurement metadata only — data
+# generation and the default (units-off) benchmark are unaffected. Where the
+# original equation's physical constant is sampled as a variable (eps, hbar,
+# kB, G, ...), that variable carries the constant's SI unit.
 
 feynman_problems <- list(
 
@@ -32,6 +41,8 @@ feynman_problems <- list(
     formula = "exp(-theta^2/2) / sqrt(2*pi)",
     n_vars  = 1L,
     domains = list(theta = c(1, 3)),
+    units   = c(theta = "1"),
+    y_unit  = "1",
     fn      = function(x) exp(-x[1]^2 / 2) / sqrt(2 * pi),
     stage   = "smoke",
     ops     = c("square", "exp", "sqrt", "div")
@@ -43,6 +54,8 @@ feynman_problems <- list(
     formula = "m0 / sqrt(1 - (v/c)^2)",
     n_vars  = 3L,
     domains = list(m0 = c(1, 5), v = c(1, 2), c = c(3, 10)),
+    units   = c(m0 = "kg", v = "m/s", c = "m/s"),
+    y_unit  = "kg",
     fn      = function(x) x[1] / sqrt(1 - (x[2] / x[3])^2),
     stage   = "smoke",
     ops     = c("div", "sqrt", "sub", "square")
@@ -54,6 +67,8 @@ feynman_problems <- list(
     formula = "q1*q2 / (4*pi*eps*r^2)",
     n_vars  = 4L,
     domains = list(q1 = c(1, 5), q2 = c(1, 5), eps = c(1, 5), r = c(1, 5)),
+    units   = c(q1 = "C", q2 = "C", eps = "F/m", r = "m"),
+    y_unit  = "N",
     fn      = function(x) x[1] * x[2] / (4 * pi * x[3] * x[4]^2),
     stage   = "smoke",
     ops     = c("mul", "div", "square")
@@ -65,6 +80,8 @@ feynman_problems <- list(
     formula = "0.5 * k * x^2",
     n_vars  = 2L,
     domains = list(k = c(1, 5), x = c(1, 5)),
+    units   = c(k = "N/m", x = "m"),
+    y_unit  = "J",
     fn      = function(x) 0.5 * x[1] * x[2]^2,
     stage   = "smoke",
     ops     = c("mul", "square")
@@ -77,6 +94,8 @@ feynman_problems <- list(
     n_vars  = 4L,
     # x in [5,10] and u*t <= 2*2 = 4 ensures numerator >= 1
     domains = list(x = c(5, 10), u = c(1, 2), t = c(1, 2), c = c(3, 10)),
+    units   = c(x = "m", u = "m/s", t = "s", c = "m/s"),
+    y_unit  = "m",
     fn      = function(x) (x[1] - x[2] * x[3]) / sqrt(1 - (x[2] / x[4])^2),
     stage   = "smoke",
     ops     = c("sub", "mul", "div", "sqrt", "square")
@@ -88,6 +107,8 @@ feynman_problems <- list(
     formula = "m*v / sqrt(1 - (v/c)^2)",
     n_vars  = 3L,
     domains = list(m = c(1, 5), v = c(1, 2), c = c(3, 10)),
+    units   = c(m = "kg", v = "m/s", c = "m/s"),
+    y_unit  = "kg*m/s",
     fn      = function(x) x[1] * x[2] / sqrt(1 - (x[2] / x[3])^2),
     stage   = "smoke",
     ops     = c("mul", "div", "sqrt", "sub", "square")
@@ -99,6 +120,8 @@ feynman_problems <- list(
     formula = "0.25 * m * (omega^2 + omega0^2) * x1^2",
     n_vars  = 4L,
     domains = list(m = c(1, 5), omega = c(1, 5), omega0 = c(1, 5), x1 = c(1, 5)),
+    units   = c(m = "kg", omega = "1/s", omega0 = "1/s", x1 = "m"),
+    y_unit  = "J",
     fn      = function(x) 0.25 * x[1] * (x[2]^2 + x[3]^2) * x[4]^2,
     stage   = "smoke",
     ops     = c("mul", "add", "square")
@@ -110,6 +133,8 @@ feynman_problems <- list(
     formula = "I1 + I2 + 2*sqrt(I1*I2)*cos(delta)",
     n_vars  = 3L,
     domains = list(I1 = c(1, 5), I2 = c(1, 5), delta = c(1, 5)),
+    units   = c(I1 = "W/m^2", I2 = "W/m^2", delta = "rad"),
+    y_unit  = "W/m^2",
     fn      = function(x) x[1] + x[2] + 2 * sqrt(x[1] * x[2]) * cos(x[3]),
     stage   = "smoke",
     ops     = c("add", "sqrt", "mul", "cos")
@@ -121,6 +146,8 @@ feynman_problems <- list(
     formula = "4*pi*eps0*hbar^2 / (m*q^2)",
     n_vars  = 4L,
     domains = list(eps0 = c(1, 5), hbar = c(1, 5), m = c(1, 5), q = c(1, 5)),
+    units   = c(eps0 = "F/m", hbar = "J*s", m = "kg", q = "C"),
+    y_unit  = "m",
     fn      = function(x) 4 * pi * x[1] * x[2]^2 / (x[3] * x[4]^2),
     stage   = "smoke",
     ops     = c("mul", "div", "square")
@@ -132,6 +159,8 @@ feynman_problems <- list(
     formula = "q^2 * a^2 / (6*pi*eps0*c^3)",
     n_vars  = 4L,
     domains = list(q = c(1, 5), a = c(1, 5), eps0 = c(1, 5), c = c(1, 5)),
+    units   = c(q = "C", a = "m/s^2", eps0 = "F/m", c = "m/s"),
+    y_unit  = "W",
     fn      = function(x) x[1]^2 * x[2]^2 / (6 * pi * x[3] * x[4]^3),
     stage   = "smoke",
     ops     = c("square", "mul", "div", "pow")
@@ -146,6 +175,8 @@ feynman_problems <- list(
     n_vars  = 5L,
     # domains chosen so exp argument stays in [1/9, 9] to avoid exp overflow
     domains = list(hbar = c(1, 3), omega = c(1, 3), c = c(1, 3), k = c(1, 3), T = c(1, 3)),
+    units   = c(hbar = "J*s", omega = "1/s", c = "m/s", k = "J/K", T = "K"),
+    y_unit  = "J/m^2",
     fn      = function(x) {
       x[1] * x[2]^3 / (pi^2 * x[3]^2 * (exp(x[1] * x[2] / (x[4] * x[5])) - 1))
     },
@@ -159,6 +190,8 @@ feynman_problems <- list(
     formula = "(m1*r1 + m2*r2) / (m1 + m2)",
     n_vars  = 4L,
     domains = list(m1 = c(1, 5), r1 = c(1, 5), m2 = c(1, 5), r2 = c(1, 5)),
+    units   = c(m1 = "kg", r1 = "m", m2 = "kg", r2 = "m"),
+    y_unit  = "m",
     fn      = function(x) (x[1] * x[2] + x[3] * x[4]) / (x[1] + x[3]),
     stage   = "dev",
     ops     = c("mul", "add", "div")
@@ -170,6 +203,8 @@ feynman_problems <- list(
     formula = "r * F * sin(theta)",
     n_vars  = 3L,
     domains = list(r = c(1, 5), F = c(1, 5), theta = c(1, 5)),
+    units   = c(r = "m", F = "N", theta = "rad"),
+    y_unit  = "N*m",
     fn      = function(x) x[1] * x[2] * sin(x[3]),
     stage   = "dev",
     ops     = c("mul", "sin")
@@ -181,6 +216,9 @@ feynman_problems <- list(
     formula = "q*v*B / r",
     n_vars  = 4L,
     domains = list(q = c(1, 5), v = c(1, 5), B = c(1, 5), r = c(1, 5)),
+    # I.34.8 is omega = q*v*B/p; the 4th variable is the momentum p.
+    units   = c(q = "C", v = "m/s", B = "T", r = "kg*m/s"),
+    y_unit  = "1/s",
     fn      = function(x) x[1] * x[2] * x[3] / x[4],
     stage   = "dev",
     ops     = c("mul", "div")
@@ -192,6 +230,8 @@ feynman_problems <- list(
     formula = "omega0*(1 + v/c) / sqrt(1 - (v/c)^2)",
     n_vars  = 3L,
     domains = list(omega0 = c(1, 5), v = c(1, 2), c = c(3, 10)),
+    units   = c(omega0 = "1/s", v = "m/s", c = "m/s"),
+    y_unit  = "1/s",
     fn      = function(x) x[1] * (1 + x[2] / x[3]) / sqrt(1 - (x[2] / x[3])^2),
     stage   = "dev",
     ops     = c("mul", "add", "div", "sqrt", "sub", "square")
@@ -203,6 +243,8 @@ feynman_problems <- list(
     formula = "mob * kB * T",
     n_vars  = 3L,
     domains = list(mob = c(1, 5), kB = c(1, 5), T = c(1, 5)),
+    units   = c(mob = "s/kg", kB = "J/K", T = "K"),
+    y_unit  = "m^2/s",
     fn      = function(x) x[1] * x[2] * x[3],
     stage   = "dev",
     ops     = c("mul")
@@ -214,6 +256,8 @@ feynman_problems <- list(
     formula = "x1 * (cos(omega0*t) + alpha*cos(omega*t))",
     n_vars  = 5L,
     domains = list(x1 = c(1, 3), omega0 = c(1, 3), omega = c(1, 3), alpha = c(1, 3), t = c(1, 3)),
+    units   = c(x1 = "m", omega0 = "1/s", omega = "1/s", alpha = "1", t = "s"),
+    y_unit  = "m",
     fn      = function(x) x[1] * (cos(x[2] * x[5]) + x[4] * cos(x[3] * x[5])),
     stage   = "dev",
     ops     = c("mul", "add", "cos")
@@ -225,6 +269,8 @@ feynman_problems <- list(
     formula = "kappa * (T2 - T1) / d",
     n_vars  = 4L,
     domains = list(kappa = c(1, 5), T2 = c(1, 5), T1 = c(1, 5), d = c(1, 5)),
+    units   = c(kappa = "W/(m*K)", T2 = "K", T1 = "K", d = "m"),
+    y_unit  = "W/m^2",
     fn      = function(x) x[1] * (x[2] - x[3]) / x[4],
     stage   = "dev",
     ops     = c("mul", "sub", "div")
@@ -236,6 +282,8 @@ feynman_problems <- list(
     formula = "n0 * exp(-m*g*x / (kB*T))",
     n_vars  = 6L,
     domains = list(n0 = c(1, 5), m = c(1, 5), g = c(1, 5), x = c(1, 5), kB = c(1, 5), T = c(1, 5)),
+    units   = c(n0 = "1/m^3", m = "kg", g = "m/s^2", x = "m", kB = "J/K", T = "K"),
+    y_unit  = "1/m^3",
     fn      = function(x) x[1] * exp(-x[2] * x[3] * x[4] / (x[5] * x[6])),
     stage   = "dev",
     # 6-variable; expected to be hard — included to characterise, not to gate on
@@ -249,6 +297,8 @@ feynman_problems <- list(
     n_vars  = 2L,
     # n0*alpha/3 must be < 1: with both in [0.5,1.5] the product is <= 2.25 and /3 <= 0.75 < 1
     domains = list(n0 = c(0.5, 1.5), alpha = c(0.5, 1.5)),
+    units   = c(n0 = "1/m^3", alpha = "m^3"),
+    y_unit  = "1",
     fn      = function(x) x[1] * x[2] / (1 - x[1] * x[2] / 3),
     stage   = "dev",
     ops     = c("mul", "div", "sub")
@@ -260,6 +310,8 @@ feynman_problems <- list(
     formula = "1 + n0*alpha / (1 - n0*alpha/3)",
     n_vars  = 2L,
     domains = list(n0 = c(0.5, 1.5), alpha = c(0.5, 1.5)),
+    units   = c(n0 = "1/m^3", alpha = "m^3"),
+    y_unit  = "1",
     fn      = function(x) 1 + x[1] * x[2] / (1 - x[1] * x[2] / 3),
     stage   = "dev",
     ops     = c("add", "mul", "div", "sub")
@@ -271,6 +323,8 @@ feynman_problems <- list(
     formula = "q*hbar / (2*m)",
     n_vars  = 3L,
     domains = list(q = c(1, 5), hbar = c(1, 5), m = c(1, 5)),
+    units   = c(q = "C", hbar = "J*s", m = "kg"),
+    y_unit  = "A*m^2",
     fn      = function(x) x[1] * x[2] / (2 * x[3]),
     stage   = "dev",
     ops     = c("mul", "div")
@@ -282,6 +336,8 @@ feynman_problems <- list(
     formula = "hbar*omega / (exp(hbar*omega/(kB*T)) - 1)",
     n_vars  = 4L,
     domains = list(hbar = c(1, 3), omega = c(1, 3), kB = c(1, 3), T = c(1, 3)),
+    units   = c(hbar = "J*s", omega = "1/s", kB = "J/K", T = "K"),
+    y_unit  = "J",
     fn      = function(x) x[1] * x[2] / (exp(x[1] * x[2] / (x[3] * x[4])) - 1),
     stage   = "dev",
     ops     = c("mul", "div", "exp", "sub")
@@ -293,6 +349,8 @@ feynman_problems <- list(
     formula = "d1*d2 / (d2 + n*d1)",
     n_vars  = 3L,
     domains = list(d1 = c(1, 5), d2 = c(1, 5), n = c(1, 5)),
+    units   = c(d1 = "m", d2 = "m", n = "1"),
+    y_unit  = "m",
     fn      = function(x) x[1] * x[2] / (x[2] + x[3] * x[1]),
     stage   = "dev",
     ops     = c("mul", "div", "add")
@@ -305,6 +363,8 @@ feynman_problems <- list(
     n_vars  = 5L,
     # dx, dy in [1,3] so denominator >= 2, always positive
     domains = list(G = c(1, 5), m1 = c(1, 5), m2 = c(1, 5), dx = c(1, 3), dy = c(1, 3)),
+    units   = c(G = "m^3/(kg*s^2)", m1 = "kg", m2 = "kg", dx = "m", dy = "m"),
+    y_unit  = "N",
     fn      = function(x) x[1] * x[2] * x[3] / (x[4]^2 + x[5]^2),
     stage   = "dev",
     ops     = c("mul", "div", "add", "square")

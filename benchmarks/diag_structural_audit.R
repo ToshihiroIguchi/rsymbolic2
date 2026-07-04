@@ -22,6 +22,13 @@
 # Usage:
 #   Rscript benchmarks/diag_structural_audit.R
 #   Rscript benchmarks/diag_structural_audit.R n=1000 seed=4242
+#
+# Single-CSV mode (docs/47 units screen): csv=<file under results/> audits every
+# key present in that one gate CSV instead of the frozen docs/44 manifest.
+#   Rscript benchmarks/diag_structural_audit.R csv=feynman_gate_units_20260704.csv \
+#       gens=2800 out=_units_on
+# `gens` only labels the output rows; `out` suffixes the two output CSV names so
+# audits of different arms never overwrite each other (or the docs/44 outputs).
 
 script_dir <- tryCatch(
   dirname(sys.frame(1)$ofile),
@@ -38,15 +45,25 @@ get_arg <- function(name, default) {
 }
 N_EXTRAP <- as.integer(get_arg("n", "500"))
 SEED     <- as.integer(get_arg("seed", "4242"))
+CSV_ONLY <- get_arg("csv", "")
+CSV_GENS <- as.integer(get_arg("gens", "2800"))
+OUT_SUF  <- get_arg("out", "")
 
 # Validity predicates on the extended box: keep the true formula in the regime
 # the training data guaranteed (same inequalities as the domain comments in
 # feynman_datasets.R), so "extrapolation failure" can only come from the
 # candidate's wrong structure, never from the truth becoming singular.
 validity <- list(
-  lorentz_x     = function(X) (X[, 1] - X[, 2] * X[, 3] >= 0.5) &
-                              (X[, 2] / X[, 4] <= 0.9),
-  clausius_moss = function(X) (X[, 1] * X[, 2] <= 2.25)
+  lorentz_x      = function(X) (X[, 1] - X[, 2] * X[, 3] >= 0.5) &
+                               (X[, 2] / X[, 4] <= 0.9),
+  clausius_moss  = function(X) (X[, 1] * X[, 2] <= 2.25),
+  # Same regime guards for the keys first audited in the docs/47 all-key csv=
+  # mode: keep v/c below 1 (sqrt(1-(v/c)^2) real) and the Clausius-Mossotti
+  # denominator positive on the extended box.
+  clausius_moss2 = function(X) (X[, 1] * X[, 2] <= 2.25),
+  rel_mass       = function(X) (X[, 2] / X[, 3] <= 0.9),
+  rel_mom        = function(X) (X[, 2] / X[, 3] <= 0.9),
+  doppler_rel    = function(X) (X[, 2] / X[, 3] <= 0.9)
 )
 
 # Draw n valid points from the extended box of `key`.
@@ -205,6 +222,27 @@ GATE_KEYS <- c("clausius_moss", "lens_eq", "lorentz_x", "center_mass",
 set.seed(SEED)
 all_rows <- list(); totals <- list()
 
+summarize_keys <- function(df, keys, gens, expr_col) {
+  for (k in keys) {
+    sub <- df[df$key == k, , drop = FALSE]
+    a <- audit_rows(k, gens, sub, expr_col)
+    totals[[length(totals) + 1L]] <<- data.frame(
+      key = k, gens = gens, n_total = nrow(sub),
+      n_threshold = sum(isTRUE_vec(sub$recovered)),
+      n_true = if (is.null(a)) 0L else sum(a$verdict == "TRUE_STRUCTURE"),
+      n_uncertain = if (is.null(a)) 0L else sum(a$verdict == "UNCERTAIN"),
+      n_mismatch = if (is.null(a)) 0L else sum(a$verdict == "EVAL_MISMATCH"))
+    if (!is.null(a)) all_rows[[length(all_rows) + 1L]] <<- a
+  }
+}
+
+if (nzchar(CSV_ONLY)) {
+  # Single-CSV mode: audit every key in the given gate CSV (docs/47 screen).
+  df <- read.csv(file.path(res, CSV_ONLY), stringsAsFactors = FALSE)
+  expr_col <- if ("best_expression" %in% names(df)) "best_expression" else "expression"
+  summarize_keys(df, intersect(feynman_dev_keys, unique(df$key)), CSV_GENS, expr_col)
+} else {
+
 for (m in manifest) {
   path <- file.path(res, m$csv)
   if (!file.exists(path)) { warning("missing: ", m$csv); next }
@@ -221,17 +259,9 @@ for (m in manifest) {
 }
 
 gate <- read.csv(file.path(res, GATE_CSV), stringsAsFactors = FALSE)
-for (k in GATE_KEYS) {
-  df <- gate[gate$key == k, , drop = FALSE]
-  a <- audit_rows(k, 2800, df, "expression")
-  totals[[length(totals) + 1L]] <- data.frame(
-    key = k, gens = 2800, n_total = nrow(df),
-    n_threshold = sum(isTRUE_vec(df$recovered)),
-    n_true = if (is.null(a)) 0L else sum(a$verdict == "TRUE_STRUCTURE"),
-    n_uncertain = if (is.null(a)) 0L else sum(a$verdict == "UNCERTAIN"),
-    n_mismatch = if (is.null(a)) 0L else sum(a$verdict == "EVAL_MISMATCH"))
-  if (!is.null(a)) all_rows[[length(all_rows) + 1L]] <- a
-}
+summarize_keys(gate, GATE_KEYS, 2800, "expression")
+
+}  # end manifest mode
 
 rows_df <- do.call(rbind, all_rows)
 tot_df  <- do.call(rbind, totals)
@@ -243,6 +273,8 @@ print(rows_df, digits = 3L, row.names = FALSE)
 cat("\nSummary (p_threshold = NMSE<1e-4 on train; p_true = extrapolation-verified):\n")
 print(tot_df, row.names = FALSE)
 
-write.csv(rows_df, file.path(res, "structural_audit_rows.csv"), row.names = FALSE)
-write.csv(tot_df,  file.path(res, "structural_audit_summary.csv"), row.names = FALSE)
-message("written: results/structural_audit_rows.csv, results/structural_audit_summary.csv")
+rows_out <- paste0("structural_audit_rows", OUT_SUF, ".csv")
+sum_out  <- paste0("structural_audit_summary", OUT_SUF, ".csv")
+write.csv(rows_df, file.path(res, rows_out), row.names = FALSE)
+write.csv(tot_df,  file.path(res, sum_out), row.names = FALSE)
+message("written: results/", rows_out, ", results/", sum_out)

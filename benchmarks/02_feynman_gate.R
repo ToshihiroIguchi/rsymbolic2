@@ -17,6 +17,12 @@
 # `scaling=X` overrides adaptive_parsimony_scaling (default: shipped value, 0/off).
 # Used for the docs/27 A/B at 31x27 (scaling=0 vs the PySR-aligned ~20).
 #
+# `units` enables the opt-in dimensional-analysis screen (docs/46 section 6): each
+# problem's SI units (feynman_datasets.R `units`/`y_unit`) are passed as
+# X_units/y_units; every other setting stays at the frozen parity values. Results
+# are written under a separate '<label>_units' name so a units run never
+# overwrites the authoritative units-off CSV.
+#
 # See docs/19 for full protocol.
 
 # ---- Setup ------------------------------------------------------------------
@@ -196,6 +202,46 @@ if (any(grepl("nostop", args, fixed = TRUE))) {
   cat("Override: target_loss = -Inf (early stop disabled; full-budget throughput run)\n")
 }
 
+# Optional gens=N / timeout=N overrides: raise the generation budget (and its
+# wall-clock cap to match) for the docs/44 section-3 budget arm (e.g. gens=14000
+# timeout=1500 = 5x the Stage-1 budget). A gens override suffixes the label so a
+# budget run never overwrites the authoritative fixed-budget CSV.
+for (a in args) {
+  m <- regmatches(a, regexpr("gens=[0-9]+", a))
+  if (length(m) > 0L) {
+    g <- as.integer(sub("gens=", "", m))
+    if (!is.na(g) && g >= 1L) {
+      BENCH_PARAMS$generations <- g
+      label <- paste0(label, "_g", g)
+      cat(sprintf("Override: generations = %d\n", g))
+    }
+  }
+}
+for (a in args) {
+  m <- regmatches(a, regexpr("timeout=[0-9]+", a))
+  if (length(m) > 0L) {
+    tv <- as.integer(sub("timeout=", "", m))
+    if (!is.na(tv) && tv >= 1L) {
+      BENCH_PARAMS$timeout_seconds <- tv
+      cat(sprintf("Override: timeout_seconds = %d\n", tv))
+    }
+  }
+}
+
+# Optional `units` flag: opt-in dimensional analysis (docs/46). The per-problem
+# X_units/y_units are added inside the run loop; nothing else changes.
+UNITS_ON <- any(args == "units")
+if (UNITS_ON) {
+  label <- paste0(label, "_units")
+  missing_units <- KEYS[vapply(
+    KEYS, function(k) is.null(feynman_problems[[k]]$units), logical(1L)
+  )]
+  if (length(missing_units) > 0L)
+    stop("units requested but no unit metadata for: ",
+         paste(missing_units, collapse = ", "))
+  cat("Override: dimensional analysis ON (X_units/y_units from feynman_datasets.R)\n")
+}
+
 DATA_SEED <- 42L   # Matches export_feynman_data.R DATA_SEED_TRAIN
 
 # ---- Run --------------------------------------------------------------------
@@ -225,13 +271,19 @@ for (key in KEYS) {
   ds   <- feynman_dataset(key, n = 1000L, data_seed = DATA_SEED, split = "train")
   prob <- feynman_problems[[key]]
 
+  run_params <- BENCH_PARAMS
+  if (UNITS_ON) {
+    run_params$X_units <- unname(prob$units)
+    run_params$y_units <- prob$y_unit
+  }
+
   for (seed in seq_len(N_RUNS)) {
     t0 <- proc.time()[["elapsed"]]
 
     result <- tryCatch(
       do.call(symbolic_regression, c(
         list(X = ds$X, y = ds$y, seed = as.integer(seed)),
-        BENCH_PARAMS
+        run_params
       )),
       error = function(e) {
         message("  ERROR key=", key, " seed=", seed, ": ", conditionMessage(e))

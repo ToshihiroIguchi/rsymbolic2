@@ -97,6 +97,13 @@ New measurements (10 seeds; planck/bose 5 seeds), threshold and structural:
 - Class B stays structurally p = 0 at 14000 gens: planck 0/5 even by threshold;
   bose_einstein's 3/5 threshold "recoveries" are all grinders (no `exp` in any
   of them). Confirms docs/43: budget does not crack Class B.
+- **Addendum (2026-07-04, docs/47 §4a):** the Class-B line above was, for
+  **interference**, an extrapolation — its highest measured budget here was 8400
+  gens (p_true 0). A direct 14000-gen measurement (15 seeds, parity config, no
+  units) gives **p_true 0.27**: interference is budget-responsive after all, with
+  onset between 8400 and 14000 gens, reaching PySR's own true rate (~13-20%,
+  docs/38). planck and bose_einstein were measured directly at 14000 and their
+  p = 0 stands.
 
 **Verdict: GO, as documentation only.** The lever already exists (the public
 `generations` parameter = PySR `niterations`); no new API is added (an
