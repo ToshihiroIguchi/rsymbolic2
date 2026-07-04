@@ -129,6 +129,25 @@
 #'   toward small expressions. Must be a single finite number \code{>= 0}. Only the
 #'   mutation/crossover size cap ramps; the initial population is still drawn at
 #'   \code{max_nodes}.
+#' @param X_units Optional character vector of units, one per column of \code{X},
+#'   enabling dimensional analysis (PySR \code{X_units}). Each entry is a
+#'   DynamicQuantities-style unit string such as \code{"m/s^2"}, \code{"kg"}, or
+#'   \code{"1"} (dimensionless). SI base units, common derived units (N, J, W, Pa,
+#'   C, V, Ohm, T, Hz, ...), decimal prefixes and \code{* / ^ ( )} are supported.
+#'   \code{NULL} (default) disables dimensional analysis, leaving the search
+#'   identical to the PySR default.
+#' @param y_units Optional single unit string for the target \code{y} (PySR
+#'   \code{y_units}). Requires \code{X_units}. When given, expressions whose output
+#'   dimension differs from \code{y_units} are penalised. \code{NULL} (default)
+#'   leaves the output dimension unconstrained.
+#' @param dimensional_constraint_penalty Penalty added to the loss of an expression
+#'   that violates the declared units (PySR \code{dimensional_constraint_penalty}).
+#'   \code{NULL} (default) uses PySR's effective default of \code{1000}. Inert
+#'   unless \code{X_units}/\code{y_units} are set.
+#' @param dimensionless_constants_only If \code{TRUE}, fitted constants are treated
+#'   as dimensionless during dimensional analysis instead of adopting whatever
+#'   dimension keeps the expression consistent (PySR
+#'   \code{dimensionless_constants_only}). Default \code{FALSE}.
 #' @param simplify Algebraically simplify fitted candidates (default
 #'   \code{TRUE}).
 #' @param crossover_probability Probability of subtree crossover vs. mutation
@@ -281,6 +300,10 @@ symbolic_regression.default <- function(
     batching              = FALSE,
     batch_size            = 50L,
     warmup_maxsize_by     = 0.0,
+    X_units               = NULL,
+    y_units               = NULL,
+    dimensional_constraint_penalty = NULL,
+    dimensionless_constants_only   = FALSE,
     timeout_seconds       = 0,
     verbosity             = 1L,
     ...
@@ -329,6 +352,38 @@ symbolic_regression.default <- function(
             stop("weights must be non-negative and finite")
     }
 
+    # Opt-in dimensional analysis (PySR X_units / y_units / dimensional_constraint_penalty /
+    # dimensionless_constants_only; docs/46). All default-off: with X_units = NULL the search
+    # is unchanged. Units are strings parsed by the C++ core (DynamicQuantities-style).
+    if (is.null(X_units)) {
+        X_units <- character(0)
+    } else {
+        X_units <- as.character(X_units)
+        if (length(X_units) != ncol(X))
+            stop("X_units must have length ncol(X) (= ", ncol(X), "); got ", length(X_units))
+    }
+    if (is.null(y_units)) {
+        y_units <- ""
+    } else {
+        y_units <- as.character(y_units)
+        if (length(y_units) != 1L)
+            stop("y_units must be a single unit string")
+        if (length(X_units) == 0L)
+            stop("y_units requires X_units to be specified")
+    }
+    dimensionless_constants_only <- isTRUE(dimensionless_constants_only)
+    # PySR's signature default None maps to an effective penalty of 1000.0.
+    if (is.null(dimensional_constraint_penalty)) {
+        dimensional_constraint_penalty <- 1000.0
+    } else {
+        dimensional_constraint_penalty <- as.numeric(dimensional_constraint_penalty)
+        if (length(dimensional_constraint_penalty) != 1L ||
+            is.na(dimensional_constraint_penalty) ||
+            !is.finite(dimensional_constraint_penalty) ||
+            dimensional_constraint_penalty < 0)
+            stop("dimensional_constraint_penalty must be a single finite number >= 0")
+    }
+
     # The C++ bridge takes a named numeric vector; NULL means "use PySR defaults".
     if (is.null(mutation_weights)) {
         mutation_weights <- stats::setNames(numeric(0), character(0))
@@ -368,7 +423,11 @@ symbolic_regression.default <- function(
         as.logical(batching),
         as.integer(batch_size),
         as.double(warmup_maxsize_by),
-        as.integer(n_threads)
+        as.integer(n_threads),
+        as.character(X_units),
+        as.character(y_units),
+        as.double(dimensional_constraint_penalty),
+        as.logical(dimensionless_constants_only)
     )
     result$n_features <- ncol(X)
     # Display-only feature names: the column names of X, kept so print()/summary()

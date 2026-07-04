@@ -38,6 +38,10 @@ symbolic_regression(X, ...)
   batching = FALSE,
   batch_size = 50L,
   warmup_maxsize_by = 0,
+  X_units = NULL,
+  y_units = NULL,
+  dimensional_constraint_penalty = NULL,
+  dimensionless_constants_only = FALSE,
   timeout_seconds = 0,
   verbosity = 1L,
   ...
@@ -243,6 +247,29 @@ reaches \code{max_nodes} halfway through the run; this biases the early search
 toward small expressions. Must be a single finite number \code{>= 0}. Only the
 mutation/crossover size cap ramps; the initial population is still drawn at
 \code{max_nodes}.}
+
+\item{X_units}{Optional character vector of units, one per column of \code{X},
+enabling dimensional analysis (PySR \code{X_units}). Each entry is a
+DynamicQuantities-style unit string such as \code{"m/s^2"}, \code{"kg"}, or
+\code{"1"} (dimensionless). SI base units, common derived units (N, J, W, Pa,
+C, V, Ohm, T, Hz, ...), decimal prefixes and \code{* / ^ ( )} are supported.
+\code{NULL} (default) disables dimensional analysis, leaving the search
+identical to the PySR default.}
+
+\item{y_units}{Optional single unit string for the target \code{y} (PySR
+\code{y_units}). Requires \code{X_units}. When given, expressions whose output
+dimension differs from \code{y_units} are penalised. \code{NULL} (default)
+leaves the output dimension unconstrained.}
+
+\item{dimensional_constraint_penalty}{Penalty added to the loss of an expression
+that violates the declared units (PySR \code{dimensional_constraint_penalty}).
+\code{NULL} (default) uses PySR's effective default of \code{1000}. Inert
+unless \code{X_units}/\code{y_units} are set.}
+
+\item{dimensionless_constants_only}{If \code{TRUE}, fitted constants are treated
+as dimensionless during dimensional analysis instead of adopting whatever
+dimension keeps the expression consistent (PySR
+\code{dimensionless_constants_only}). Default \code{FALSE}.}
 
 \item{timeout_seconds}{Wall-clock time limit in seconds (default 0 = no
 limit). When positive, the search stops after approximately this many

@@ -135,6 +135,13 @@ portability for speed unless a benchmark shows the speed matters and the user ag
 - Correctness is verified, not assumed: unit tests for every component, numerical
   checks for automatic differentiation (compare against finite differences), and
   comparison against known-answer problems before trusting the search.
+- **Delegate broad or independent work to subagents.** Prefer to hand off wide
+  read-only exploration (cross-codebase surveys, "where/how is X done") and
+  independently runnable verification or benchmark jobs to subagents, taking their
+  conclusions back into the main thread and confirming the load-bearing files
+  directly when a change depends on them. This conserves context and cost on
+  large tasks. It is not a licence to fan out speculatively: delegate when the scope
+  is genuinely broad or the user asks, not for small local edits.
 
 ## Benchmarking Requirements
 

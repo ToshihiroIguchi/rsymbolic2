@@ -68,7 +68,9 @@ mechanism entirely. Listed so the gap is explicit, not to adopt speculatively
 5. **Feature selection** (`select_k_features`).
 6. **Custom / weighted / non-L2 loss** (`elementwise_loss`, `loss_function`, `weights`).
 7. **Dimensional analysis & units** (`X_units`, `y_units`,
-   `dimensional_constraint_penalty`).
+   `dimensional_constraint_penalty`, `dimensionless_constants_only`) — **Implemented**
+   (2026-07-04, `docs/46`) as an off-by-default opt-in feature with PySR-compatible API and
+   semantics and a dependency-free C++ unit type. Still default-OFF, so no parity change.
 8. **Per-operator complexity** (`complexity_of_operators`, `complexity_of_constants`,
    `complexity_of_variables`) — rsymbolic2 fixes every node at complexity 1.
 9. **Constraints** (`constraints` on operator argument sizes, `nested_constraints` on

@@ -26,6 +26,7 @@
 #include "rsymbolic/evolution/search_space.hpp"
 #include "rsymbolic/search/evolutionary_search.hpp"
 #include "rsymbolic/expression/tree.hpp"
+#include "rsymbolic/units/unit_parser.hpp"
 
 namespace py = pybind11;
 using namespace rsymbolic;
@@ -119,7 +120,11 @@ py::dict symbolic_regression_cpp(
     bool                     batching,
     int                      batch_size,
     double                   warmup_maxsize_by,
-    int                      n_threads) {
+    int                      n_threads,
+    std::vector<std::string> X_units,
+    std::string              y_units,
+    double                   dimensional_constraint_penalty,
+    bool                     dimensionless_constants_only) {
     // --- Marshal X (2-D) and y (1-D) ------------------------------------------------
     if (X.ndim() != 2)
         throw std::invalid_argument("X must be a 2-D array (rows = observations, "
@@ -156,6 +161,19 @@ py::dict symbolic_regression_cpp(
     if (space.binary_ops.empty())
         throw std::invalid_argument("binary_ops must contain at least one operator.");
 
+    // Opt-in dimensional analysis (PySR X_units / y_units / dimensionless_constants_only;
+    // docs/46). Empty X_units leaves the feature off (default). parse_unit throws
+    // std::invalid_argument (-> Python ValueError) naming a bad unit token. Mirrors the R
+    // bridge exactly so R and Python parse units identically.
+    if (!X_units.empty()) {
+        if (X_units.size() != p)
+            throw std::invalid_argument(
+                "X_units must have length ncol(X) (= " + std::to_string(p) + ").");
+        for (const auto& s : X_units) space.x_units.push_back(parse_unit(s));
+    }
+    if (!y_units.empty()) space.y_units = parse_unit(y_units);
+    space.dimensionless_constants_only = dimensionless_constants_only;
+
     // --- Build SearchOptions (defaults already match PySR; we only override what the
     //     caller passed). Field-for-field identical to the R bridge. -----------------
     SearchOptions opts;
@@ -189,6 +207,9 @@ py::dict symbolic_regression_cpp(
     // OMP_NUM_THREADS); positive = that many island workers, capped at n_populations. The
     // Python wrapper rejects non-positive non-None values, so any value here is 0 or positive.
     opts.n_threads                  = n_threads;
+    // Opt-in dimensional-constraint penalty (PySR default 1000, resolved in the Python
+    // wrapper). Inert unless X_units/y_units are set; the units live on `space` above.
+    opts.dimensional_constraint_penalty = dimensional_constraint_penalty;
     // max_evals arrives as a double (mirrors the R bridge, where R has no 64-bit int);
     // negative/zero => off.
     opts.max_evals = max_evals > 0.0 ? static_cast<std::size_t>(max_evals) : 0;

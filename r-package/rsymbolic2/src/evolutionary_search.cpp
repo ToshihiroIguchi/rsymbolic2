@@ -39,6 +39,7 @@
 #include "rsymbolic/evolution/random_tree.hpp"
 #include "rsymbolic/expression/least_squares_problem.hpp"
 #include "rsymbolic/simplification/simplify.hpp"
+#include "rsymbolic/units/dimensional_analysis.hpp"
 
 namespace rsymbolic {
 
@@ -421,10 +422,32 @@ std::size_t oldest_index(const std::vector<PopMember>& pop) {
     return oldest;
 }
 
+// Build the per-search dimensional-analysis context from the options and the full
+// dataset. Disabled (a no-op for the loss path) unless X_units or y_units were declared.
+// penalty_sse folds in the normalisation weight W (= n, or sum of weights when weighted)
+// so that adding it to an SSE-scale loss reproduces PySR's penalty on the loss/baseline
+// scale (see add_dim_penalty in dimensional_analysis.hpp).
+DimAnalysis build_dim_analysis(const SearchOptions& opts, const std::vector<double>& y) {
+    DimAnalysis da;
+    da.enabled = !opts.space.x_units.empty() || opts.space.y_units.has_value();
+    if (!da.enabled) return da;
+    da.x_units = opts.space.x_units;
+    da.y_units = opts.space.y_units;
+    da.allow_wildcards = !opts.space.dimensionless_constants_only;
+    double W = static_cast<double>(y.size());
+    if (!opts.weights.empty()) {
+        W = 0.0;
+        for (const double w : opts.weights) W += w;
+    }
+    da.penalty_sse = opts.dimensional_constraint_penalty * W;
+    return da;
+}
+
 void initialize_island(Island& isl,
                        const std::shared_ptr<const Dataset>& data,
                        const SearchOptions& opts,
-                       const StopRequested& stop_requested) {
+                       const StopRequested& stop_requested,
+                       const DimAnalysis& da) {
     isl.population.clear();
     isl.population.reserve(opts.population_size);
     isl.stats.init(opts.space.max_nodes, opts.parsimony_window);
@@ -449,8 +472,10 @@ void initialize_island(Island& isl,
         // first optimisation opportunity is the end-of-iteration population pass. The
         // previous per-member init fit() diverged from PySR (docs/31). sse_current draws no
         // island RNG, so the per-island sequence is unchanged from the prior init.
-        const double loss = RSYM_TIMED(isl.prof.init_fit_sec, isl.prof.init_fit_n,
-                                       sse_current(tree, *data, isl.sse_pool, isl.sse_stk));
+        const double raw_loss = RSYM_TIMED(isl.prof.init_fit_sec, isl.prof.init_fit_n,
+                                           sse_current(tree, *data, isl.sse_pool, isl.sse_stk));
+        // Opt-in dimensional penalty (no-op when da.enabled is false; docs/46).
+        const double loss = add_dim_penalty(raw_loss, tree, da);
         if (opts.max_evals > 0) ++isl.eval_count;  // count the init forward-pass eval
         // No simplify here: SR.jl does not simplify the initial population. Simplification
         // first happens in the per-iteration optimize_and_simplify_population pass below,
@@ -492,7 +517,8 @@ bool evolve_island(Island& isl,
                    double y_norm,
                    std::size_t island_eval_budget,
                    int cur_maxsize,
-                   HallOfFame& hof_target) {
+                   HallOfFame& hof_target,
+                   const DimAnalysis& da) {
     const std::size_t tournament =
         opts.tournament_size == 0 ? 1 : opts.tournament_size;
     // PySR warmup_maxsize_by: the mutation/crossover size cap for this epoch is the warmed-up
@@ -530,11 +556,12 @@ bool evolve_island(Island& isl,
     // (SR.jl reg_evol_cycle's oldest1/oldest2). No use_frequency test — the crossover path has
     // none in SR.jl (next_generation applies it only to mutations).
     auto insert_evaluated_child = [&](Tree&& t) {
-        const double loss =
+        const double raw_loss =
             RSYM_TIMED(isl.prof.evolve_sse_sec, isl.prof.evolve_sse_n,
                        sse_current(t, *data, isl.sse_pool, isl.sse_stk));
         if (track_evals) ++isl.eval_count;
-        if (!std::isfinite(loss)) return;
+        if (!std::isfinite(raw_loss)) return;
+        const double loss = add_dim_penalty(raw_loss, t, da);  // no-op when units off
         PopMember child{std::move(t), loss, 0};
         child.complexity = static_cast<int>(child.tree.size());
         const int child_complexity = child.complexity;
@@ -626,14 +653,15 @@ bool evolve_island(Island& isl,
             // once-per-iteration population pass (optimize_and_simplify_population below),
             // exactly as in SR.jl. The previous per-child LM (probability optimize_probability)
             // diverged from PySR and dominated compute (docs/30, docs/31).
-            const double loss =
+            const double raw_loss =
                 RSYM_TIMED(isl.prof.evolve_sse_sec, isl.prof.evolve_sse_n,
                            sse_current(child_tree, *data, isl.sse_pool, isl.sse_stk));
             if (track_evals) ++isl.eval_count;
             // A non-finite loss is SR.jl's NaN-cost rejection: discard the child (no
             // replacement, no archive update), faithful to next_generation.
-            if (!std::isfinite(loss))
+            if (!std::isfinite(raw_loss))
                 continue;
+            const double loss = add_dim_penalty(raw_loss, child_tree, da);  // no-op when off
             // No per-child simplify: SR.jl's s_r_cycle evolves raw trees and simplifies
             // only once per iteration (optimize_and_simplify_population, called per epoch
             // below) plus via the weighted `simplify` mutation. The child's complexity
@@ -703,7 +731,8 @@ void optimize_and_simplify_population(Island& isl,
                                       const SearchOptions& opts,
                                       const StopRequested& stop,
                                       std::size_t island_eval_budget,
-                                      HallOfFame* hof_target) {
+                                      HallOfFame* hof_target,
+                                      const DimAnalysis& da) {
     const bool track_evals = island_eval_budget > 0;  // max_evals enabled
     std::uniform_real_distribution<double> unit(0.0, 1.0);
     for (PopMember& m : isl.population) {
@@ -733,7 +762,9 @@ void optimize_and_simplify_population(Island& isl,
             if (!std::isfinite(loss)) continue;  // keep the unsimplified member if it degraded
             m.tree = std::move(s);
         }
-        m.loss = loss;
+        // Recompute the dimensional penalty on the finalised (possibly simplified) tree:
+        // simplify() can change structure and thus violation status (no-op when units off).
+        m.loss = add_dim_penalty(loss, m.tree, da);
         m.complexity = static_cast<int>(m.tree.size());
         if (hof_target) hof_target->update(m);
     }
@@ -752,13 +783,14 @@ void optimize_and_simplify_population(Island& isl,
 void finalize_costs_and_merge(Island& isl,
                               const std::shared_ptr<const Dataset>& full,
                               const HallOfFame& best_seen,
-                              std::size_t island_eval_budget) {
+                              std::size_t island_eval_budget,
+                              const DimAnalysis& da) {
     const bool track_evals = island_eval_budget > 0;
     for (PopMember& m : isl.population) {
         const double loss = sse_current(m.tree, *full, isl.sse_pool, isl.sse_stk);
         if (track_evals) ++isl.eval_count;
         if (!std::isfinite(loss)) continue;
-        m.loss = loss;
+        m.loss = add_dim_penalty(loss, m.tree, da);  // no-op when units off
         m.complexity = static_cast<int>(m.tree.size());
         isl.hof.update(m);
     }
@@ -766,7 +798,7 @@ void finalize_costs_and_merge(Island& isl,
         const double loss = sse_current(bm.tree, *full, isl.sse_pool, isl.sse_stk);
         if (track_evals) ++isl.eval_count;
         if (!std::isfinite(loss)) continue;
-        bm.loss = loss;
+        bm.loss = add_dim_penalty(loss, bm.tree, da);  // no-op when units off
         isl.hof.update(bm);
     }
 }
@@ -872,6 +904,11 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
     // shared by const pointer, so concurrent island workers never write to it.
     const auto data = std::make_shared<const Dataset>(Dataset{X, y, options.weights});
 
+    // Opt-in dimensional-analysis context (docs/46). Disabled unless X_units/y_units were
+    // declared, in which case every add_dim_penalty call below is a no-op and the search is
+    // byte-identical to the units-off PySR-parity default. Built once and shared read-only.
+    const DimAnalysis dim_analysis = build_dim_analysis(options, y);
+
     // Build islands. Island 0 always uses options.seed so that n_populations=1
     // produces exactly the same RNG sequence as the pre-island implementation.
     //
@@ -912,7 +949,7 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
         islands[idx].batch_rng.seed(options.seed ^
                                     (idx * UINT64_C(0x9e3779b97f4a7c15)) ^
                                     UINT64_C(0x243F6A8885A308D3));
-        initialize_island(islands[idx], data, options, init_stop);
+        initialize_island(islands[idx], data, options, init_stop, dim_analysis);
     }
 
     const std::size_t interval = std::max<std::size_t>(1, options.migration_interval);
@@ -995,9 +1032,10 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
                 // update the island's hall of fame directly — byte-for-byte the pre-batching
                 // behaviour.
                 evolve_island(isl, data, options, gens, t_start, has_deadline,
-                              deadline_sec, y_norm, island_budget, cur_maxsize, isl.hof);
+                              deadline_sec, y_norm, island_budget, cur_maxsize, isl.hof,
+                              dim_analysis);
                 optimize_and_simplify_population(isl, data, options, opt_stop,
-                                                 island_budget, &isl.hof);
+                                                 island_budget, &isl.hof, dim_analysis);
             } else {
                 // PySR batching (SR.jl SingleIteration.jl): one epoch = one PySR iteration.
                 // Draw a fresh batch for the reg-evol cycle, evolving against a per-epoch
@@ -1009,11 +1047,12 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
                 const auto batch_reg = make_batch(*data, options.batch_size, isl.batch_rng);
                 HallOfFame best_seen;
                 evolve_island(isl, batch_reg, options, gens, t_start, has_deadline,
-                              deadline_sec, y_norm, island_budget, cur_maxsize, best_seen);
+                              deadline_sec, y_norm, island_budget, cur_maxsize, best_seen,
+                              dim_analysis);
                 const auto batch_opt = make_batch(*data, options.batch_size, isl.batch_rng);
                 optimize_and_simplify_population(isl, batch_opt, options, opt_stop,
-                                                 island_budget, nullptr);
-                finalize_costs_and_merge(isl, data, best_seen, island_budget);
+                                                 island_budget, nullptr, dim_analysis);
+                finalize_costs_and_merge(isl, data, best_seen, island_budget, dim_analysis);
             }
         }
 

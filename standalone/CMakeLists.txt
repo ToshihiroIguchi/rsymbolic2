@@ -63,6 +63,10 @@ if(RSYMBOLIC2_BUILD_TESTS)
     add_core_test(multivariate             tests/test_multivariate.cpp)
     # Phase 1 interruptible-evaluation tests (docs/22 §5.4).
     add_core_test(optimizer_stop           tests/test_optimizer_stop.cpp)
+    # Opt-in dimensional analysis (docs/46): unit type, parser, propagation.
+    add_core_test(dimension                tests/test_dimension.cpp)
+    add_core_test(unit_parser              tests/test_unit_parser.cpp)
+    add_core_test(dimensional_analysis     tests/test_dimensional_analysis.cpp)
 
     # benchmark_quick uses the benchmark harness, not just core.
     add_executable(test_benchmark_quick tests/test_benchmark_quick.cpp)

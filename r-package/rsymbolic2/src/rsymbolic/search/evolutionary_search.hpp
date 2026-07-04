@@ -153,6 +153,13 @@ struct SearchOptions {
     // term below carries the size pressure, so the fixed linear penalty is off.
     double parsimony = 0.0;
 
+    // Opt-in dimensional analysis (PySR `dimensional_constraint_penalty`; docs/46). The
+    // flat penalty added to a violating expression's loss. 0 disables the penalty; the
+    // units themselves live on `space` (x_units/y_units). When no units are declared this
+    // is inert and the search is byte-identical to the units-off PySR-parity default. The
+    // PySR-effective default (1000.0) is resolved in the R/Python wrappers, not here.
+    double dimensional_constraint_penalty = 0.0;
+
     // Frequency-based adaptive parsimony (borrowed from PySR / SymbolicRegression.jl).
     // In tournament selection the base cost is multiplied by
     //   exp(adaptive_parsimony_scaling * normalized_frequency[complexity]),

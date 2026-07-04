@@ -205,3 +205,68 @@ def test_input_validation():
         symbolic_regression(X, y)
     with pytest.raises(ValueError):
         symbolic_regression(np.zeros((5, 1)), np.zeros(5), unary_ops=["bogus"])
+
+
+# --- Opt-in dimensional analysis (PySR X_units/y_units/...; docs/46) ---------------
+
+def _force_data(n=24):
+    """Force = mass * acceleration: a dimensionally consistent 2-feature target."""
+    rng = np.random.default_rng(7)
+    m = rng.uniform(1, 5, n)
+    a = rng.uniform(1, 5, n)
+    return np.column_stack([m, a]), m * a
+
+
+def test_units_defaults_off():
+    d = inspect.signature(symbolic_regression).parameters
+    assert d["X_units"].default is None
+    assert d["y_units"].default is None
+    assert d["dimensional_constraint_penalty"].default is None
+    assert d["dimensionless_constants_only"].default is False
+
+
+def test_units_validation():
+    X, y = _force_data()
+    with pytest.raises(ValueError):  # wrong length
+        symbolic_regression(X, y, X_units=["kg"])
+    with pytest.raises(ValueError):  # bad unit string
+        symbolic_regression(X, y, X_units=["kg", "flibble"])
+    with pytest.raises(ValueError):  # y_units without X_units
+        symbolic_regression(X, y, y_units="N")
+    with pytest.raises(ValueError):  # negative penalty
+        symbolic_regression(X, y, X_units=["kg", "m/s^2"],
+                            dimensional_constraint_penalty=-1)
+
+
+def test_units_run_completes():
+    X, y = _force_data()
+    res = symbolic_regression(
+        X, y, unary_ops=[], X_units=["kg", "m/s^2"], y_units="N",
+        population_size=60, n_populations=4, generations=150, seed=1,
+    )
+    assert np.isfinite(res.loss)
+    assert len(res.pareto_front) >= 1
+
+
+def test_units_mismatched_y_units_penalised():
+    X, y = _force_data()
+    # dimensionless_constants_only closes the "multiply by a free (wildcard) constant"
+    # escape: otherwise a trailing *c makes the root a wildcard that satisfies any y_units
+    # (faithful to SR.jl). With dimensionless constants, x0*x1 has a fixed output dimension
+    # (N), so a mismatched y_units="s" is a genuine, deterministic violation.
+    common = dict(unary_ops=[], X_units=["kg", "m/s^2"], dimensionless_constants_only=True,
+                  population_size=60, n_populations=4, generations=200, seed=1)
+    res_ok = symbolic_regression(X, y, y_units="N", **common)
+    res_bad = symbolic_regression(X, y, y_units="s", **common)
+    assert res_ok.loss < 1e-6            # x0*x1 recovered under correct units
+    assert res_bad.loss > res_ok.loss    # every well-fitting model violates -> penalised
+
+
+def test_units_do_not_degrade_recovery():
+    X, y = _force_data()
+    common = dict(unary_ops=[], population_size=60, n_populations=4,
+                  generations=150, seed=3)
+    res_off = symbolic_regression(X, y, **common)
+    res_on = symbolic_regression(X, y, X_units=["kg", "m/s^2"], y_units="N", **common)
+    assert res_off.loss < 1e-6
+    assert res_on.loss < 1e-6

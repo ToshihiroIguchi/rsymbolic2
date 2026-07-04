@@ -214,6 +214,10 @@ def symbolic_regression(
     batching: bool = False,
     batch_size: int = 50,
     warmup_maxsize_by: float = 0.0,
+    X_units: Optional[Sequence[str]] = None,
+    y_units: Optional[str] = None,
+    dimensional_constraint_penalty: Optional[float] = None,
+    dimensionless_constants_only: bool = False,
     timeout_seconds: float = 0.0,
     verbosity: int = 1,
 ) -> SymbolicRegressionResult:
@@ -328,6 +332,24 @@ def symbolic_regression(
         E.g. 0.5 reaches ``max_nodes`` halfway through the run, biasing the early search
         toward small expressions. Must be a finite number >= 0. Only the
         mutation/crossover size cap ramps; the initial population is drawn at ``max_nodes``.
+    X_units : sequence of str, optional
+        Units for each column of ``X``, enabling dimensional analysis (PySR ``X_units``).
+        Each entry is a DynamicQuantities-style unit string such as ``"m/s^2"``, ``"kg"``,
+        or ``"1"`` (dimensionless). SI base units, common derived units (N, J, W, Pa, C, V,
+        Ohm, T, Hz, ...), decimal prefixes and ``* / ^ ( )`` are supported. ``None``
+        (default) disables dimensional analysis, leaving the search identical to PySR's.
+    y_units : str, optional
+        Unit for the target ``y`` (PySR ``y_units``). Requires ``X_units``. Expressions
+        whose output dimension differs are penalised. ``None`` (default) leaves the output
+        dimension unconstrained.
+    dimensional_constraint_penalty : float, optional
+        Penalty added to the loss of a dimensionally inconsistent expression (PySR
+        ``dimensional_constraint_penalty``). ``None`` (default) uses PySR's effective
+        default of 1000. Inert unless ``X_units``/``y_units`` are set.
+    dimensionless_constants_only : bool, default False
+        If True, fitted constants are treated as dimensionless during dimensional analysis
+        instead of adopting whatever dimension keeps the expression consistent (PySR
+        ``dimensionless_constants_only``).
     timeout_seconds : float, default 0.0
         Wall-clock limit; 0 = no limit. A timed-out run is not reproducible across
         machines (only runs that finish within budget are bit-reproducible).
@@ -406,6 +428,36 @@ def symbolic_regression(
         if n_threads_val < 1:
             raise ValueError("n_threads must be None or a positive integer.")
 
+    # Opt-in dimensional analysis (PySR X_units / y_units / dimensional_constraint_penalty /
+    # dimensionless_constants_only; docs/46). All default-off: with X_units=None the search is
+    # unchanged. Units are DynamicQuantities-style strings parsed by the shared C++ core.
+    if X_units is None:
+        x_units_list = []
+    else:
+        x_units_list = [str(u) for u in X_units]
+        if len(x_units_list) != int(X_arr.shape[1]):
+            raise ValueError(
+                f"X_units must have length n_features (= {int(X_arr.shape[1])}); "
+                f"got {len(x_units_list)}."
+            )
+    if y_units is None:
+        y_units_str = ""
+    else:
+        if not isinstance(y_units, str):
+            raise ValueError("y_units must be a single unit string.")
+        y_units_str = y_units
+        if not x_units_list:
+            raise ValueError("y_units requires X_units to be specified.")
+    # PySR's signature default None maps to an effective penalty of 1000.0.
+    if dimensional_constraint_penalty is None:
+        dcp = 1000.0
+    else:
+        dcp = float(dimensional_constraint_penalty)
+        if not np.isfinite(dcp) or dcp < 0:
+            raise ValueError(
+                "dimensional_constraint_penalty must be a finite number >= 0."
+            )
+
     raw = symbolic_regression_cpp(
         X_arr,
         y_arr,
@@ -438,6 +490,10 @@ def symbolic_regression(
         int(batch_size),
         float(warmup_maxsize_by),
         int(n_threads_val),
+        x_units_list,
+        y_units_str,
+        float(dcp),
+        bool(dimensionless_constants_only),
     )
     if feature_names is not None and len(feature_names) != int(X_arr.shape[1]):
         feature_names = None  # shape changed (e.g. 1-D promoted); drop mismatched names

@@ -5,9 +5,11 @@
 
 #pragma once
 
+#include <optional>
 #include <vector>
 
 #include "rsymbolic/expression/node.hpp"
+#include "rsymbolic/units/dimension.hpp"
 
 namespace rsymbolic {
 
@@ -25,6 +27,13 @@ struct SearchSpace {
     int max_nodes = 30;          // PySR maxsize = 30 (soft cap on tree size); docs/28 §A
     double terminal_prob = 0.3;  // probability of stopping at a leaf before max_depth
     double const_prob = 0.5;     // probability a leaf is a constant (vs a variable)
+
+    // Opt-in dimensional analysis (PySR X_units / y_units / dimensionless_constants_only;
+    // docs/46). All default-off: `x_units` empty means the feature is disabled and the
+    // search is byte-identical to the units-off PySR-parity default.
+    std::vector<Dimension> x_units;        // empty = off; else size == num_features
+    std::optional<Dimension> y_units;      // required output dimension (unset = arbitrary)
+    bool dimensionless_constants_only = false;
 };
 
 }  // namespace rsymbolic

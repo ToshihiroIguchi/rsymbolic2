@@ -15,6 +15,7 @@
 #include "rsymbolic/evolution/search_space.hpp"
 #include "rsymbolic/search/evolutionary_search.hpp"
 #include "rsymbolic/expression/tree.hpp"
+#include "rsymbolic/units/unit_parser.hpp"
 
 using namespace cpp11;
 using namespace cpp11::literals;
@@ -114,7 +115,11 @@ cpp11::writable::list symbolic_regression_cpp(
     bool            batching,
     int             batch_size,
     double          warmup_maxsize_by,
-    int             n_threads
+    int             n_threads,
+    cpp11::strings  X_units,
+    std::string     y_units,
+    double          dimensional_constraint_penalty,
+    bool            dimensionless_constants_only
 ) {
     // Convert R matrix → vector<vector<double>> (row-major)
     const int n = X.nrow();
@@ -139,6 +144,21 @@ cpp11::writable::list symbolic_regression_cpp(
         space.binary_ops.push_back(parse_binary(static_cast<std::string>(s)));
     if (space.binary_ops.empty())
         cpp11::stop("binary_ops must contain at least one operator");
+
+    // Opt-in dimensional analysis (PySR X_units / y_units / dimensionless_constants_only;
+    // docs/46). Empty X_units leaves the feature off (default), so the search is unchanged.
+    // parse_unit throws std::invalid_argument on a bad unit string, which cpp11 surfaces as
+    // an R error naming the offending token.
+    if (X_units.size() > 0) {
+        if (static_cast<int>(X_units.size()) != p)
+            cpp11::stop("X_units must have length ncol(X) (= %d); got %d.",
+                        p, static_cast<int>(X_units.size()));
+        for (const auto& s : X_units)
+            space.x_units.push_back(parse_unit(static_cast<std::string>(s)));
+    }
+    if (!y_units.empty())
+        space.y_units = parse_unit(y_units);
+    space.dimensionless_constants_only = dimensionless_constants_only;
 
     SearchOptions opts;
     opts.space                 = space;
@@ -171,6 +191,9 @@ cpp11::writable::list symbolic_regression_cpp(
     // OMP_NUM_THREADS); positive = that many island workers, capped at n_populations. The
     // R wrapper rejects non-positive non-NULL values, so any value here is 0 or positive.
     opts.n_threads             = n_threads;
+    // Opt-in dimensional-constraint penalty (PySR default 1000, resolved in the R wrapper).
+    // 0 / no units => inert. The units themselves were parsed onto `space` above.
+    opts.dimensional_constraint_penalty = dimensional_constraint_penalty;
     // max_evals arrives as a double (R has no native 64-bit int); negative/zero => off.
     opts.max_evals = max_evals > 0.0
         ? static_cast<std::size_t>(max_evals)
