@@ -126,7 +126,8 @@ py::dict symbolic_regression_cpp(
     std::string              y_units,
     double                   dimensional_constraint_penalty,
     bool                     dimensionless_constants_only,
-    bool                     eval_cache) {
+    bool                     eval_cache,
+    bool                     linear_scaling) {
     // --- Marshal X (2-D) and y (1-D) ------------------------------------------------
     if (X.ndim() != 2)
         throw std::invalid_argument("X must be a 2-D array (rows = observations, "
@@ -215,6 +216,10 @@ py::dict symbolic_regression_cpp(
     // Opt-in duplicate-evaluation cache (implementation-only memoisation; results are
     // bit-identical on/off, and it is ignored when batching is on). Default False.
     opts.eval_cache                 = eval_cache;
+    // Opt-in Keijzer-2003 linear scaling (behaviour-changing high-accuracy option;
+    // default False keeps exact PySR parity). The Python wrapper rejects combining it
+    // with X_units/y_units, so the core never sees that (undefined) combination.
+    opts.linear_scaling             = linear_scaling;
     // max_evals arrives as a double (mirrors the R bridge, where R has no 64-bit int);
     // negative/zero => off.
     opts.max_evals = max_evals > 0.0 ? static_cast<std::size_t>(max_evals) : 0;

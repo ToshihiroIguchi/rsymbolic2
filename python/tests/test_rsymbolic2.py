@@ -432,6 +432,51 @@ def test_eval_cache_inactive_under_batching():
     assert r_on.eval_counts["cache_misses"] == 0
 
 
+# --- Opt-in Keijzer-2003 linear scaling (linear_scaling) ---------------------------
+
+def test_linear_scaling_defaults_off_and_off_run_unchanged():
+    """linear_scaling defaults to False, and passing False explicitly is identical to
+    not passing it at all (the PySR-parity default path is untouched)."""
+    assert (
+        inspect.signature(symbolic_regression).parameters["linear_scaling"].default
+        is False
+    )
+    X = np.linspace(-5, 5, 30).reshape(-1, 1)
+    y = 2.5 * X[:, 0] + 1.7
+    common = dict(unary_ops=[], population_size=60, n_populations=1,
+                  generations=20, seed=11, verbosity=0)
+    r_default = symbolic_regression(X, y, **common)
+    r_off = symbolic_regression(X, y, linear_scaling=False, **common)
+    assert r_off.expression == r_default.expression
+    assert r_off.loss == r_default.loss
+    assert [m["expression"] for m in r_off.pareto_front] == [
+        m["expression"] for m in r_default.pareto_front
+    ]
+
+
+def test_linear_scaling_self_consistent_fit():
+    """With linear scaling on, the run returns a finite loss and the reported loss is
+    reproducible from the returned (materialised a*f+b) expression string via
+    predict(), up to the %.6g string round-trip of the constants."""
+    X = np.linspace(-5, 5, 30).reshape(-1, 1)
+    y = 2.5 * X[:, 0] + 1.7
+    res = symbolic_regression(
+        X, y, unary_ops=[], population_size=60, n_populations=1, generations=20,
+        seed=11, linear_scaling=True, verbosity=0,
+    )
+    assert np.isfinite(res.loss)
+    pred = res.predict(X, expression=res.expression)
+    sse = float(np.sum((pred - y) ** 2))
+    assert abs(sse - res.loss) < 1e-4 * (1 + abs(res.loss))
+
+
+def test_linear_scaling_rejects_units():
+    X = np.linspace(1, 5, 20).reshape(-1, 1)
+    y = 2 * X[:, 0]
+    with pytest.raises(ValueError, match="not supported with dimensional analysis"):
+        symbolic_regression(X, y, X_units=["m"], linear_scaling=True)
+
+
 def test_input_validation():
     X = np.zeros((5, 1))
     y = np.zeros(4)

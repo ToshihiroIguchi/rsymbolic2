@@ -390,6 +390,7 @@ def symbolic_regression(
     batch_size: int = 50,
     warmup_maxsize_by: float = 0.0,
     eval_cache: bool = False,
+    linear_scaling: bool = False,
     X_units: Optional[Sequence[str]] = None,
     y_units: Optional[str] = None,
     dimensional_constraint_penalty: Optional[float] = None,
@@ -520,6 +521,21 @@ def symbolic_regression(
         ``batching=True`` (each iteration's random subsample makes cached losses
         unreusable). The ``cache_hits``/``cache_misses`` entries of ``eval_counts``
         report its effectiveness.
+    linear_scaling : bool, default False
+        Enable Keijzer (2003) linear scaling. An opt-in high-accuracy option that
+        deliberately diverges from PySR (which has no such mechanism): every
+        candidate is scored by the sum of squared errors of its best affine
+        transform ``a*f(x) + b``, with the slope ``a`` and intercept ``b`` solved in
+        closed form (the weighted least squares of ``y`` on the candidate's
+        predictions), so the search only has to discover the *shape* of the target,
+        never its scale or offset. The fitted ``a`` and ``b`` are materialised into
+        every returned expression as ``((f * a) + b)`` — skipped when they equal the
+        identity to numerical precision — so ``expression``, ``loss``,
+        ``complexity`` and :meth:`~SymbolicRegressionResult.predict` stay
+        self-consistent; the wrap may push a returned expression up to 4 nodes past
+        ``max_nodes``. Not compatible with dimensional analysis
+        (``X_units``/``y_units``). The default False keeps the search at exact PySR
+        parity.
     X_units : sequence of str, optional
         Units for each column of ``X``, enabling dimensional analysis (PySR ``X_units``).
         Each entry is a DynamicQuantities-style unit string such as ``"m/s^2"``, ``"kg"``,
@@ -636,6 +652,14 @@ def symbolic_regression(
         y_units_str = y_units
         if not x_units_list:
             raise ValueError("y_units requires X_units to be specified.")
+    # Opt-in Keijzer-2003 linear scaling: refits (and materialises) a free affine
+    # transform of every candidate, which has no defined dimensional semantics; the
+    # combination is rejected here (bindings own validation; the core never sees it).
+    if linear_scaling and (x_units_list or y_units_str):
+        raise ValueError(
+            "linear scaling is not supported with dimensional analysis "
+            "(X_units/y_units)."
+        )
     # PySR's signature default None maps to an effective penalty of 1000.0.
     if dimensional_constraint_penalty is None:
         dcp = 1000.0
@@ -683,6 +707,7 @@ def symbolic_regression(
         float(dcp),
         bool(dimensionless_constants_only),
         bool(eval_cache),
+        bool(linear_scaling),
     )
     if feature_names is not None and len(feature_names) != int(X_arr.shape[1]):
         feature_names = None  # shape changed (e.g. 1-D promoted); drop mismatched names

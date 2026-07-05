@@ -258,6 +258,24 @@ struct SearchOptions {
     // off (default; no table is allocated and the code path is byte-identical).
     bool eval_cache = false;
 
+    // Opt-in Keijzer-2003 linear scaling — an "opt-in high-accuracy option" per
+    // CLAUDE.md's second layer: a deliberate, behaviour-changing divergence from PySR
+    // that is OFF by default (the shipped default reproduces PySR exactly). When on,
+    // every forward-pass loss is the best-affine-fit SSE: the weighted least-squares
+    // slope/intercept (a, b) of y on the candidate's prediction f are solved in closed
+    // form and the loss is sum_i w_i (a*f_i + b - y_i)^2, so the search only has to
+    // discover the SHAPE of the target, never its scale or offset (Keijzer 2003;
+    // Operon does the same). The constant optimiser (LM) still fits UNSCALED residuals
+    // (v1); optimize_and_simplify_population re-scores optimised members through the
+    // scaled scorer so scaled and unscaled losses never mix in the archive ordering.
+    // At the end of the run the fitted (a, b) are materialised into every reported
+    // tree as a*f + b (skipped when they are the identity to numerical precision), so
+    // expression/loss/complexity/predict stay self-consistent; the wrap may push a
+    // reported tree up to 4 nodes past max_nodes (reporting-time materialisation, not
+    // a search move). false = off (default): the search is byte-identical to the
+    // PySR-parity path.
+    bool linear_scaling = false;
+
     // Wall-clock timeout. 0 = no limit (fully deterministic; default). Any value > 0
     // stops the search after approximately this many seconds. A run that times out is
     // NOT reproducible across machines — document this in user-facing roxygen.

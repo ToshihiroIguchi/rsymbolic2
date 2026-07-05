@@ -231,6 +231,16 @@ struct Island {
     // corrupting the heap; CLAUDE.md Correctness/Portability).
     std::vector<double>                 sse_pool;
     std::vector<double*>                sse_stk;
+    // Reused scratch for sse_linear_scaled's per-point prediction copy (opt-in
+    // options.linear_scaling). Island-owned for exactly the same reason as
+    // sse_pool/sse_stk above (per-worker reuse without thread_local, whose per-thread
+    // semantics are unreliable for libgomp workers inside a loaded DLL). Never touched
+    // when linear scaling is off, so the default path allocates nothing.
+    std::vector<double>                 pred_buf;
+    // Opt-in Keijzer-2003 linear scaling (options.linear_scaling): score_sse dispatches
+    // to the best-affine-fit scorer when set. Copied from the options once at island
+    // setup (like the cache below) so the hot path reads a plain island-local flag.
+    bool                                linear_scaling = false;
     // Opt-in duplicate-evaluation cache (options.eval_cache; eval_cache.hpp). Default-
     // constructed = inactive with zero slots allocated, so the off path costs nothing;
     // run_evolution activates it (kEvalCacheSlots) iff eval_cache is on AND batching is
@@ -275,20 +285,104 @@ double sse_current(const Tree& tree, const Dataset& data,
     return sse;
 }
 
-// Forward-pass scoring used at every sse_current call site: sse_current plus the
-// evaluation-counter charge, routed through the island's opt-in duplicate-evaluation
-// cache (options.eval_cache). With the cache inactive (the default, and always under
-// batching) this is exactly the former inline pattern — sse_current followed by
-// ++eval_count/++n_forward_evals — byte-identical code path. With the cache active, an
-// evaluation-identical tree's SSE is returned from the memo instead of re-evaluated.
-// CRITICAL for bit-identity: a cache hit is charged to eval_count/n_forward_evals
-// exactly like a real evaluation — otherwise a max_evals-budgeted run would diverge
-// between cache on and off. The returned value is the RAW sse_current output (before
-// add_dim_penalty, which stays at the call sites); kInf results are cached like any
-// other (re-evaluating them would only waste the same forward pass again).
+// Keijzer-2003 linear-scaling scorer (opt-in options.linear_scaling): the loss of a
+// candidate f is the SSE of the best affine transform of its predictions,
+//   min_{a,b} sum_i w_i (a*f_i + b - y_i)^2,
+// with (a, b) solved in closed form as the weighted least squares of y on f. Pass 1
+// tile-evaluates exactly like sse_current (same SoA evaluator, kStride tiles, same
+// point order) while accumulating the weighted moments and copying the predictions
+// into pred_buf (caller-owned scratch — the calling Island's — with the same ownership
+// rules as pool/stk); any non-finite prediction returns kInf immediately, matching
+// sse_current's rejection. Pass 2 sums the affine residuals over pred_buf in data
+// order, the same in-order summation style as sse_current. Weights: Dataset stores
+// sqrt(w_i) (see least_squares_problem.hpp), so the moment weight is
+// sqrt_weights[i]^2, or 1.0 when unweighted. The fitted (a, b) are written to
+// a_out/b_out when non-null (the finalize pass reads them to materialise the wrap).
+double sse_linear_scaled(const Tree& tree, const Dataset& data,
+                         std::vector<double>& pool, std::vector<double*>& stk,
+                         std::vector<double>& pred_buf,
+                         double* a_out = nullptr, double* b_out = nullptr) {
+    const std::vector<double> c = initial_constants(tree);
+    const std::size_t m = data.y.size();
+    const double* sw = data.sqrt_weights.empty() ? nullptr : data.sqrt_weights.data();
+    pred_buf.resize(m);
+    double Sw = 0.0, Swf = 0.0, Swy = 0.0, Swff = 0.0, Swfy = 0.0;
+    for (std::size_t lo = 0; lo < m; lo += kStride) {
+        const std::size_t P = std::min(kStride, m - lo);
+        const double* pred =
+            evaluate_soa_residual(tree, data.Xcol, c.data(), lo, P, pool, stk);
+        for (std::size_t p = 0; p < P; ++p) {
+            const double f = pred[p];
+            if (!std::isfinite(f)) return kInf;
+            pred_buf[lo + p] = f;
+            const double w  = sw ? sw[lo + p] * sw[lo + p] : 1.0;
+            const double yv = data.y[lo + p];
+            Sw   += w;
+            Swf  += w * f;
+            Swy  += w * yv;
+            Swff += w * f * f;
+            Swfy += w * f * yv;
+        }
+    }
+    // Closed-form weighted least squares of y on f. Sw > 0 holds in every real run:
+    // unweighted data gives Sw = m (>= 1 row, enforced by the wrappers) and weights are
+    // validated finite and NON-NEGATIVE — so an all-zero weight vector is the one
+    // degenerate input that reaches Sw == 0. Guard it with a = 0, b = 0: every residual
+    // then carries zero weight, so the returned loss is 0 either way.
+    double a = 0.0, b = 0.0;
+    if (Sw > 0.0) {
+        const double var_f = Swff - (Swf * Swf) / Sw;
+        const double cov   = Swfy - (Swf * Swy) / Sw;
+        a = cov / var_f;
+        b = Swy / Sw - a * (Swf / Sw);
+        if (!(var_f > 0.0) || !std::isfinite(a) || !std::isfinite(b)) {
+            // Degenerate predictor (constant f => var_f == 0, or a numerically hopeless
+            // solve): the least-squares limit is the constant model a = 0,
+            // b = weighted mean(y), keeping the loss definition "always the best affine
+            // fit" (here: the best constant fit, the weighted SST).
+            a = 0.0;
+            b = Swy / Sw;
+        }
+    }
+    double sse = 0.0;
+    for (std::size_t i = 0; i < m; ++i) {
+        double r = a * pred_buf[i] + b - data.y[i];
+        if (sw) r *= sw[i];
+        sse += r * r;
+    }
+    if (a_out) *a_out = a;
+    if (b_out) *b_out = b;
+    return sse;
+}
+
+// The raw forward-pass loss under the active scorer: plain weighted SSE by default, or
+// the Keijzer-2003 best-affine-fit SSE when the opt-in linear_scaling is on. This is
+// the single dispatch point between the two loss definitions — everything routed
+// through score_sse (init, evolution, the batching finalize) sees the same one. With
+// the flag off the call collapses to the former direct sse_current call.
+double raw_forward_sse(Island& isl, const Tree& tree, const Dataset& data) {
+    return isl.linear_scaling
+        ? sse_linear_scaled(tree, data, isl.sse_pool, isl.sse_stk, isl.pred_buf)
+        : sse_current(tree, data, isl.sse_pool, isl.sse_stk);
+}
+
+// Forward-pass scoring used at every former sse_current call site: the active scorer
+// (raw_forward_sse) plus the evaluation-counter charge, routed through the island's
+// opt-in duplicate-evaluation cache (options.eval_cache). With the cache inactive (the
+// default, and always under batching) this is exactly the former inline pattern — the
+// scorer followed by ++eval_count/++n_forward_evals — byte-identical code path. With
+// the cache active, an evaluation-identical tree's loss is returned from the memo
+// instead of re-evaluated; a cached value is whatever the ACTIVE scorer defines (the
+// linear_scaling flag is fixed for the whole run, so memoised values never mix
+// scorers; hash/equality are unchanged). CRITICAL for bit-identity: a cache hit is
+// charged to eval_count/n_forward_evals exactly like a real evaluation — otherwise a
+// max_evals-budgeted run would diverge between cache on and off. The returned value is
+// the RAW scorer output (before add_dim_penalty, which stays at the call sites); kInf
+// results are cached like any other (re-evaluating them would only waste the same
+// forward pass again).
 double score_sse(Island& isl, const Tree& tree, const Dataset& data) {
     if (!isl.cache.active()) {
-        const double sse = sse_current(tree, data, isl.sse_pool, isl.sse_stk);
+        const double sse = raw_forward_sse(isl, tree, data);
         ++isl.eval_count;
         ++isl.n_forward_evals;
         return sse;
@@ -300,7 +394,7 @@ double score_sse(Island& isl, const Tree& tree, const Dataset& data) {
         ++isl.n_forward_evals;   // (max_evals budget parity with the cache off)
         return *cached;
     }
-    const double sse = sse_current(tree, data, isl.sse_pool, isl.sse_stk);
+    const double sse = raw_forward_sse(isl, tree, data);
     ++isl.cache.misses;
     isl.cache.store(key, tree, sse);
     ++isl.eval_count;
@@ -594,6 +688,9 @@ bool evolve_island(Island& isl,
     // Effective early-stop threshold: stop once the best loss falls below either
     // target_loss (the near-exact default) or early_stop_condition (PySR `max_evals`'s
     // companion knob); the larger threshold dominates, so it stops the run sooner.
+    // Under the opt-in linear_scaling the compared loss is the best-affine-fit SSE,
+    // which is <= the raw SSE (a=1, b=0 is one affine candidate), so early stop can
+    // only fire sooner, never later.
     const double target    = std::max(opts.target_loss, opts.early_stop_condition);
     // Evaluation counting itself is unconditional (evaluation accounting); only the
     // budget enforcement below is gated by max_evals > 0.
@@ -812,6 +909,15 @@ void optimize_and_simplify_population(Island& isl,
             loss = RSYM_TIMED(isl.prof.reopt_sec, isl.prof.reopt_n,
                               fit(t, data, *isl.optimizer, stop, isl));
             if (!std::isfinite(loss)) continue;  // keep the pre-optimise member
+            // Opt-in linear_scaling: fit() minimises (and returns) the UNSCALED SSE —
+            // the LM optimiser deliberately stays on raw residuals (v1). Scaled and
+            // unscaled losses must never mix in the hall-of-fame/tournament ordering,
+            // so re-score the optimised tree through the active (scaled) scorer: one
+            // extra charged forward pass per optimised member. No-op branch when off.
+            if (opts.linear_scaling) {
+                loss = score_sse(isl, t, *data);
+                if (!std::isfinite(loss)) continue;  // keep the pre-optimise member
+            }
             m.tree = std::move(t);
         } else {
             loss = score_sse(isl, s, *data);
@@ -1009,6 +1115,9 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
         // before initialize_island so the init forward passes are cached too.
         if (options.eval_cache && !options.batching)
             islands[idx].cache = EvalCache(kEvalCacheSlots);
+        // Opt-in Keijzer-2003 linear scaling: copy the flag onto the island before
+        // initialize_island so the init forward passes already use the scaled scorer.
+        islands[idx].linear_scaling = options.linear_scaling;
         initialize_island(islands[idx], data, options, init_stop, dim_analysis);
     }
 
@@ -1256,6 +1365,60 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
     HallOfFame global;
     for (auto& isl : islands) global.merge(isl.hof);
 
+    // Opt-in linear_scaling: materialise the fitted affine map into every reported
+    // tree (Keijzer 2003). Serial, deterministic, post-merge and RNG-free. For each
+    // archived member in ascending-complexity order: refit (a, b) on the FULL dataset,
+    // wrap the tree as a*f + b unless (a, b) is the identity to numerical precision,
+    // then recompute the loss as the PLAIN SSE of the wrapped tree — equal to the
+    // scaled SSE up to FP rounding — so member.loss, the expression string and
+    // predict() agree exactly. A fresh HallOfFame is rebuilt because the +4-node wrap
+    // shifts complexity buckets; a wrapped tree may exceed max_nodes by up to 4, which
+    // is allowed (reporting-time materialisation, not a search move). These few
+    // finalize evaluations run on the main thread after all islands are done, so they
+    // are charged to no island counter; they are added directly to the reported
+    // n_evals/n_forward_evals totals below.
+    std::uint64_t finalize_forward_evals = 0;
+    if (options.linear_scaling) {
+        std::vector<double>  fin_pool, fin_pred;
+        std::vector<double*> fin_stk;
+        const double mean_y = y.empty()
+            ? 0.0
+            : std::accumulate(y.begin(), y.end(), 0.0) / static_cast<double>(y.size());
+        HallOfFame rebuilt;
+        for (PopMember m : global.members()) {  // ascending complexity, deterministic
+            double a = 1.0, b = 0.0;
+            const double scaled = sse_linear_scaled(m.tree, *data, fin_pool, fin_stk,
+                                                    fin_pred, &a, &b);
+            ++finalize_forward_evals;
+            if (!std::isfinite(scaled)) continue;  // drop a non-finite archived member
+            // Skip the wrap when (a, b) is numerically the identity, so a candidate
+            // that already matches y is reported unmodified (b's tolerance is scaled
+            // by the target's magnitude).
+            const bool identity =
+                std::abs(a - 1.0) <= 1e-12 &&
+                std::abs(b) <= 1e-12 * (1.0 + std::abs(mean_y));
+            if (!identity) {
+                // Postfix wrap: [f..., a, Mul, b, Add] = (f * a) + b. Constant slots
+                // are re-indexed afterwards with the existing helper, preserving the
+                // contiguous-slot invariant every consumer relies on.
+                m.tree.push_back(constant_node(0, a));
+                m.tree.push_back(binary_node(BinaryOp::Mul));
+                m.tree.push_back(constant_node(0, b));
+                m.tree.push_back(binary_node(BinaryOp::Add));
+                reindex_constants(m.tree);
+            }
+            const double loss = sse_current(m.tree, *data, fin_pool, fin_stk);
+            ++finalize_forward_evals;
+            if (!std::isfinite(loss)) continue;
+            m.loss       = loss;
+            m.complexity = static_cast<int>(m.tree.size());
+            rebuilt.update(m);
+        }
+        // Keep the unmaterialised archive only if every member failed the refit (an
+        // all-non-finite degenerate run), so the result below is never empty.
+        if (!rebuilt.empty()) global = std::move(rebuilt);
+    }
+
     const PopMember best = global.best();
     SearchResult result;
     result.tree       = best.tree;
@@ -1276,6 +1439,10 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
         result.cache_hits       += isl.cache.hits;
         result.cache_misses     += isl.cache.misses;
     }
+    // Main-thread finalize evaluations (opt-in linear_scaling materialisation): charged
+    // to no island counter, counted directly here. 0 when the option is off.
+    result.n_evals         += finalize_forward_evals;
+    result.n_forward_evals += finalize_forward_evals;
     return result;
 }
 

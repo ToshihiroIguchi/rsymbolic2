@@ -160,6 +160,20 @@
 #'   \code{batching = TRUE} (each iteration's random subsample makes cached losses
 #'   unreusable). The \code{cache_hits}/\code{cache_misses} entries of
 #'   \code{eval_counts} report its effectiveness.
+#' @param linear_scaling Enable Keijzer (2003) linear scaling (default
+#'   \code{FALSE}). An opt-in high-accuracy option that \emph{deliberately diverges
+#'   from PySR} (which has no such mechanism): every candidate is scored by the sum
+#'   of squared errors of its best affine transform \eqn{a f(x) + b}, with the slope
+#'   \eqn{a} and intercept \eqn{b} solved in closed form (the weighted least squares
+#'   of \code{y} on the candidate's predictions), so the search only has to discover
+#'   the \emph{shape} of the target, never its scale or offset. The fitted \eqn{a}
+#'   and \eqn{b} are materialised into every returned expression as
+#'   \code{((f * a) + b)} — skipped when they equal the identity to numerical
+#'   precision — so \code{expression}, \code{loss}, \code{complexity} and
+#'   \code{predict()} stay self-consistent; the wrap may push a returned expression
+#'   up to 4 nodes past \code{max_nodes}. Not compatible with dimensional analysis
+#'   (\code{X_units}/\code{y_units}). The default \code{FALSE} keeps the search at
+#'   exact PySR parity.
 #' @param simplify Algebraically simplify fitted candidates (default
 #'   \code{TRUE}).
 #' @param crossover_probability Probability of subtree crossover vs. mutation
@@ -336,6 +350,7 @@ symbolic_regression.default <- function(
     batch_size            = 50L,
     warmup_maxsize_by     = 0.0,
     eval_cache            = FALSE,
+    linear_scaling        = FALSE,
     X_units               = NULL,
     y_units               = NULL,
     dimensional_constraint_penalty = NULL,
@@ -363,6 +378,11 @@ symbolic_regression.default <- function(
     # Opt-in duplicate-evaluation cache (implementation-only; results are bit-identical
     # on/off and the core ignores it when batching is TRUE).
     eval_cache <- isTRUE(eval_cache)
+
+    # Opt-in Keijzer-2003 linear scaling (behaviour-changing high-accuracy option;
+    # default FALSE keeps the search at exact PySR parity). Its units incompatibility
+    # is checked after the X_units/y_units block below.
+    linear_scaling <- isTRUE(linear_scaling)
 
     # PySR warmup_maxsize_by: fraction (>= 0) of the run over which the size cap ramps from
     # 3 up to max_nodes. 0 (default) disables the ramp (fixed maxsize, PySR default).
@@ -412,6 +432,11 @@ symbolic_regression.default <- function(
             stop("y_units requires X_units to be specified")
     }
     dimensionless_constants_only <- isTRUE(dimensionless_constants_only)
+    # linear_scaling refits (and materialises) a free affine transform of every
+    # candidate, which has no defined dimensional semantics; the combination is
+    # rejected here (bindings own validation; the core never sees it).
+    if (linear_scaling && (length(X_units) > 0L || nzchar(y_units)))
+        stop("linear scaling is not supported with dimensional analysis (X_units/y_units)")
     # PySR's signature default None maps to an effective penalty of 1000.0.
     if (is.null(dimensional_constraint_penalty)) {
         dimensional_constraint_penalty <- 1000.0
@@ -468,7 +493,8 @@ symbolic_regression.default <- function(
         as.character(y_units),
         as.double(dimensional_constraint_penalty),
         as.logical(dimensionless_constants_only),
-        as.logical(eval_cache)
+        as.logical(eval_cache),
+        as.logical(linear_scaling)
     )
     result$n_features <- ncol(X)
     # Display-only feature names: the column names of X, kept so print()/summary()

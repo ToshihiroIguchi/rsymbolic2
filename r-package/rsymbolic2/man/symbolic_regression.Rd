@@ -39,6 +39,7 @@ symbolic_regression(X, ...)
   batch_size = 50L,
   warmup_maxsize_by = 0,
   eval_cache = FALSE,
+  linear_scaling = FALSE,
   X_units = NULL,
   y_units = NULL,
   dimensional_constraint_penalty = NULL,
@@ -261,6 +262,21 @@ never a search setting, and does not affect PySR parity. Ignored when
 \code{batching = TRUE} (each iteration's random subsample makes cached losses
 unreusable). The \code{cache_hits}/\code{cache_misses} entries of
 \code{eval_counts} report its effectiveness.}
+
+\item{linear_scaling}{Enable Keijzer (2003) linear scaling (default
+\code{FALSE}). An opt-in high-accuracy option that \emph{deliberately diverges
+from PySR} (which has no such mechanism): every candidate is scored by the sum
+of squared errors of its best affine transform \eqn{a f(x) + b}, with the slope
+\eqn{a} and intercept \eqn{b} solved in closed form (the weighted least squares
+of \code{y} on the candidate's predictions), so the search only has to discover
+the \emph{shape} of the target, never its scale or offset. The fitted \eqn{a}
+and \eqn{b} are materialised into every returned expression as
+\code{((f * a) + b)} — skipped when they equal the identity to numerical
+precision — so \code{expression}, \code{loss}, \code{complexity} and
+\code{predict()} stay self-consistent; the wrap may push a returned expression
+up to 4 nodes past \code{max_nodes}. Not compatible with dimensional analysis
+(\code{X_units}/\code{y_units}). The default \code{FALSE} keeps the search at
+exact PySR parity.}
 
 \item{X_units}{Optional character vector of units, one per column of \code{X},
 enabling dimensional analysis (PySR \code{X_units}). Each entry is a

@@ -93,6 +93,14 @@ if(RSYMBOLIC2_BUILD_TESTS)
     target_link_libraries(test_eval_cache PRIVATE rsymbolic2_bench)
     add_test(NAME eval_cache COMMAND test_eval_cache)
     set_tests_properties(eval_cache PROPERTIES TIMEOUT 120)
+
+    # Keijzer-2003 linear scaling (opt-in linear_scaling): closed-form (a, b) vs a
+    # brute-force normal-equations solve, degenerate/non-finite guards, search-level
+    # recovery with materialised-wrap self-consistency, wrap-skip, off-path identity.
+    add_executable(test_linear_scaling tests/test_linear_scaling.cpp)
+    target_link_libraries(test_linear_scaling PRIVATE rsymbolic2_core)
+    add_test(NAME linear_scaling COMMAND test_linear_scaling)
+    set_tests_properties(linear_scaling PROPERTIES TIMEOUT 120)
 endif()
 
 option(RSYMBOLIC2_BUILD_BENCHMARKS "Build the standalone benchmark executable" ON)

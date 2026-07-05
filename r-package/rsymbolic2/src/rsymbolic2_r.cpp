@@ -121,7 +121,8 @@ cpp11::writable::list symbolic_regression_cpp(
     std::string     y_units,
     double          dimensional_constraint_penalty,
     bool            dimensionless_constants_only,
-    bool            eval_cache
+    bool            eval_cache,
+    bool            linear_scaling
 ) {
     // Convert R matrix → vector<vector<double>> (row-major)
     const int n = X.nrow();
@@ -199,6 +200,10 @@ cpp11::writable::list symbolic_regression_cpp(
     // Opt-in duplicate-evaluation cache (implementation-only memoisation; results are
     // bit-identical on/off, and it is ignored when batching is on). Default FALSE.
     opts.eval_cache            = eval_cache;
+    // Opt-in Keijzer-2003 linear scaling (behaviour-changing high-accuracy option;
+    // default FALSE keeps exact PySR parity). The R wrapper rejects combining it with
+    // X_units/y_units, so the core never sees that (undefined) combination.
+    opts.linear_scaling        = linear_scaling;
     // max_evals arrives as a double (R has no native 64-bit int); negative/zero => off.
     opts.max_evals = max_evals > 0.0
         ? static_cast<std::size_t>(max_evals)
