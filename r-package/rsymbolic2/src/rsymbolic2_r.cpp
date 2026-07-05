@@ -260,6 +260,17 @@ cpp11::writable::list symbolic_regression_cpp(
         "latex"_nm      = pf_latex
     });
 
+    // Evaluation accounting (reporting only): counts are exposed as doubles because R
+    // has no native 64-bit integer (mirrors the max_evals input, which arrives as a
+    // double for the same reason). n_evals = forward + lm_resid (max_evals units);
+    // Jacobian builds are reported but never charged to n_evals.
+    cpp11::writable::doubles eval_counts({
+        static_cast<double>(res.n_forward_evals),
+        static_cast<double>(res.n_lm_resid_evals),
+        static_cast<double>(res.n_lm_jac_evals)
+    });
+    eval_counts.names() = {"forward", "lm_resid", "lm_jac"};
+
     cpp11::writable::list result({
         "expression"_nm   = res.expression,
         "loss"_nm         = res.loss,
@@ -268,7 +279,9 @@ cpp11::writable::list symbolic_regression_cpp(
         "best_index"_nm   = best_index_r,
         "pareto_front"_nm = pareto_front,
         "n_obs"_nm        = static_cast<int>(y_cpp.size()),
-        "sst"_nm          = sst
+        "sst"_nm          = sst,
+        "n_evals"_nm      = static_cast<double>(res.n_evals),
+        "eval_counts"_nm  = eval_counts
     });
     result.attr("class") = "rsymbolic2";
     return result;

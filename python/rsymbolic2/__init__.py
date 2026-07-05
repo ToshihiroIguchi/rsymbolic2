@@ -68,6 +68,17 @@ class SymbolicRegressionResult:
         Total sum of squares of ``y`` about its (weighted) mean on the training
         data. Basis for the per-member ``r_squared`` (``1 - loss / sst``),
         which is consistent with the (weighted) SSE ``loss``.
+    n_evals : Optional[int]
+        Total number of candidate evaluations spent by the search, in
+        ``max_evals`` units: forward-pass loss evaluations plus the residual
+        evaluations consumed by constant-optimisation fits, summed across
+        islands. Deterministic for a fixed seed.
+    eval_counts : Optional[dict]
+        Breakdown of :attr:`n_evals` with keys ``forward`` (forward-pass loss
+        evaluations), ``lm_resid`` (Levenberg-Marquardt residual evaluations;
+        ``forward + lm_resid == n_evals``), and ``lm_jac`` (LM Jacobian builds,
+        reported for accounting only — never charged to ``n_evals`` or the
+        ``max_evals`` budget).
     n_features : int
         Number of input features (columns of ``X``) used during fitting.
     feature_names : Optional[list[str]]
@@ -90,6 +101,9 @@ class SymbolicRegressionResult:
         self.best_index: Optional[int] = raw["best_index"]
         self.n_obs: Optional[int] = raw.get("n_obs")
         self.sst: Optional[float] = raw.get("sst")
+        # Evaluation accounting (None when the raw dict predates these fields).
+        self.n_evals: Optional[int] = raw.get("n_evals")
+        self.eval_counts: Optional[dict] = raw.get("eval_counts")
         # Training R^2 per member: 1 - loss/sst. None when the target was constant
         # (sst == 0) or the raw dict predates the sst field. Negative values are
         # valid (a fit worse than the mean).

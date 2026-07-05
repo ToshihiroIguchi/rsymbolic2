@@ -147,6 +147,43 @@ void test_max_evals_bounds_and_deterministic() {
     CHECK(r_cap1.loss == r_cap2.loss);
     CHECK(!r_cap1.pareto_front.empty());             // still returns a valid result
     CHECK(r_full.loss <= r_cap1.loss + 1e-12);       // more budget is never worse
+    // Evaluation accounting under a cap: identical budgeted runs spend identical
+    // eval counts, and enforcement semantics are unchanged (the capped run stopped,
+    // so it spent no more than the full run).
+    CHECK(r_cap1.n_evals == r_cap2.n_evals);
+    CHECK(r_cap1.n_evals > 0);
+    CHECK(r_cap1.n_evals <= r_full.n_evals);
+}
+
+// Evaluation accounting: the reported totals are consistent (n_evals, the max_evals
+// unit, is exactly forward passes + LM residual evals; Jacobian builds are reported
+// separately and never charged) and deterministic for a fixed seed.
+void test_eval_accounting_identity_and_deterministic() {
+    std::vector<std::vector<double>> X;
+    std::vector<double> y;
+    make_line(X, y);
+
+    const SearchOptions options = line_options();
+    const SearchResult r1 = run_evolution(X, y, options);
+    const SearchResult r2 = run_evolution(X, y, options);
+
+    std::printf("eval accounting: n_evals=%llu forward=%llu lm_resid=%llu lm_jac=%llu\n",
+                static_cast<unsigned long long>(r1.n_evals),
+                static_cast<unsigned long long>(r1.n_forward_evals),
+                static_cast<unsigned long long>(r1.n_lm_resid_evals),
+                static_cast<unsigned long long>(r1.n_lm_jac_evals));
+    CHECK(r1.n_evals > 0);
+    CHECK(r1.n_forward_evals > 0);
+    CHECK(r1.n_evals == r1.n_forward_evals + r1.n_lm_resid_evals);
+    // The default search optimises constants (should_optimize_constants), so LM
+    // residual evals and Jacobian builds are both non-zero on this problem.
+    CHECK(r1.n_lm_resid_evals > 0);
+    CHECK(r1.n_lm_jac_evals > 0);
+    // Deterministic for a fixed seed.
+    CHECK(r1.n_evals == r2.n_evals);
+    CHECK(r1.n_forward_evals == r2.n_forward_evals);
+    CHECK(r1.n_lm_resid_evals == r2.n_lm_resid_evals);
+    CHECK(r1.n_lm_jac_evals == r2.n_lm_jac_evals);
 }
 
 // early_stop_condition: a looser threshold halts the search. The control (no early stop)
@@ -243,6 +280,7 @@ int main() {
     test_recovers_linear();
     test_recovers_exponential();
     test_max_evals_bounds_and_deterministic();
+    test_eval_accounting_identity_and_deterministic();
     test_early_stop_condition();
     test_weighted_search_recovers_line();
     test_batching_recovers_line();

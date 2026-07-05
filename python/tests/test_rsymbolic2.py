@@ -357,6 +357,27 @@ def test_n_threads_rejects_non_positive():
         symbolic_regression(X, y, generations=1, n_threads=-2)
 
 
+def test_eval_accounting():
+    """n_evals/eval_counts: consistent breakdown (n_evals = forward + lm_resid;
+    lm_jac reported only) and deterministic for a fixed seed."""
+    X = np.linspace(-8, 8, 16).reshape(-1, 1)
+    y = 2.5 * X[:, 0] + 1.7
+    common = dict(unary_ops=[], population_size=60, n_populations=2,
+                  generations=40, seed=11)
+    r1 = symbolic_regression(X, y, **common)
+    r2 = symbolic_regression(X, y, **common)
+
+    assert isinstance(r1.n_evals, int) and r1.n_evals > 0
+    assert set(r1.eval_counts) == {"forward", "lm_resid", "lm_jac"}
+    assert all(v >= 0 for v in r1.eval_counts.values())
+    # n_evals is the max_evals unit: forward passes + LM residual evaluations.
+    # Jacobian builds are reported only and never charged to n_evals.
+    assert r1.n_evals == r1.eval_counts["forward"] + r1.eval_counts["lm_resid"]
+    # Deterministic for a fixed seed.
+    assert r1.n_evals == r2.n_evals
+    assert r1.eval_counts == r2.eval_counts
+
+
 def test_input_validation():
     X = np.zeros((5, 1))
     y = np.zeros(4)

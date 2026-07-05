@@ -64,6 +64,12 @@ struct OptimizationResult {
     double loss = 0.0;              // sum of squared residuals at `constants`
     bool success = false;           // true iff a finite-loss solution was found
     std::size_t evaluations = 0;    // number of residual-function evaluations
+    // Number of Jacobian builds (analytic closure calls, or full finite-difference
+    // sweeps when no analytic Jacobian is supplied). Reported for evaluation
+    // accounting only; never charged to the max_evals budget, which counts residual
+    // evaluations (a finite-difference sweep's k residual calls are already in
+    // `evaluations`). Accumulated across multi-start restarts like `evaluations`.
+    std::size_t jacobian_evaluations = 0;
 };
 
 // Common configuration shared by backends. Each backend reads the fields it needs and

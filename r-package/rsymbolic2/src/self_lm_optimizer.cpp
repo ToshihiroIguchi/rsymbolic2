@@ -160,7 +160,8 @@ OptimizationResult SelfLMOptimizer::optimize(
     // RNG use; rng_ is seeded deterministically (per island in the search).
     const std::vector<double>& x0 = problem.initial_constants;
     std::size_t nfev = 0;
-    OptimizationResult best = run_lm_from(problem, x0, stop_requested, nfev);
+    std::size_t njev = 0;
+    OptimizationResult best = run_lm_from(problem, x0, stop_requested, nfev, njev);
 
     std::normal_distribution<double> gaussian(0.0, 1.0);
     const auto aborted = [&]() {
@@ -173,20 +174,23 @@ OptimizationResult SelfLMOptimizer::optimize(
         // xt = @. x0 * (1 + (1//2) * randn). A zero constant stays zero, as in SR.jl.
         for (std::size_t i = 0; i < ku; ++i)
             xt_[i] = x0[i] * (1.0 + config_.perturbation_scale * gaussian(rng_));
-        OptimizationResult cand = run_lm_from(problem, xt_, stop_requested, nfev);
+        OptimizationResult cand = run_lm_from(problem, xt_, stop_requested, nfev, njev);
         if (cand.success && cand.loss < best.loss) best = std::move(cand);
     }
 
     best.evaluations = nfev;
+    best.jacobian_evaluations = njev;
     return best;
 }
 
 // One LM run from start point `x0`. Reuses the class scratch (already sized by optimize()).
-// Accumulates residual-function evaluations into `nfev`; the returned result carries the
-// optimized constants and SSE but not the (caller-accumulated) evaluation count.
+// Accumulates residual-function evaluations into `nfev` and Jacobian builds into `njev`;
+// the returned result carries the optimized constants and SSE but not the
+// (caller-accumulated) evaluation counts.
 OptimizationResult SelfLMOptimizer::run_lm_from(
     const OptimizationProblem& problem, const std::vector<double>& x0,
-    const StopRequested& stop_requested, std::size_t& nfev) const {
+    const StopRequested& stop_requested, std::size_t& nfev,
+    std::size_t& njev) const {
     const int k = static_cast<int>(x0.size());
     const std::size_t m = problem.num_residuals;
     const std::size_t ku = static_cast<std::size_t>(k);
@@ -210,6 +214,9 @@ OptimizationResult SelfLMOptimizer::run_lm_from(
         if (stop_requested()) break;
 
         // --- Jacobian J (m×k, row-major), clamped to finite ---------------------
+        // One Jacobian build per LM iteration (either branch); counted for evaluation
+        // accounting only — never charged to the max_evals budget.
+        ++njev;
         if (problem.jacobian) {
             // Re-zero: the closure may early-return on abort, leaving entries unset,
             // which must read as a defined 0.0 (matches AnalyticFunctor::df).
@@ -342,7 +349,8 @@ OptimizationResult SelfLMOptimizer::run_lm_from(
     res.constants = params_;
     res.loss = sse;
     res.success = std::isfinite(sse);
-    // res.evaluations left 0: the caller (optimize) accumulates nfev across all starts.
+    // res.evaluations / res.jacobian_evaluations left 0: the caller (optimize)
+    // accumulates nfev/njev across all starts.
     return res;
 }
 

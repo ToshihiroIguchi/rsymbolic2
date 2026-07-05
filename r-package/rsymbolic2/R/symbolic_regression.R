@@ -246,6 +246,17 @@
 #'     \item{sst}{Total sum of squares of \code{y} about its (weighted) mean on
 #'       the training data; basis for the \code{r_squared} column reported by
 #'       \code{\link{summary.rsymbolic2}}.}
+#'     \item{n_evals}{Total number of candidate evaluations spent by the search,
+#'       in \code{max_evals} units: forward-pass loss evaluations plus the
+#'       residual evaluations consumed by constant-optimisation fits, summed
+#'       across islands. Deterministic for a fixed seed. Reported as a double
+#'       (R has no native 64-bit integer).}
+#'     \item{eval_counts}{Named numeric vector breaking \code{n_evals} down:
+#'       \code{forward} (forward-pass loss evaluations), \code{lm_resid}
+#'       (Levenberg-Marquardt residual evaluations; \code{forward + lm_resid ==
+#'       n_evals}), and \code{lm_jac} (LM Jacobian builds, reported for
+#'       accounting only — never charged to \code{n_evals} or the
+#'       \code{max_evals} budget).}
 #'     \item{n_features}{Number of input features (columns of \code{X}) used
 #'       during fitting; required by \code{\link{predict.rsymbolic2}}.}
 #'     \item{feature_names}{Column names of \code{X}, or \code{NULL} when \code{X}

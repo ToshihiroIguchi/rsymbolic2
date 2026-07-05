@@ -79,21 +79,25 @@ int main() {
     // is independent and migration is serial / RNG-free.
     // -----------------------------------------------------------------
     {
-        std::string expr_t1, expr_t4;
-
 #ifdef _OPENMP
         omp_set_num_threads(1);
 #endif
-        expr_t1 = run_evolution(prob.X, prob.y, linear_opts(4)).expression;
+        const SearchResult res_t1 = run_evolution(prob.X, prob.y, linear_opts(4));
 
 #ifdef _OPENMP
         omp_set_num_threads(4);
 #endif
-        expr_t4 = run_evolution(prob.X, prob.y, linear_opts(4)).expression;
+        const SearchResult res_t4 = run_evolution(prob.X, prob.y, linear_opts(4));
 
-        std::printf("thread-1 expr: %s\n", expr_t1.c_str());
-        std::printf("thread-4 expr: %s\n", expr_t4.c_str());
-        CHECK(expr_t1 == expr_t4);
+        std::printf("thread-1 expr: %s\n", res_t1.expression.c_str());
+        std::printf("thread-4 expr: %s\n", res_t4.expression.c_str());
+        CHECK(res_t1.expression == res_t4.expression);
+        // Evaluation accounting is deterministic and thread-count independent, and a
+        // completed run always evaluated something.
+        CHECK(res_t1.n_evals > 0);
+        CHECK(res_t1.n_evals == res_t4.n_evals);
+        CHECK(res_t1.n_forward_evals > 0);
+        CHECK(res_t1.n_forward_evals == res_t4.n_forward_evals);
     }
 
     // -----------------------------------------------------------------

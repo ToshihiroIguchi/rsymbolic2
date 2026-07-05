@@ -316,6 +316,16 @@ struct SearchResult {
     // Index into pareto_front of the recommended ("best") accuracy/complexity trade-off
     // (PySR model_selection="best"; see select_best). 0 when the front is empty.
     int best_index = 0;
+    // Evaluation accounting (summed over islands; reporting only, never a search input).
+    // n_evals is the total in max_evals units — forward-pass loss evaluations plus the
+    // residual evaluations consumed by constant-optimisation fits — so
+    // n_evals == n_forward_evals + n_lm_resid_evals holds by construction. Jacobian
+    // builds are reported separately and are never charged to n_evals (a
+    // finite-difference Jacobian's residual calls already count as LM residual evals).
+    std::uint64_t n_evals = 0;          // total in max_evals units (forward + LM residual)
+    std::uint64_t n_forward_evals = 0;  // forward-pass loss evaluations
+    std::uint64_t n_lm_resid_evals = 0; // LM residual-function evaluations
+    std::uint64_t n_lm_jac_evals = 0;   // LM Jacobian builds (reported only)
 };
 
 // Run the search to fit y from X by discovering an expression structure and optimizing

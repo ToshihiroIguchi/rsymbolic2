@@ -10,7 +10,7 @@ test_that("result has the documented structure", {
   )
   expect_named(res, c("expression", "loss", "complexity", "recommended",
                       "best_index", "pareto_front", "n_obs", "sst",
-                      "n_features"))
+                      "n_evals", "eval_counts", "n_features"))
   expect_identical(res$n_obs, 12L)
   expect_true(is.finite(res$sst) && res$sst > 0)
   expect_type(res$expression, "character")

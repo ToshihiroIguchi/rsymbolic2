@@ -282,6 +282,15 @@ py::dict symbolic_regression_cpp(
     result["best_index"]   = best_index;
     result["n_obs"]        = static_cast<int>(n);
     result["sst"]          = sst;
+    // Evaluation accounting (reporting only): n_evals = forward + lm_resid (max_evals
+    // units); Jacobian builds are reported but never charged to n_evals. Mirrors the R
+    // bridge's n_evals / eval_counts fields (Python ints carry 64-bit counts exactly).
+    result["n_evals"]      = py::int_(res.n_evals);
+    py::dict eval_counts;
+    eval_counts["forward"]  = py::int_(res.n_forward_evals);
+    eval_counts["lm_resid"] = py::int_(res.n_lm_resid_evals);
+    eval_counts["lm_jac"]   = py::int_(res.n_lm_jac_evals);
+    result["eval_counts"]  = eval_counts;
     result["pareto_front"] = py::dict(
         py::arg("complexity") = pf_complexity,
         py::arg("loss")       = pf_loss,

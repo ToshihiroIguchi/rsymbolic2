@@ -200,13 +200,21 @@ struct Island {
     // 0..population_size-1; every accepted child takes the next value, so the smallest
     // birth is always the oldest surviving member. Per island (share-nothing).
     std::uint64_t                       next_birth = 0;
-    // Per-island candidate-evaluation counter for the max_evals budget (PySR `max_evals`).
-    // Counts forward-pass loss evals (1 each) plus the residual evaluations consumed by
-    // constant-optimisation fits. Plain (non-atomic) because it is touched only by this
-    // island's single worker thread — no cross-island sharing on the hot path, preserving
-    // the share-nothing scaling property. Summed across islands at epoch boundaries; only
-    // maintained when max_evals > 0. See run_evolution.
+    // Per-island candidate-evaluation counter (PySR `max_evals` units): forward-pass loss
+    // evals (1 each) plus the residual evaluations consumed by constant-optimisation fits.
+    // Plain (non-atomic) because it is touched only by this island's single worker thread —
+    // no cross-island sharing on the hot path, preserving the share-nothing scaling
+    // property. Maintained unconditionally (evaluation accounting, reported in
+    // SearchResult); the max_evals budget enforcement reads it only when max_evals > 0.
+    // Summed across islands at epoch boundaries. See run_evolution.
     std::uint64_t                       eval_count = 0;
+    // Evaluation-accounting breakdown of eval_count (reporting only, never enforced):
+    // eval_count == n_forward_evals + n_lm_resid_evals holds by construction. Jacobian
+    // builds are reported separately and are NOT part of eval_count (a finite-difference
+    // Jacobian's residual calls are already inside n_lm_resid_evals).
+    std::uint64_t                       n_forward_evals  = 0;  // forward-pass loss evals
+    std::uint64_t                       n_lm_resid_evals = 0;  // LM residual evals (fit)
+    std::uint64_t                       n_lm_jac_evals   = 0;  // LM Jacobian builds (fit)
     // Reused scratch for sse_current's SoA residual evaluator. Owned by the island (not a
     // function-local `static thread_local`): each island runs single-threaded on its
     // OpenMP worker, so island-owned buffers are inherently per-worker and reused across
@@ -344,7 +352,7 @@ inline double adjusted_cost(const PopMember& m, double parsimony, double y_norm,
 double fit(Tree& tree, const std::shared_ptr<const Dataset>& data,
            const ConstantOptimizer& optimizer,
            const StopRequested& stop_requested,
-           std::uint64_t* eval_count = nullptr) {
+           Island& isl) {
     const std::vector<double> init = initial_constants(tree);
     // Pass stop_requested through so the residual/Jacobian closures can poll it
     // mid-evaluation and signal an abort via problem.aborted (docs/22 Phase 1).
@@ -353,11 +361,14 @@ double fit(Tree& tree, const std::shared_ptr<const Dataset>& data,
     OptimizationProblem problem = make_least_squares_problem(tree, data, init,
                                                              stop_requested);
     const OptimizationResult result = optimizer.optimize(problem, stop_requested);
-    // max_evals budget (PySR): charge the optimiser's reported residual evaluations (at
-    // least 1 even on failure — work was still done). Only maintained when a counter is
-    // supplied (max_evals > 0), so the default path has no extra work.
-    if (eval_count != nullptr)
-        *eval_count += result.evaluations > 0 ? result.evaluations : 1;
+    // Evaluation accounting (also the max_evals budget unit, PySR): charge the
+    // optimiser's reported residual evaluations (at least 1 even on failure — work was
+    // still done). Jacobian builds are reported only, never charged to eval_count.
+    const std::uint64_t resid_evals =
+        result.evaluations > 0 ? static_cast<std::uint64_t>(result.evaluations) : 1;
+    isl.eval_count       += resid_evals;
+    isl.n_lm_resid_evals += resid_evals;
+    isl.n_lm_jac_evals   += static_cast<std::uint64_t>(result.jacobian_evaluations);
     if (!result.success || !std::isfinite(result.loss)) return kInf;
     if (!result.constants.empty()) set_constants(tree, result.constants);
     return result.loss;
@@ -476,7 +487,8 @@ void initialize_island(Island& isl,
                                            sse_current(tree, *data, isl.sse_pool, isl.sse_stk));
         // Opt-in dimensional penalty (no-op when da.enabled is false; docs/46).
         const double loss = add_dim_penalty(raw_loss, tree, da);
-        if (opts.max_evals > 0) ++isl.eval_count;  // count the init forward-pass eval
+        ++isl.eval_count;        // count the init forward-pass eval (max_evals units)
+        ++isl.n_forward_evals;
         // No simplify here: SR.jl does not simplify the initial population. Simplification
         // first happens in the per-iteration optimize_and_simplify_population pass below,
         // mirroring SR.jl.
@@ -538,7 +550,9 @@ bool evolve_island(Island& isl,
     // target_loss (the near-exact default) or early_stop_condition (PySR `max_evals`'s
     // companion knob); the larger threshold dominates, so it stops the run sooner.
     const double target    = std::max(opts.target_loss, opts.early_stop_condition);
-    const bool   track_evals = island_eval_budget > 0;  // max_evals enabled
+    // Evaluation counting itself is unconditional (evaluation accounting); only the
+    // budget enforcement below is gated by max_evals > 0.
+    const bool   enforce_budget = island_eval_budget > 0;  // max_evals enabled
     std::uniform_real_distribution<double> unit(0.0, 1.0);
 
     // Build the stop closure once. It reads t_start (immutable after search start)
@@ -559,7 +573,8 @@ bool evolve_island(Island& isl,
         const double raw_loss =
             RSYM_TIMED(isl.prof.evolve_sse_sec, isl.prof.evolve_sse_n,
                        sse_current(t, *data, isl.sse_pool, isl.sse_stk));
-        if (track_evals) ++isl.eval_count;
+        ++isl.eval_count;
+        ++isl.n_forward_evals;
         if (!std::isfinite(raw_loss)) return;
         const double loss = add_dim_penalty(raw_loss, t, da);  // no-op when units off
         PopMember child{std::move(t), loss, 0};
@@ -580,7 +595,7 @@ bool evolve_island(Island& isl,
         // max_evals budget: stop this island once it has spent its fair share of the
         // global evaluation budget. Checked at the generation boundary (not the optimizer
         // stop closure), so a fit is never aborted mid-solve and counting stays clean.
-        if (track_evals && isl.eval_count >= island_eval_budget)
+        if (enforce_budget && isl.eval_count >= island_eval_budget)
             return false;
 
         // Refresh the normalized frequency snapshot once per generation (cheap,
@@ -656,7 +671,8 @@ bool evolve_island(Island& isl,
             const double raw_loss =
                 RSYM_TIMED(isl.prof.evolve_sse_sec, isl.prof.evolve_sse_n,
                            sse_current(child_tree, *data, isl.sse_pool, isl.sse_stk));
-            if (track_evals) ++isl.eval_count;
+            ++isl.eval_count;
+            ++isl.n_forward_evals;
             // A non-finite loss is SR.jl's NaN-cost rejection: discard the child (no
             // replacement, no archive update), faithful to next_generation.
             if (!std::isfinite(raw_loss))
@@ -733,11 +749,12 @@ void optimize_and_simplify_population(Island& isl,
                                       std::size_t island_eval_budget,
                                       HallOfFame* hof_target,
                                       const DimAnalysis& da) {
-    const bool track_evals = island_eval_budget > 0;  // max_evals enabled
+    // Evaluation counting is unconditional; only the budget check is gated (max_evals).
+    const bool enforce_budget = island_eval_budget > 0;  // max_evals enabled
     std::uniform_real_distribution<double> unit(0.0, 1.0);
     for (PopMember& m : isl.population) {
         // max_evals budget: stop polishing once this island has spent its fair share.
-        if (track_evals && isl.eval_count >= island_eval_budget) break;
+        if (enforce_budget && isl.eval_count >= island_eval_budget) break;
         Tree s = opts.simplify_expressions
                      ? RSYM_TIMED(isl.prof.simplify_sec, isl.prof.simplify_n, simplify(m.tree))
                      : m.tree;
@@ -752,13 +769,13 @@ void optimize_and_simplify_population(Island& isl,
         if (do_optimize) {
             Tree t = s;
             loss = RSYM_TIMED(isl.prof.reopt_sec, isl.prof.reopt_n,
-                              fit(t, data, *isl.optimizer, stop,
-                                  track_evals ? &isl.eval_count : nullptr));
+                              fit(t, data, *isl.optimizer, stop, isl));
             if (!std::isfinite(loss)) continue;  // keep the pre-optimise member
             m.tree = std::move(t);
         } else {
             loss = sse_current(s, *data, isl.sse_pool, isl.sse_stk);
-            if (track_evals) ++isl.eval_count;
+            ++isl.eval_count;
+            ++isl.n_forward_evals;
             if (!std::isfinite(loss)) continue;  // keep the unsimplified member if it degraded
             m.tree = std::move(s);
         }
@@ -783,12 +800,11 @@ void optimize_and_simplify_population(Island& isl,
 void finalize_costs_and_merge(Island& isl,
                               const std::shared_ptr<const Dataset>& full,
                               const HallOfFame& best_seen,
-                              std::size_t island_eval_budget,
                               const DimAnalysis& da) {
-    const bool track_evals = island_eval_budget > 0;
     for (PopMember& m : isl.population) {
         const double loss = sse_current(m.tree, *full, isl.sse_pool, isl.sse_stk);
-        if (track_evals) ++isl.eval_count;
+        ++isl.eval_count;
+        ++isl.n_forward_evals;
         if (!std::isfinite(loss)) continue;
         m.loss = add_dim_penalty(loss, m.tree, da);  // no-op when units off
         m.complexity = static_cast<int>(m.tree.size());
@@ -796,7 +812,8 @@ void finalize_costs_and_merge(Island& isl,
     }
     for (PopMember bm : best_seen.members()) {
         const double loss = sse_current(bm.tree, *full, isl.sse_pool, isl.sse_stk);
-        if (track_evals) ++isl.eval_count;
+        ++isl.eval_count;
+        ++isl.n_forward_evals;
         if (!std::isfinite(loss)) continue;
         bm.loss = add_dim_penalty(loss, bm.tree, da);  // no-op when units off
         isl.hof.update(bm);
@@ -1052,7 +1069,7 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
                 const auto batch_opt = make_batch(*data, options.batch_size, isl.batch_rng);
                 optimize_and_simplify_population(isl, batch_opt, options, opt_stop,
                                                  island_budget, nullptr, dim_analysis);
-                finalize_costs_and_merge(isl, data, best_seen, island_budget, dim_analysis);
+                finalize_costs_and_merge(isl, data, best_seen, dim_analysis);
             }
         }
 
@@ -1205,6 +1222,15 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
     result.pareto_front = global.pareto_front();
     result.best_index =
         static_cast<int>(select_best(result.pareto_front, options.model_selection));
+    // Evaluation accounting: sum the per-island counters. eval_count is the max_evals
+    // unit (forward passes + LM residual evals), so n_evals == n_forward_evals +
+    // n_lm_resid_evals by construction; Jacobian builds are reported separately.
+    for (const auto& isl : islands) {
+        result.n_evals          += isl.eval_count;
+        result.n_forward_evals  += isl.n_forward_evals;
+        result.n_lm_resid_evals += isl.n_lm_resid_evals;
+        result.n_lm_jac_evals   += isl.n_lm_jac_evals;
+    }
     return result;
 }
 

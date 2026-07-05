@@ -66,12 +66,14 @@ private:
     mutable std::mt19937_64 rng_;
 
     // Run the LM loop from a given start point `x0`, returning the optimized constants and
-    // SSE and accumulating residual-function evaluations into `nfev`. Used once per start by
-    // optimize() (start 0 + n_restarts perturbed starts). All scratch below is reused.
+    // SSE and accumulating residual-function evaluations into `nfev` and Jacobian builds
+    // into `njev`. Used once per start by optimize() (start 0 + n_restarts perturbed
+    // starts). All scratch below is reused.
     OptimizationResult run_lm_from(const OptimizationProblem& problem,
                                    const std::vector<double>& x0,
                                    const StopRequested& stop_requested,
-                                   std::size_t& nfev) const;
+                                   std::size_t& nfev,
+                                   std::size_t& njev) const;
 
     // Scratch buffers reused across optimize() calls so a fit performs no heap
     // allocation once these are sized (m is fixed for a search; k grows to the largest
