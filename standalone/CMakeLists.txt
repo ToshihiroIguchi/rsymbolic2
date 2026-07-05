@@ -86,6 +86,13 @@ if(RSYMBOLIC2_BUILD_TESTS)
     target_link_libraries(test_warmup_maxsize PRIVATE rsymbolic2_bench)
     add_test(NAME warmup_maxsize COMMAND test_warmup_maxsize)
     set_tests_properties(warmup_maxsize PROPERTIES TIMEOUT 60)
+
+    # Duplicate-evaluation cache (opt-in eval_cache): hash/equality units, collision
+    # guard, and on-vs-off bit-identity gates.
+    add_executable(test_eval_cache tests/test_eval_cache.cpp)
+    target_link_libraries(test_eval_cache PRIVATE rsymbolic2_bench)
+    add_test(NAME eval_cache COMMAND test_eval_cache)
+    set_tests_properties(eval_cache PROPERTIES TIMEOUT 120)
 endif()
 
 option(RSYMBOLIC2_BUILD_BENCHMARKS "Build the standalone benchmark executable" ON)

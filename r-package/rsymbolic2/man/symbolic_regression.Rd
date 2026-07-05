@@ -38,6 +38,7 @@ symbolic_regression(X, ...)
   batching = FALSE,
   batch_size = 50L,
   warmup_maxsize_by = 0,
+  eval_cache = FALSE,
   X_units = NULL,
   y_units = NULL,
   dimensional_constraint_penalty = NULL,
@@ -249,6 +250,18 @@ toward small expressions. Must be a single finite number \code{>= 0}. Only the
 mutation/crossover size cap ramps; the initial population is still drawn at
 \code{max_nodes}.}
 
+\item{eval_cache}{Enable an opt-in duplicate-evaluation cache (default
+\code{FALSE}). Implementation-only memoisation: each island keeps a small
+fixed-size table of recently evaluated expression trees and reuses the stored
+loss when an evaluation-identical tree recurs, instead of re-evaluating it.
+Results are \strong{bit-identical} with the cache on or off (a cache hit is
+charged to \code{n_evals}/\code{eval_counts} exactly like a real evaluation,
+so even \code{max_evals}-budgeted runs are unchanged) — this is a speed knob,
+never a search setting, and does not affect PySR parity. Ignored when
+\code{batching = TRUE} (each iteration's random subsample makes cached losses
+unreusable). The \code{cache_hits}/\code{cache_misses} entries of
+\code{eval_counts} report its effectiveness.}
+
 \item{X_units}{Optional character vector of units, one per column of \code{X},
 enabling dimensional analysis (PySR \code{X_units}). Each entry is a
 DynamicQuantities-style unit string such as \code{"m/s^2"}, \code{"kg"}, or
@@ -324,9 +337,13 @@ A list of class \code{"rsymbolic2"} with elements:
     \item{eval_counts}{Named numeric vector breaking \code{n_evals} down:
       \code{forward} (forward-pass loss evaluations), \code{lm_resid}
       (Levenberg-Marquardt residual evaluations; \code{forward + lm_resid ==
-      n_evals}), and \code{lm_jac} (LM Jacobian builds, reported for
+      n_evals}), \code{lm_jac} (LM Jacobian builds, reported for
       accounting only — never charged to \code{n_evals} or the
-      \code{max_evals} budget).}
+      \code{max_evals} budget), and \code{cache_hits}/\code{cache_misses}
+      (duplicate-evaluation cache statistics; both \code{0} unless
+      \code{eval_cache = TRUE}. A hit is still counted in \code{forward},
+      so \code{cache_hits + cache_misses} is the number of forward passes
+      routed through the cache, not extra work).}
     \item{n_features}{Number of input features (columns of \code{X}) used
       during fitting; required by \code{\link{predict.rsymbolic2}}.}
     \item{feature_names}{Column names of \code{X}, or \code{NULL} when \code{X}

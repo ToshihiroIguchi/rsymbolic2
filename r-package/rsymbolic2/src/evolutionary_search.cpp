@@ -38,6 +38,7 @@
 #include "rsymbolic/evolution/mutation.hpp"
 #include "rsymbolic/evolution/random_tree.hpp"
 #include "rsymbolic/expression/least_squares_problem.hpp"
+#include "rsymbolic/search/eval_cache.hpp"
 #include "rsymbolic/simplification/simplify.hpp"
 #include "rsymbolic/units/dimensional_analysis.hpp"
 
@@ -46,6 +47,12 @@ namespace rsymbolic {
 namespace {
 
 constexpr double kInf = std::numeric_limits<double>::infinity();
+
+// Slot count of the per-island duplicate-evaluation cache (opt-in options.eval_cache;
+// eval_cache.hpp). Power of two (the direct-mapped slot index is key & (slots-1)).
+// 1024 entries x one tree of <= max_nodes nodes bounds the memory to a few hundred KB
+// per island. Purely an implementation constant — never a search setting.
+constexpr std::size_t kEvalCacheSlots = 1024;
 
 // ---------------------------------------------------------------------------
 // Optional hot-path phase profiler — DIAGNOSTIC ONLY.
@@ -224,6 +231,12 @@ struct Island {
     // corrupting the heap; CLAUDE.md Correctness/Portability).
     std::vector<double>                 sse_pool;
     std::vector<double*>                sse_stk;
+    // Opt-in duplicate-evaluation cache (options.eval_cache; eval_cache.hpp). Default-
+    // constructed = inactive with zero slots allocated, so the off path costs nothing;
+    // run_evolution activates it (kEvalCacheSlots) iff eval_cache is on AND batching is
+    // off (a batched SSE is never reusable across passes). Island-local, share-nothing:
+    // no cross-island cache state, so the parallel region stays synchronisation-free.
+    EvalCache                           cache;
 #ifdef RSYMBOLIC2_PROFILE
     IslandProfile                       prof;
 #endif
@@ -259,6 +272,39 @@ double sse_current(const Tree& tree, const Dataset& data,
             sse += r * r;
         }
     }
+    return sse;
+}
+
+// Forward-pass scoring used at every sse_current call site: sse_current plus the
+// evaluation-counter charge, routed through the island's opt-in duplicate-evaluation
+// cache (options.eval_cache). With the cache inactive (the default, and always under
+// batching) this is exactly the former inline pattern — sse_current followed by
+// ++eval_count/++n_forward_evals — byte-identical code path. With the cache active, an
+// evaluation-identical tree's SSE is returned from the memo instead of re-evaluated.
+// CRITICAL for bit-identity: a cache hit is charged to eval_count/n_forward_evals
+// exactly like a real evaluation — otherwise a max_evals-budgeted run would diverge
+// between cache on and off. The returned value is the RAW sse_current output (before
+// add_dim_penalty, which stays at the call sites); kInf results are cached like any
+// other (re-evaluating them would only waste the same forward pass again).
+double score_sse(Island& isl, const Tree& tree, const Dataset& data) {
+    if (!isl.cache.active()) {
+        const double sse = sse_current(tree, data, isl.sse_pool, isl.sse_stk);
+        ++isl.eval_count;
+        ++isl.n_forward_evals;
+        return sse;
+    }
+    const std::uint64_t key = tree_hash(tree);
+    if (const double* cached = isl.cache.lookup(key, tree)) {
+        ++isl.cache.hits;
+        ++isl.eval_count;        // a hit still counts as one forward-pass evaluation
+        ++isl.n_forward_evals;   // (max_evals budget parity with the cache off)
+        return *cached;
+    }
+    const double sse = sse_current(tree, data, isl.sse_pool, isl.sse_stk);
+    ++isl.cache.misses;
+    isl.cache.store(key, tree, sse);
+    ++isl.eval_count;
+    ++isl.n_forward_evals;
     return sse;
 }
 
@@ -483,12 +529,11 @@ void initialize_island(Island& isl,
         // first optimisation opportunity is the end-of-iteration population pass. The
         // previous per-member init fit() diverged from PySR (docs/31). sse_current draws no
         // island RNG, so the per-island sequence is unchanged from the prior init.
+        // score_sse charges the forward-pass eval counters (max_evals units) itself.
         const double raw_loss = RSYM_TIMED(isl.prof.init_fit_sec, isl.prof.init_fit_n,
-                                           sse_current(tree, *data, isl.sse_pool, isl.sse_stk));
+                                           score_sse(isl, tree, *data));
         // Opt-in dimensional penalty (no-op when da.enabled is false; docs/46).
         const double loss = add_dim_penalty(raw_loss, tree, da);
-        ++isl.eval_count;        // count the init forward-pass eval (max_evals units)
-        ++isl.n_forward_evals;
         // No simplify here: SR.jl does not simplify the initial population. Simplification
         // first happens in the per-iteration optimize_and_simplify_population pass below,
         // mirroring SR.jl.
@@ -572,9 +617,7 @@ bool evolve_island(Island& isl,
     auto insert_evaluated_child = [&](Tree&& t) {
         const double raw_loss =
             RSYM_TIMED(isl.prof.evolve_sse_sec, isl.prof.evolve_sse_n,
-                       sse_current(t, *data, isl.sse_pool, isl.sse_stk));
-        ++isl.eval_count;
-        ++isl.n_forward_evals;
+                       score_sse(isl, t, *data));
         if (!std::isfinite(raw_loss)) return;
         const double loss = add_dim_penalty(raw_loss, t, da);  // no-op when units off
         PopMember child{std::move(t), loss, 0};
@@ -670,9 +713,7 @@ bool evolve_island(Island& isl,
             // diverged from PySR and dominated compute (docs/30, docs/31).
             const double raw_loss =
                 RSYM_TIMED(isl.prof.evolve_sse_sec, isl.prof.evolve_sse_n,
-                           sse_current(child_tree, *data, isl.sse_pool, isl.sse_stk));
-            ++isl.eval_count;
-            ++isl.n_forward_evals;
+                           score_sse(isl, child_tree, *data));
             // A non-finite loss is SR.jl's NaN-cost rejection: discard the child (no
             // replacement, no archive update), faithful to next_generation.
             if (!std::isfinite(raw_loss))
@@ -773,9 +814,7 @@ void optimize_and_simplify_population(Island& isl,
             if (!std::isfinite(loss)) continue;  // keep the pre-optimise member
             m.tree = std::move(t);
         } else {
-            loss = sse_current(s, *data, isl.sse_pool, isl.sse_stk);
-            ++isl.eval_count;
-            ++isl.n_forward_evals;
+            loss = score_sse(isl, s, *data);
             if (!std::isfinite(loss)) continue;  // keep the unsimplified member if it degraded
             m.tree = std::move(s);
         }
@@ -801,19 +840,17 @@ void finalize_costs_and_merge(Island& isl,
                               const std::shared_ptr<const Dataset>& full,
                               const HallOfFame& best_seen,
                               const DimAnalysis& da) {
+    // Routed through score_sse for uniformity; this function only runs under batching,
+    // where the cache is inactive, so every call is a real full-data evaluation.
     for (PopMember& m : isl.population) {
-        const double loss = sse_current(m.tree, *full, isl.sse_pool, isl.sse_stk);
-        ++isl.eval_count;
-        ++isl.n_forward_evals;
+        const double loss = score_sse(isl, m.tree, *full);
         if (!std::isfinite(loss)) continue;
         m.loss = add_dim_penalty(loss, m.tree, da);  // no-op when units off
         m.complexity = static_cast<int>(m.tree.size());
         isl.hof.update(m);
     }
     for (PopMember bm : best_seen.members()) {
-        const double loss = sse_current(bm.tree, *full, isl.sse_pool, isl.sse_stk);
-        ++isl.eval_count;
-        ++isl.n_forward_evals;
+        const double loss = score_sse(isl, bm.tree, *full);
         if (!std::isfinite(loss)) continue;
         bm.loss = add_dim_penalty(loss, bm.tree, da);  // no-op when units off
         isl.hof.update(bm);
@@ -966,6 +1003,12 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
         islands[idx].batch_rng.seed(options.seed ^
                                     (idx * UINT64_C(0x9e3779b97f4a7c15)) ^
                                     UINT64_C(0x243F6A8885A308D3));
+        // Opt-in duplicate-evaluation cache: active iff requested AND batching is off
+        // (batches change every pass, so a batched SSE is never reusable). Decided once
+        // here; the default-constructed inactive cache allocates nothing. Activated
+        // before initialize_island so the init forward passes are cached too.
+        if (options.eval_cache && !options.batching)
+            islands[idx].cache = EvalCache(kEvalCacheSlots);
         initialize_island(islands[idx], data, options, init_stop, dim_analysis);
     }
 
@@ -1230,6 +1273,8 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
         result.n_forward_evals  += isl.n_forward_evals;
         result.n_lm_resid_evals += isl.n_lm_resid_evals;
         result.n_lm_jac_evals   += isl.n_lm_jac_evals;
+        result.cache_hits       += isl.cache.hits;
+        result.cache_misses     += isl.cache.misses;
     }
     return result;
 }

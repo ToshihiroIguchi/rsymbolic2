@@ -120,7 +120,8 @@ cpp11::writable::list symbolic_regression_cpp(
     cpp11::strings  X_units,
     std::string     y_units,
     double          dimensional_constraint_penalty,
-    bool            dimensionless_constants_only
+    bool            dimensionless_constants_only,
+    bool            eval_cache
 ) {
     // Convert R matrix → vector<vector<double>> (row-major)
     const int n = X.nrow();
@@ -195,6 +196,9 @@ cpp11::writable::list symbolic_regression_cpp(
     // Opt-in dimensional-constraint penalty (PySR default 1000, resolved in the R wrapper).
     // 0 / no units => inert. The units themselves were parsed onto `space` above.
     opts.dimensional_constraint_penalty = dimensional_constraint_penalty;
+    // Opt-in duplicate-evaluation cache (implementation-only memoisation; results are
+    // bit-identical on/off, and it is ignored when batching is on). Default FALSE.
+    opts.eval_cache            = eval_cache;
     // max_evals arrives as a double (R has no native 64-bit int); negative/zero => off.
     opts.max_evals = max_evals > 0.0
         ? static_cast<std::size_t>(max_evals)
@@ -263,13 +267,16 @@ cpp11::writable::list symbolic_regression_cpp(
     // Evaluation accounting (reporting only): counts are exposed as doubles because R
     // has no native 64-bit integer (mirrors the max_evals input, which arrives as a
     // double for the same reason). n_evals = forward + lm_resid (max_evals units);
-    // Jacobian builds are reported but never charged to n_evals.
+    // Jacobian builds are reported but never charged to n_evals. cache_hits/misses are
+    // the duplicate-evaluation cache statistics (both 0 unless eval_cache is on).
     cpp11::writable::doubles eval_counts({
         static_cast<double>(res.n_forward_evals),
         static_cast<double>(res.n_lm_resid_evals),
-        static_cast<double>(res.n_lm_jac_evals)
+        static_cast<double>(res.n_lm_jac_evals),
+        static_cast<double>(res.cache_hits),
+        static_cast<double>(res.cache_misses)
     });
-    eval_counts.names() = {"forward", "lm_resid", "lm_jac"};
+    eval_counts.names() = {"forward", "lm_resid", "lm_jac", "cache_hits", "cache_misses"};
 
     cpp11::writable::list result({
         "expression"_nm   = res.expression,

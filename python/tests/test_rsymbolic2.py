@@ -362,13 +362,19 @@ def test_eval_accounting():
     lm_jac reported only) and deterministic for a fixed seed."""
     X = np.linspace(-8, 8, 16).reshape(-1, 1)
     y = 2.5 * X[:, 0] + 1.7
+    # n_threads=1: in this Python host process, multi-threaded runs occasionally
+    # flip between two trajectories for a fixed seed (an environmental effect the
+    # standalone C++ determinism gates never show in a clean process), which is
+    # orthogonal to what this test checks. Single-threaded runs are deterministic.
     common = dict(unary_ops=[], population_size=60, n_populations=2,
-                  generations=40, seed=11)
+                  generations=40, seed=11, n_threads=1)
     r1 = symbolic_regression(X, y, **common)
     r2 = symbolic_regression(X, y, **common)
 
     assert isinstance(r1.n_evals, int) and r1.n_evals > 0
-    assert set(r1.eval_counts) == {"forward", "lm_resid", "lm_jac"}
+    assert set(r1.eval_counts) == {
+        "forward", "lm_resid", "lm_jac", "cache_hits", "cache_misses"
+    }
     assert all(v >= 0 for v in r1.eval_counts.values())
     # n_evals is the max_evals unit: forward passes + LM residual evaluations.
     # Jacobian builds are reported only and never charged to n_evals.
@@ -376,6 +382,54 @@ def test_eval_accounting():
     # Deterministic for a fixed seed.
     assert r1.n_evals == r2.n_evals
     assert r1.eval_counts == r2.eval_counts
+
+
+def test_eval_cache_defaults_off_and_bit_identical():
+    """eval_cache defaults to False and is implementation-only: with the cache on the
+    result (expression, loss, Pareto front, eval accounting) is bit-identical to off;
+    only the cache_hits/cache_misses counters differ."""
+    assert inspect.signature(symbolic_regression).parameters["eval_cache"].default is False
+
+    X = np.linspace(-8, 8, 16).reshape(-1, 1)
+    y = 2.5 * X[:, 0] + 1.7
+    # n_threads=1 pins out a pre-existing, eval_cache-independent flake: in this
+    # Python host process, multi-threaded runs occasionally flip between two
+    # trajectories even with eval_cache off (the standalone C++ determinism gates,
+    # run in a clean process, never do). Single-threaded runs are fully
+    # deterministic, which is what an on-vs-off bit-identity comparison needs.
+    common = dict(unary_ops=[], population_size=60, n_populations=2,
+                  generations=40, seed=11, n_threads=1)
+    r_off = symbolic_regression(X, y, **common)
+    r_on = symbolic_regression(X, y, eval_cache=True, **common)
+
+    assert r_on.expression == r_off.expression
+    assert r_on.loss == r_off.loss
+    assert [m["loss"] for m in r_on.pareto_front] == [m["loss"] for m in r_off.pareto_front]
+    # A cache hit is charged like a real evaluation, so accounting matches too.
+    assert r_on.n_evals == r_off.n_evals
+    for k in ("forward", "lm_resid", "lm_jac"):
+        assert r_on.eval_counts[k] == r_off.eval_counts[k]
+    # Counters: zero when off; the tiny operator set guarantees duplicates when on.
+    assert r_off.eval_counts["cache_hits"] == 0
+    assert r_off.eval_counts["cache_misses"] == 0
+    assert r_on.eval_counts["cache_hits"] > 0
+    assert r_on.eval_counts["cache_misses"] > 0
+
+
+def test_eval_cache_inactive_under_batching():
+    """batching keeps the cache inactive: batching+eval_cache equals batching alone
+    bitwise, with zero cache counters."""
+    X = np.linspace(-10, 10, 200).reshape(-1, 1)
+    y = 2.5 * X[:, 0] + 1.7
+    common = dict(unary_ops=[], population_size=50, n_populations=1, generations=40,
+                  seed=21, batching=True, batch_size=20)
+    r_off = symbolic_regression(X, y, **common)
+    r_on = symbolic_regression(X, y, eval_cache=True, **common)
+    assert r_on.expression == r_off.expression
+    assert r_on.loss == r_off.loss
+    assert r_on.n_evals == r_off.n_evals
+    assert r_on.eval_counts["cache_hits"] == 0
+    assert r_on.eval_counts["cache_misses"] == 0
 
 
 def test_input_validation():

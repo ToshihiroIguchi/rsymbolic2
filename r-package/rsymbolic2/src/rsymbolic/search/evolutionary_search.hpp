@@ -246,6 +246,18 @@ struct SearchOptions {
     // default), reproducing the fixed-maxsize path byte-for-byte. See docs/42.
     double warmup_maxsize_by = 0.0;
 
+    // Opt-in duplicate-evaluation cache (eval_cache.hpp). Implementation-only
+    // memoisation of the forward-pass loss (sse_current): a per-island direct-mapped
+    // table keyed by the tree's evaluation-relevant content returns the previously
+    // computed SSE for an evaluation-identical tree instead of re-evaluating it.
+    // Because sse_current is a pure function of (tree, dataset) and a cache hit is
+    // charged to the evaluation counters exactly like a real evaluation, the search
+    // results are bit-identical with the cache on or off — this is a speed knob, not
+    // a search setting, so it does not touch PySR parity. Active only when batching
+    // is off: batches change every pass, so a batched SSE is never reusable. false =
+    // off (default; no table is allocated and the code path is byte-identical).
+    bool eval_cache = false;
+
     // Wall-clock timeout. 0 = no limit (fully deterministic; default). Any value > 0
     // stops the search after approximately this many seconds. A run that times out is
     // NOT reproducible across machines — document this in user-facing roxygen.
@@ -326,6 +338,11 @@ struct SearchResult {
     std::uint64_t n_forward_evals = 0;  // forward-pass loss evaluations
     std::uint64_t n_lm_resid_evals = 0; // LM residual-function evaluations
     std::uint64_t n_lm_jac_evals = 0;   // LM Jacobian builds (reported only)
+    // Duplicate-evaluation cache statistics (summed over islands; 0 unless the opt-in
+    // eval_cache option is on). A hit is still counted in n_evals/n_forward_evals like
+    // a real evaluation (bit-identity with the cache off), so hits + misses equals the
+    // number of forward passes routed through the cache, not extra work.
+    std::uint64_t cache_hits = 0, cache_misses = 0;
 };
 
 // Run the search to fit y from X by discovering an expression structure and optimizing

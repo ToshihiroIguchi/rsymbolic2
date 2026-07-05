@@ -149,6 +149,17 @@
 #'   as dimensionless during dimensional analysis instead of adopting whatever
 #'   dimension keeps the expression consistent (PySR
 #'   \code{dimensionless_constants_only}). Default \code{FALSE}.
+#' @param eval_cache Enable an opt-in duplicate-evaluation cache (default
+#'   \code{FALSE}). Implementation-only memoisation: each island keeps a small
+#'   fixed-size table of recently evaluated expression trees and reuses the stored
+#'   loss when an evaluation-identical tree recurs, instead of re-evaluating it.
+#'   Results are \strong{bit-identical} with the cache on or off (a cache hit is
+#'   charged to \code{n_evals}/\code{eval_counts} exactly like a real evaluation,
+#'   so even \code{max_evals}-budgeted runs are unchanged) — this is a speed knob,
+#'   never a search setting, and does not affect PySR parity. Ignored when
+#'   \code{batching = TRUE} (each iteration's random subsample makes cached losses
+#'   unreusable). The \code{cache_hits}/\code{cache_misses} entries of
+#'   \code{eval_counts} report its effectiveness.
 #' @param simplify Algebraically simplify fitted candidates (default
 #'   \code{TRUE}).
 #' @param crossover_probability Probability of subtree crossover vs. mutation
@@ -254,9 +265,13 @@
 #'     \item{eval_counts}{Named numeric vector breaking \code{n_evals} down:
 #'       \code{forward} (forward-pass loss evaluations), \code{lm_resid}
 #'       (Levenberg-Marquardt residual evaluations; \code{forward + lm_resid ==
-#'       n_evals}), and \code{lm_jac} (LM Jacobian builds, reported for
+#'       n_evals}), \code{lm_jac} (LM Jacobian builds, reported for
 #'       accounting only — never charged to \code{n_evals} or the
-#'       \code{max_evals} budget).}
+#'       \code{max_evals} budget), and \code{cache_hits}/\code{cache_misses}
+#'       (duplicate-evaluation cache statistics; both \code{0} unless
+#'       \code{eval_cache = TRUE}. A hit is still counted in \code{forward},
+#'       so \code{cache_hits + cache_misses} is the number of forward passes
+#'       routed through the cache, not extra work).}
 #'     \item{n_features}{Number of input features (columns of \code{X}) used
 #'       during fitting; required by \code{\link{predict.rsymbolic2}}.}
 #'     \item{feature_names}{Column names of \code{X}, or \code{NULL} when \code{X}
@@ -320,6 +335,7 @@ symbolic_regression.default <- function(
     batching              = FALSE,
     batch_size            = 50L,
     warmup_maxsize_by     = 0.0,
+    eval_cache            = FALSE,
     X_units               = NULL,
     y_units               = NULL,
     dimensional_constraint_penalty = NULL,
@@ -343,6 +359,10 @@ symbolic_regression.default <- function(
     batch_size <- as.integer(batch_size)
     if (is.na(batch_size) || batch_size < 1L)
         stop("batch_size must be a positive integer")
+
+    # Opt-in duplicate-evaluation cache (implementation-only; results are bit-identical
+    # on/off and the core ignores it when batching is TRUE).
+    eval_cache <- isTRUE(eval_cache)
 
     # PySR warmup_maxsize_by: fraction (>= 0) of the run over which the size cap ramps from
     # 3 up to max_nodes. 0 (default) disables the ramp (fixed maxsize, PySR default).
@@ -447,7 +467,8 @@ symbolic_regression.default <- function(
         as.character(X_units),
         as.character(y_units),
         as.double(dimensional_constraint_penalty),
-        as.logical(dimensionless_constants_only)
+        as.logical(dimensionless_constants_only),
+        as.logical(eval_cache)
     )
     result$n_features <- ncol(X)
     # Display-only feature names: the column names of X, kept so print()/summary()

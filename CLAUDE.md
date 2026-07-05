@@ -29,7 +29,11 @@ trade-off to weigh — do **not** substitute a value chosen by our own benchmark
 - **What "implementation method may differ" covers (allowed divergences):** the C++
   core with no Julia runtime; the constant optimiser algorithm (rsymbolic2 uses
   self-LM where PySR uses BFGS — `docs/06`); numeric precision (Float64 core vs PySR
-  `precision=32`); the parallelism mechanism and RNG stream. These change *how* a
+  `precision=32`); the parallelism mechanism and RNG stream; behaviour-neutral
+  evaluation accounting and caching (counting evaluations, and memoising
+  deterministic full-data loss evaluations behind a strict structural-equality
+  guard) — permitted only while the returned values and the search trajectory
+  remain bit-identical with the mechanism on or off. These change *how* a
   result is computed, never *which* settings define the search.
 - **What must match exactly (settings & behaviour):** population structure
   (`populations`, `population_size`), `ncycles_per_iteration`/`niterations`,
@@ -50,7 +54,8 @@ trade-off to weigh — do **not** substitute a value chosen by our own benchmark
 The parity rule above binds **defaults**. On top of the PySR-identical default layer,
 rsymbolic2 may add **opt-in features that deliberately diverge from PySR to improve
 accuracy** (e.g. a stronger constant optimiser, larger `maxsize`, more optimiser
-restarts, an alternative least-squares backend). This is a sanctioned design direction,
+restarts, an alternative least-squares backend, Keijzer-2003 linear scaling of
+candidate outputs). This is a sanctioned design direction,
 not speculative scope expansion. Such a feature is permitted only when **all** of:
 
 1. **Off by default.** The shipped default value reproduces PySR's behaviour exactly.

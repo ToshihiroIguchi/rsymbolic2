@@ -76,9 +76,12 @@ class SymbolicRegressionResult:
     eval_counts : Optional[dict]
         Breakdown of :attr:`n_evals` with keys ``forward`` (forward-pass loss
         evaluations), ``lm_resid`` (Levenberg-Marquardt residual evaluations;
-        ``forward + lm_resid == n_evals``), and ``lm_jac`` (LM Jacobian builds,
+        ``forward + lm_resid == n_evals``), ``lm_jac`` (LM Jacobian builds,
         reported for accounting only — never charged to ``n_evals`` or the
-        ``max_evals`` budget).
+        ``max_evals`` budget), and ``cache_hits``/``cache_misses``
+        (duplicate-evaluation cache statistics; both 0 unless ``eval_cache=True``.
+        A hit is still counted in ``forward``, so ``cache_hits + cache_misses``
+        is the number of forward passes routed through the cache, not extra work).
     n_features : int
         Number of input features (columns of ``X``) used during fitting.
     feature_names : Optional[list[str]]
@@ -386,6 +389,7 @@ def symbolic_regression(
     batching: bool = False,
     batch_size: int = 50,
     warmup_maxsize_by: float = 0.0,
+    eval_cache: bool = False,
     X_units: Optional[Sequence[str]] = None,
     y_units: Optional[str] = None,
     dimensional_constraint_penalty: Optional[float] = None,
@@ -505,6 +509,17 @@ def symbolic_regression(
         E.g. 0.5 reaches ``max_nodes`` halfway through the run, biasing the early search
         toward small expressions. Must be a finite number >= 0. Only the
         mutation/crossover size cap ramps; the initial population is drawn at ``max_nodes``.
+    eval_cache : bool, default False
+        Enable an opt-in duplicate-evaluation cache. Implementation-only memoisation:
+        each island keeps a small fixed-size table of recently evaluated expression
+        trees and reuses the stored loss when an evaluation-identical tree recurs,
+        instead of re-evaluating it. Results are bit-identical with the cache on or
+        off (a hit is charged to ``n_evals``/``eval_counts`` exactly like a real
+        evaluation, so even ``max_evals``-budgeted runs are unchanged) — a speed
+        knob, never a search setting; PySR parity is unaffected. Ignored when
+        ``batching=True`` (each iteration's random subsample makes cached losses
+        unreusable). The ``cache_hits``/``cache_misses`` entries of ``eval_counts``
+        report its effectiveness.
     X_units : sequence of str, optional
         Units for each column of ``X``, enabling dimensional analysis (PySR ``X_units``).
         Each entry is a DynamicQuantities-style unit string such as ``"m/s^2"``, ``"kg"``,
@@ -667,6 +682,7 @@ def symbolic_regression(
         y_units_str,
         float(dcp),
         bool(dimensionless_constants_only),
+        bool(eval_cache),
     )
     if feature_names is not None and len(feature_names) != int(X_arr.shape[1]):
         feature_names = None  # shape changed (e.g. 1-D promoted); drop mismatched names

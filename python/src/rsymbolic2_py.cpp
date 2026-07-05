@@ -125,7 +125,8 @@ py::dict symbolic_regression_cpp(
     std::vector<std::string> X_units,
     std::string              y_units,
     double                   dimensional_constraint_penalty,
-    bool                     dimensionless_constants_only) {
+    bool                     dimensionless_constants_only,
+    bool                     eval_cache) {
     // --- Marshal X (2-D) and y (1-D) ------------------------------------------------
     if (X.ndim() != 2)
         throw std::invalid_argument("X must be a 2-D array (rows = observations, "
@@ -211,6 +212,9 @@ py::dict symbolic_regression_cpp(
     // Opt-in dimensional-constraint penalty (PySR default 1000, resolved in the Python
     // wrapper). Inert unless X_units/y_units are set; the units live on `space` above.
     opts.dimensional_constraint_penalty = dimensional_constraint_penalty;
+    // Opt-in duplicate-evaluation cache (implementation-only memoisation; results are
+    // bit-identical on/off, and it is ignored when batching is on). Default False.
+    opts.eval_cache                 = eval_cache;
     // max_evals arrives as a double (mirrors the R bridge, where R has no 64-bit int);
     // negative/zero => off.
     opts.max_evals = max_evals > 0.0 ? static_cast<std::size_t>(max_evals) : 0;
@@ -287,9 +291,12 @@ py::dict symbolic_regression_cpp(
     // bridge's n_evals / eval_counts fields (Python ints carry 64-bit counts exactly).
     result["n_evals"]      = py::int_(res.n_evals);
     py::dict eval_counts;
-    eval_counts["forward"]  = py::int_(res.n_forward_evals);
-    eval_counts["lm_resid"] = py::int_(res.n_lm_resid_evals);
-    eval_counts["lm_jac"]   = py::int_(res.n_lm_jac_evals);
+    eval_counts["forward"]      = py::int_(res.n_forward_evals);
+    eval_counts["lm_resid"]     = py::int_(res.n_lm_resid_evals);
+    eval_counts["lm_jac"]       = py::int_(res.n_lm_jac_evals);
+    // Duplicate-evaluation cache statistics (both 0 unless eval_cache is on).
+    eval_counts["cache_hits"]   = py::int_(res.cache_hits);
+    eval_counts["cache_misses"] = py::int_(res.cache_misses);
     result["eval_counts"]  = eval_counts;
     result["pareto_front"] = py::dict(
         py::arg("complexity") = pf_complexity,
