@@ -23,6 +23,13 @@
 # are written under a separate '<label>_units' name so a units run never
 # overwrites the authoritative units-off CSV.
 #
+# `cache` enables the opt-in duplicate-evaluation cache (docs/49): eval_cache=TRUE
+# is passed to symbolic_regression(); everything else stays at the frozen parity
+# values. Bit-identical by design, so this is a wall-clock A/B only. Results are
+# written under a separate '<label>_cache' name. The per-run cache_hits /
+# cache_misses columns (from eval_counts) carry the hit rate in every CSV; they
+# are 0/0 when the cache is off.
+#
 # See docs/19 for full protocol.
 
 # ---- Setup ------------------------------------------------------------------
@@ -242,6 +249,15 @@ if (UNITS_ON) {
   cat("Override: dimensional analysis ON (X_units/y_units from feynman_datasets.R)\n")
 }
 
+# Optional `cache` flag: opt-in duplicate-evaluation cache (docs/49). Passed
+# straight through as eval_cache=TRUE; bit-identical results, wall-clock A/B only.
+CACHE_ON <- any(args == "cache")
+if (CACHE_ON) {
+  label <- paste0(label, "_cache")
+  BENCH_PARAMS$eval_cache <- TRUE
+  cat("Override: eval_cache ON (duplicate-evaluation cache; bit-identical)\n")
+}
+
 DATA_SEED <- 42L   # Matches export_feynman_data.R DATA_SEED_TRAIN
 
 # ---- Run --------------------------------------------------------------------
@@ -295,14 +311,22 @@ for (key in KEYS) {
     timed_out <- isTRUE(elapsed >= BENCH_PARAMS$timeout_seconds - 1L)
 
     if (is.null(result)) {
-      nmse     <- Inf
-      expr_str <- NA_character_
-      loss_val <- Inf
+      nmse       <- Inf
+      expr_str   <- NA_character_
+      loss_val   <- Inf
+      c_hits     <- NA_real_
+      c_misses   <- NA_real_
     } else {
-      nmse     <- compute_nmse(result$loss, ds$y)
-      expr_str <- result$expression
-      loss_val <- result$loss
+      nmse       <- compute_nmse(result$loss, ds$y)
+      expr_str   <- result$expression
+      loss_val   <- result$loss
+      # Single-bracket name lookup: yields NA (not an error) if the installed
+      # package predates the cache counters.
+      c_hits     <- unname(result$eval_counts["cache_hits"])
+      c_misses   <- unname(result$eval_counts["cache_misses"])
     }
+    hit_rate <- if (isTRUE(c_hits + c_misses > 0)) c_hits / (c_hits + c_misses)
+                else NA_real_
 
     rec <- is_recovered(nmse)
 
@@ -320,14 +344,19 @@ for (key in KEYS) {
                         round(max(0.0, elapsed - BENCH_PARAMS$timeout_seconds), 2L)
                       else NA_real_,
       n_vars      = prob$n_vars,
+      cache_hits   = c_hits,
+      cache_misses = c_misses,
+      hit_rate     = if (is.na(hit_rate)) NA_real_ else round(hit_rate, 4L),
       expression  = expr_str,
       stringsAsFactors = FALSE
     )
 
-    cat(sprintf("  %-14s  seed=%d  NMSE=%.1e  time=%4.0fs  %s%s\n",
+    cat(sprintf("  %-14s  seed=%d  NMSE=%.1e  time=%4.0fs  %s%s%s\n",
                 key, seed, nmse, elapsed,
                 if (rec) "RECOVERED" else "not recovered",
-                if (timed_out) "  [TIMED OUT]" else ""))
+                if (timed_out) "  [TIMED OUT]" else "",
+                if (CACHE_ON && !is.na(hit_rate))
+                  sprintf("  hit_rate=%.3f", hit_rate) else ""))
 
     if (FAIL_FAST && elapsed > overshoot_limit) {
       cat(sprintf(
