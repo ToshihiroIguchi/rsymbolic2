@@ -25,6 +25,7 @@
 #include "rsymbolic/evolution/mutation_weights.hpp"
 #include "rsymbolic/evolution/search_space.hpp"
 #include "rsymbolic/search/evolutionary_search.hpp"
+#include "rsymbolic/expression/latex.hpp"
 #include "rsymbolic/expression/tree.hpp"
 #include "rsymbolic/units/unit_parser.hpp"
 
@@ -232,12 +233,33 @@ py::dict symbolic_regression_cpp(
         res = run_evolution(X_cpp, y_cpp, opts);
     }
 
+    // Weighted total sum of squares about the weighted mean (unit weights when
+    // unweighted), for downstream fit statistics: R^2 = 1 - loss / sst is consistent
+    // with the (weighted) SSE loss reported per Pareto member.
+    double wsum = 0.0, wysum = 0.0;
+    for (std::size_t i = 0; i < n; ++i) {
+        const double w = opts.weights.empty() ? 1.0 : opts.weights[i];
+        wsum  += w;
+        wysum += w * y_cpp[i];
+    }
+    const double ybar = (wsum > 0.0) ? (wysum / wsum) : 0.0;
+    double sst = 0.0;
+    for (std::size_t i = 0; i < n; ++i) {
+        const double w = opts.weights.empty() ? 1.0 : opts.weights[i];
+        const double d = y_cpp[i] - ybar;
+        sst += w * d * d;
+    }
+
     // --- Pareto front -> parallel lists ---------------------------------------------
-    py::list pf_complexity, pf_loss, pf_expr;
-    for (const auto& m : res.pareto_front) {
+    const std::vector<double> scores = pareto_scores(res.pareto_front);
+    py::list pf_complexity, pf_loss, pf_score, pf_expr, pf_latex;
+    for (std::size_t i = 0; i < res.pareto_front.size(); ++i) {
+        const auto& m = res.pareto_front[i];
         pf_complexity.append(m.complexity);
         pf_loss.append(m.loss);
+        pf_score.append(scores[i]);
         pf_expr.append(to_string(m.tree));
+        pf_latex.append(to_latex(m.tree));
     }
 
     // Recommended ("best") trade-off; best_index is 0-based in C++ and is kept 0-based
@@ -258,10 +280,14 @@ py::dict symbolic_regression_cpp(
     result["complexity"]   = res.complexity;
     result["recommended"]  = recommended;
     result["best_index"]   = best_index;
+    result["n_obs"]        = static_cast<int>(n);
+    result["sst"]          = sst;
     result["pareto_front"] = py::dict(
         py::arg("complexity") = pf_complexity,
         py::arg("loss")       = pf_loss,
-        py::arg("expression") = pf_expr);
+        py::arg("score")      = pf_score,
+        py::arg("expression") = pf_expr,
+        py::arg("latex")      = pf_latex);
     return result;
 }
 

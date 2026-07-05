@@ -61,6 +61,16 @@ enum class ModelSelection {
     Score,     // highest score over the whole front (no accuracy filter)
 };
 
+// Per-member selection score for a Pareto `front` (ascending complexity, strictly
+// decreasing loss, as returned by HallOfFame::pareto_front). scores[i] is the drop in
+// log-loss per unit of added complexity relative to the next-simpler member:
+//   scores[0] = 0.0 (no simpler predecessor; PySR convention),
+//   scores[i] = (log(max(loss[i-1], 1e-300)) - log(max(loss[i], 1e-300))) / dc,
+//   scores[i] = NaN when dc = complexity[i] - complexity[i-1] <= 0 (malformed front).
+// Losses are floored at 1e-300 so a zero-loss member scores large-but-finite rather
+// than +inf (PySR displays inf there; we keep the value select_best actually ranks by).
+std::vector<double> pareto_scores(const std::vector<PopMember>& front);
+
 // Index of the "recommended" member on a Pareto `front` (ascending complexity, strictly
 // decreasing loss, as returned by HallOfFame::pareto_front), per PySR's model_selection:
 //   * Score    — the member maximising the drop in log-loss per unit of added complexity

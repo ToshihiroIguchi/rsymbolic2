@@ -55,8 +55,19 @@ class SymbolicRegressionResult:
         Row of :attr:`pareto_front` the recommendation came from (0-based), or
         ``None`` if the front is empty.
     pareto_front : list[dict]
-        Non-dominated ``{"complexity", "loss", "expression"}`` trade-offs, sorted by
-        increasing complexity.
+        Non-dominated ``{"complexity", "loss", "score", "r_squared", "expression",
+        "latex"}`` trade-offs, sorted by increasing complexity. ``score`` is the
+        drop in log-loss per unit of added complexity relative to the next-simpler
+        member — the value ``model_selection`` ranks by; ``0.0`` for the simplest
+        member. ``r_squared`` is the training ``1 - loss / sst`` (``None`` when the
+        target is constant). ``latex`` is a display-only LaTeX rendering of the
+        expression (variables as ``x_{i}``); see :meth:`latex`.
+    n_obs : Optional[int]
+        Number of training observations (rows of ``X``).
+    sst : Optional[float]
+        Total sum of squares of ``y`` about its (weighted) mean on the training
+        data. Basis for the per-member ``r_squared`` (``1 - loss / sst``),
+        which is consistent with the (weighted) SSE ``loss``.
     n_features : int
         Number of input features (columns of ``X``) used during fitting.
     feature_names : Optional[list[str]]
@@ -77,10 +88,26 @@ class SymbolicRegressionResult:
         self.complexity: int = raw["complexity"]
         self.recommended: str = raw["recommended"]
         self.best_index: Optional[int] = raw["best_index"]
+        self.n_obs: Optional[int] = raw.get("n_obs")
+        self.sst: Optional[float] = raw.get("sst")
+        # Training R^2 per member: 1 - loss/sst. None when the target was constant
+        # (sst == 0) or the raw dict predates the sst field. Negative values are
+        # valid (a fit worse than the mean).
+        has_sst = self.sst is not None and np.isfinite(self.sst) and self.sst > 0
         pf = raw["pareto_front"]
         self.pareto_front = [
-            {"complexity": c, "loss": l, "expression": e}
-            for c, l, e in zip(pf["complexity"], pf["loss"], pf["expression"])
+            {
+                "complexity": c,
+                "loss": l,
+                "score": s,
+                "r_squared": (1.0 - l / self.sst) if has_sst else None,
+                "expression": e,
+                "latex": t,
+            }
+            for c, l, s, e, t in zip(
+                pf["complexity"], pf["loss"], pf["score"], pf["expression"],
+                pf["latex"],
+            )
         ]
         self.n_features: int = n_features
         self.feature_names: Optional[list] = (
@@ -121,6 +148,61 @@ class SymbolicRegressionResult:
         expr = self.recommended if expression is None else expression
         return _eval_expression(expr, X)
 
+    def get_best(self, index: Optional[int] = None) -> dict:
+        """Return a Pareto-front member as a dict.
+
+        Parameters
+        ----------
+        index : int, optional
+            0-based row of :attr:`pareto_front`. Defaults to :attr:`best_index`,
+            the member chosen by ``model_selection`` (mirrors PySR's
+            ``get_best``).
+        """
+        if not self.pareto_front:
+            raise ValueError("get_best() called on an empty Pareto front.")
+        if index is None:
+            index = self.best_index
+        if not 0 <= index < len(self.pareto_front):
+            raise IndexError(
+                f"index {index} is out of range for a Pareto front with "
+                f"{len(self.pareto_front)} member(s)."
+            )
+        return self.pareto_front[index]
+
+    def latex(
+        self,
+        index: Optional[int] = None,
+        variable_names: Optional[Sequence[str]] = None,
+    ) -> str:
+        """Return a Pareto-front member as LaTeX math (no surrounding ``$``).
+
+        Rendered by the C++ core with minimal parentheses (``\\frac`` for
+        division, ``\\cdot``, ``\\sqrt``, ...). Display-only: :meth:`predict`
+        keeps using the plain ``expression`` strings.
+
+        Parameters
+        ----------
+        index : int, optional
+            0-based row of :attr:`pareto_front`. Defaults to :attr:`best_index`,
+            the member chosen by ``model_selection``.
+        variable_names : sequence of str, optional
+            Names substituted for the ``x_{i}`` tokens (underscores are escaped
+            for LaTeX). Defaults to :attr:`feature_names` when set; pass an
+            explicit list to override, or ``[]`` to force the ``x_{i}`` form.
+        """
+        member = self.get_best(index)
+        out = member["latex"]
+        names = variable_names if variable_names is not None else self.feature_names
+        if names:
+            if len(names) != self.n_features:
+                raise ValueError(
+                    f"variable_names has {len(names)} name(s) but the model was "
+                    f"fitted on {self.n_features} feature(s)."
+                )
+            for i, name in enumerate(names):
+                out = out.replace(f"x_{{{i}}}", str(name).replace("_", "\\_"))
+        return out
+
     def __repr__(self) -> str:
         lines = [
             f"<SymbolicRegressionResult: {len(self.pareto_front)} Pareto members, "
@@ -136,19 +218,95 @@ class SymbolicRegressionResult:
             f"  best (lowest loss): {self.expression}  "
             f"(loss={self.loss:.6g}, complexity={self.complexity})",
         ]
+        if self.pareto_front and self.best_index is not None:
+            r2 = self.pareto_front[self.best_index].get("r_squared")
+            if r2 is not None:
+                lines.append(f"  R-squared (recommended): {r2:.6g}")
         if self.pareto_front:
-            lines.append("  Pareto front (complexity | loss | expression):")
-            for m in self.pareto_front:
-                lines.append(
-                    f"    {m['complexity']:>3} | {m['loss']:.6g} | {m['expression']}"
-                )
+            lines.append(
+                "  Pareto front (> = recommended; "
+                "complexity | loss | score | expression):"
+            )
+            lines += self._format_pareto_lines()
         return "\n".join(lines)
+
+    def _format_pareto_lines(self, max_rows: int = 20) -> list:
+        # Mirrors the R package's format_pareto_lines(): a ">" marker on the
+        # recommended row, and head/tail with an elided middle when the front is
+        # longer than max_rows.
+        rows = []
+        for i, m in enumerate(self.pareto_front):
+            marker = ">" if i == self.best_index else " "
+            rows.append(
+                f"  {marker} {m['complexity']:>3} | {m['loss']:.6g} | "
+                f"{m['score']:.6g} | {m['expression']}"
+            )
+        n = len(rows)
+        if n <= max_rows:
+            return rows
+        head = max_rows // 2
+        tail = max_rows - head
+        return rows[:head] + [f"      ... ({n - max_rows} more) ..."] + rows[n - tail:]
 
     def to_pandas(self):
         """Return the Pareto front as a :class:`pandas.DataFrame` (requires pandas)."""
         import pandas as pd  # imported lazily; pandas is an optional extra
 
-        return pd.DataFrame(self.pareto_front, columns=["complexity", "loss", "expression"])
+        return pd.DataFrame(
+            self.pareto_front, columns=["complexity", "loss", "score", "expression"]
+        )
+
+    def plot(self, *, log_loss: bool = True, label_exprs: bool = True, ax=None):
+        """Plot the Pareto front as a complexity vs. loss scatter (requires matplotlib).
+
+        The Python counterpart of the R package's ``plot.rsymbolic2()``: a line
+        through the non-dominated members with the lowest-loss point highlighted.
+
+        Parameters
+        ----------
+        log_loss : bool
+            Use a log scale for the loss axis (skipped automatically when any
+            loss is zero). Default ``True``.
+        label_exprs : bool
+            Annotate each point with its expression string. Set to ``False``
+            for large fronts where labels overlap. Default ``True``.
+        ax : matplotlib.axes.Axes, optional
+            Axes to draw into. A new figure is created when omitted.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The axes drawn into (nothing is shown; call ``plt.show()`` yourself).
+        """
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError as e:  # matplotlib is the optional "plot" extra
+            raise ImportError(
+                "matplotlib is required for plot(); install it with: "
+                "pip install rsymbolic2[plot]"
+            ) from e
+
+        if ax is None:
+            _, ax = plt.subplots()
+        complexity = [m["complexity"] for m in self.pareto_front]
+        loss = [m["loss"] for m in self.pareto_front]
+        ax.plot(complexity, loss, color="0.6", zorder=1)
+        ax.scatter(complexity, loss, s=36, color="black", zorder=2)
+        if loss:
+            i = int(np.argmin(loss))
+            ax.scatter([complexity[i]], [loss[i]], s=64, color="firebrick", zorder=3)
+        if log_loss and loss and all(l > 0 for l in loss):
+            ax.set_yscale("log")
+        if label_exprs:
+            for m in self.pareto_front:
+                ax.annotate(
+                    m["expression"], (m["complexity"], m["loss"]),
+                    textcoords="offset points", xytext=(4, 4), fontsize=8,
+                )
+        ax.set_xlabel("Complexity (nodes)")
+        ax.set_ylabel("Loss (SSE)")
+        ax.set_title("rsymbolic2 Pareto front")
+        return ax
 
 
 # Math namespace used by predict(). neg/square are not Python builtins; the rest map to

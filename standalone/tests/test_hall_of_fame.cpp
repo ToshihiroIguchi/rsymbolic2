@@ -1,5 +1,6 @@
 // Tests for the Hall of Fame (best-per-complexity archive and Pareto front).
 
+#include <cmath>
 #include <cstdio>
 #include <vector>
 
@@ -116,6 +117,57 @@ void test_model_selection_modes() {
     CHECK(select_best(front) == select_best(front, ModelSelection::Best));
 }
 
+void test_pareto_scores_values() {
+    // Hand-built front: scores are the log-loss drop per unit of added complexity.
+    std::vector<PopMember> front;
+    front.push_back(member(100.0, 1));
+    front.push_back(member(1.0, 5));    // (log 100 - log 1) / 4
+    front.push_back(member(0.5, 6));    // (log 1 - log 0.5) / 1
+
+    const std::vector<double> s = pareto_scores(front);
+    CHECK(s.size() == 3);
+    CHECK(s[0] == 0.0);  // no simpler predecessor (PySR convention)
+    CHECK(std::fabs(s[1] - std::log(100.0) / 4.0) < 1e-12);
+    CHECK(std::fabs(s[2] - std::log(2.0)) < 1e-12);
+}
+
+void test_pareto_scores_edge_cases() {
+    CHECK(pareto_scores({}).empty());
+
+    const std::vector<double> single = pareto_scores({member(3.0, 4)});
+    CHECK(single.size() == 1 && single[0] == 0.0);
+
+    // A zero-loss member scores large-but-finite (losses floored at 1e-300).
+    std::vector<PopMember> zero_front;
+    zero_front.push_back(member(1.0, 1));
+    zero_front.push_back(member(0.0, 3));
+    const std::vector<double> zs = pareto_scores(zero_front);
+    CHECK(std::isfinite(zs[1]) && zs[1] > 100.0);
+
+    // A non-ascending complexity step (malformed front) marks the member NaN.
+    std::vector<PopMember> bad_front;
+    bad_front.push_back(member(1.0, 5));
+    bad_front.push_back(member(0.5, 5));
+    CHECK(std::isnan(pareto_scores(bad_front)[1]));
+}
+
+void test_select_best_matches_pareto_scores_argmax() {
+    // select_best(Score) must be the argmax of the exposed scores: the displayed
+    // score column and the engine's recommendation agree by construction.
+    std::vector<PopMember> front;
+    front.push_back(member(100.0, 1));
+    front.push_back(member(0.01, 3));
+    front.push_back(member(0.005, 7));
+    front.push_back(member(0.001, 9));
+
+    const std::vector<double> s = pareto_scores(front);
+    std::size_t argmax = 0;
+    for (std::size_t i = 1; i < s.size(); ++i) {
+        if (s[i] > s[argmax]) argmax = i;
+    }
+    CHECK(select_best(front, ModelSelection::Score) == argmax);
+}
+
 }  // namespace
 
 int main() {
@@ -127,6 +179,9 @@ int main() {
     test_select_best_picks_knee();
     test_select_best_edge_cases();
     test_model_selection_modes();
+    test_pareto_scores_values();
+    test_pareto_scores_edge_cases();
+    test_select_best_matches_pareto_scores_argmax();
 
     if (g_failures == 0) {
         std::printf("All %d checks passed\n", g_checks);

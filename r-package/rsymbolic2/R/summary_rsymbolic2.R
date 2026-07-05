@@ -17,10 +17,13 @@
 #' @return An object of class \code{"summary.rsymbolic2"}: a list with elements
 #'   \describe{
 #'     \item{pareto}{Data frame of the Pareto front with columns
-#'       \code{complexity}, \code{loss}, \code{score}, \code{recommended}
-#'       (logical), and \code{expression}. \code{score} is
-#'       \eqn{(\log L_{i-1} - \log L_i) / (c_i - c_{i-1})}; \code{NA} for the
-#'       simplest member.}
+#'       \code{complexity}, \code{loss}, \code{score}, \code{r_squared},
+#'       \code{recommended} (logical), and \code{expression}. \code{score} is
+#'       \eqn{(\log L_{i-1} - \log L_i) / (c_i - c_{i-1})}, computed by the C++
+#'       core (the same value \code{model_selection} ranks by); \code{0} for the
+#'       simplest member. \code{r_squared} is \eqn{1 - L_i / SST} on the training
+#'       data (weighted when \code{weights} were used); \code{NA} when the
+#'       target is constant (\eqn{SST = 0}).}
 #'     \item{n_features}{Number of input features used during fitting.}
 #'     \item{feature_names}{Column names of \code{X} (display-only), or \code{NULL}
 #'       when \code{X} had none.}
@@ -44,11 +47,22 @@
 #' @export
 summary.rsymbolic2 <- function(object, ...) {
     df <- object$pareto_front
+    # Training R^2 per member: 1 - loss/SST. NA when the target was constant
+    # (SST = 0) or the object predates the sst field. Negative values are valid
+    # (a fit worse than the mean).
+    sst <- object$sst
+    r_squared <- if (!is.null(sst) && is.finite(sst) && sst > 0) {
+        1 - df$loss / sst
+    } else {
+        rep(NA_real_, nrow(df))
+    }
+    recommended <- seq_len(nrow(df)) == object$best_index
     pareto <- data.frame(
         complexity  = df$complexity,
         loss        = df$loss,
-        score       = pareto_score(df$complexity, df$loss),
-        recommended = seq_len(nrow(df)) == object$best_index,
+        score       = df$score,
+        r_squared   = r_squared,
+        recommended = recommended,
         expression  = df$expression,
         stringsAsFactors = FALSE
     )
@@ -62,7 +76,9 @@ summary.rsymbolic2 <- function(object, ...) {
             recommended_expression = object$recommended,
             best_expression        = object$expression,
             best_loss              = object$loss,
-            best_complexity        = object$complexity
+            best_complexity        = object$complexity,
+            r_squared              = if (any(recommended)) r_squared[recommended]
+                                     else NA_real_
         ),
         class = "summary.rsymbolic2"
     )
@@ -88,11 +104,14 @@ print.summary.rsymbolic2 <- function(x, ...) {
     cat("  recommended:        ", x$recommended_expression, "\n", sep = "")
     cat(sprintf("  best (lowest loss): %s  (loss=%s, complexity=%s)\n",
                 x$best_expression, fmt_g(x$best_loss), x$best_complexity))
+    cat(sprintf("  R-squared (recommended): %s\n",
+                if (is.na(x$r_squared)) "NA" else fmt_g(x$r_squared)))
     cat("\nPareto front:\n")
 
     disp <- x$pareto
     disp$loss  <- fmt_g(disp$loss)
     disp$score <- ifelse(is.na(disp$score), "", fmt_g(disp$score))
+    disp$r_squared <- ifelse(is.na(disp$r_squared), "", fmt_g(disp$r_squared))
     disp$recommended <- ifelse(disp$recommended, "*", "")
     names(disp)[names(disp) == "recommended"] <- "rec"
     print(disp, row.names = FALSE, right = FALSE)

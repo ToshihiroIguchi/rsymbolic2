@@ -14,6 +14,7 @@
 #include "rsymbolic/evolution/mutation_weights.hpp"
 #include "rsymbolic/evolution/search_space.hpp"
 #include "rsymbolic/search/evolutionary_search.hpp"
+#include "rsymbolic/expression/latex.hpp"
 #include "rsymbolic/expression/tree.hpp"
 #include "rsymbolic/units/unit_parser.hpp"
 
@@ -209,14 +210,37 @@ cpp11::writable::list symbolic_regression_cpp(
 
     const SearchResult res = run_evolution(X_cpp, y_cpp, opts);
 
+    // Weighted total sum of squares about the weighted mean (unit weights when
+    // unweighted), for downstream fit statistics: R^2 = 1 - loss / sst is consistent
+    // with the (weighted) SSE loss reported per Pareto member.
+    double wsum = 0.0, wysum = 0.0;
+    for (std::size_t i = 0; i < y_cpp.size(); ++i) {
+        const double w = opts.weights.empty() ? 1.0 : opts.weights[i];
+        wsum  += w;
+        wysum += w * y_cpp[i];
+    }
+    const double ybar = (wsum > 0.0) ? (wysum / wsum) : 0.0;
+    double sst = 0.0;
+    for (std::size_t i = 0; i < y_cpp.size(); ++i) {
+        const double w = opts.weights.empty() ? 1.0 : opts.weights[i];
+        const double d = y_cpp[i] - ybar;
+        sst += w * d * d;
+    }
+
     // Pareto front → data.frame
+    const std::vector<double> scores = pareto_scores(res.pareto_front);
     cpp11::writable::integers pf_complexity;
     cpp11::writable::doubles  pf_loss;
+    cpp11::writable::doubles  pf_score;
     cpp11::writable::strings  pf_expr;
-    for (const auto& m : res.pareto_front) {
+    cpp11::writable::strings  pf_latex;
+    for (std::size_t i = 0; i < res.pareto_front.size(); ++i) {
+        const auto& m = res.pareto_front[i];
         pf_complexity.push_back(m.complexity);
         pf_loss.push_back(m.loss);
+        pf_score.push_back(scores[i]);
         pf_expr.push_back(to_string(m.tree));
+        pf_latex.push_back(to_latex(m.tree));
     }
 
     // Recommended ("best") accuracy/complexity trade-off from the Pareto front
@@ -231,7 +255,9 @@ cpp11::writable::list symbolic_regression_cpp(
     cpp11::writable::data_frame pareto_front({
         "complexity"_nm = pf_complexity,
         "loss"_nm       = pf_loss,
-        "expression"_nm = pf_expr
+        "score"_nm      = pf_score,
+        "expression"_nm = pf_expr,
+        "latex"_nm      = pf_latex
     });
 
     cpp11::writable::list result({
@@ -240,7 +266,9 @@ cpp11::writable::list symbolic_regression_cpp(
         "complexity"_nm   = res.complexity,
         "recommended"_nm  = recommended,
         "best_index"_nm   = best_index_r,
-        "pareto_front"_nm = pareto_front
+        "pareto_front"_nm = pareto_front,
+        "n_obs"_nm        = static_cast<int>(y_cpp.size()),
+        "sst"_nm          = sst
     });
     result.attr("class") = "rsymbolic2";
     return result;

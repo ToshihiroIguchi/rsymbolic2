@@ -21,10 +21,13 @@
 An object of class \code{"summary.rsymbolic2"}: a list with elements
   \describe{
     \item{pareto}{Data frame of the Pareto front with columns
-      \code{complexity}, \code{loss}, \code{score}, \code{recommended}
-      (logical), and \code{expression}. \code{score} is
-      \eqn{(\log L_{i-1} - \log L_i) / (c_i - c_{i-1})}; \code{NA} for the
-      simplest member.}
+      \code{complexity}, \code{loss}, \code{score}, \code{r_squared},
+      \code{recommended} (logical), and \code{expression}. \code{score} is
+      \eqn{(\log L_{i-1} - \log L_i) / (c_i - c_{i-1})}, computed by the C++
+      core (the same value \code{model_selection} ranks by); \code{0} for the
+      simplest member. \code{r_squared} is \eqn{1 - L_i / SST} on the training
+      data (weighted when \code{weights} were used); \code{NA} when the
+      target is constant (\eqn{SST = 0}).}
     \item{n_features}{Number of input features used during fitting.}
     \item{feature_names}{Column names of \code{X} (display-only), or \code{NULL}
       when \code{X} had none.}

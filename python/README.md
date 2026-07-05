@@ -17,7 +17,13 @@ y = 2.5 * X[:, 0] ** 2 - 1.3
 res = symbolic_regression(X, y, unary_ops=["square"], seed=1)
 print(res.expression)
 print(res.predict(np.array([[0.0], [1.0]])))
+print(res)          # Pareto front with per-member score, training R-squared,
+                    # and a ">" marker on the recommended row
+print(res.latex())  # LaTeX of the recommended member (display-only)
 ```
+
+Optional extras: `pip install "rsymbolic2[pandas]"` enables `res.to_pandas()`,
+`pip install "rsymbolic2[plot]"` enables `res.plot()` (matplotlib Pareto plot).
 
 Defaults are matched to PySR's documented defaults; only the implementation differs
 (a C++ engine with no Julia runtime, whose search core depends only on the C++

@@ -13,7 +13,8 @@
 \item{...}{Ignored (present for S3 compatibility).}
 
 \item{score}{Logical; if \code{TRUE} (default) include a \code{score} column
-(loss-drop-per-complexity; \code{NA} for the simplest member).}
+(loss-drop-per-complexity, computed by the C++ core; \code{0} for the
+simplest member).}
 }
 \value{
 A data frame with columns \code{complexity}, \code{loss},

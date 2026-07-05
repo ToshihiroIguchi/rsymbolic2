@@ -75,8 +75,167 @@ def test_pareto_front_and_repr():
         X, y, unary_ops=[], population_size=100, generations=30, seed=7
     )
     assert len(res.pareto_front) >= 1
-    assert all({"complexity", "loss", "expression"} <= set(m) for m in res.pareto_front)
-    assert isinstance(repr(res), str)
+    assert all(
+        {"complexity", "loss", "score", "r_squared", "expression", "latex"} <= set(m)
+        for m in res.pareto_front
+    )
+    # The simplest member has no predecessor, hence score 0 (PySR convention);
+    # later members carry the engine-computed log-loss drop per complexity.
+    assert res.pareto_front[0]["score"] == 0.0
+    assert all(np.isfinite(m["score"]) for m in res.pareto_front)
+    # r_squared is 1 - loss/sst on the training data; the line is recoverable,
+    # so the best member's R^2 is ~1 and the repr reports it.
+    assert res.sst > 0 and res.n_obs == 25
+    assert all(
+        abs(m["r_squared"] - (1.0 - m["loss"] / res.sst)) < 1e-12
+        for m in res.pareto_front
+    )
+    assert max(m["r_squared"] for m in res.pareto_front) > 0.99
+    assert "R-squared (recommended):" in repr(res)
+
+
+def _synthetic_result(n_members, best_index=1):
+    """Build a SymbolicRegressionResult from a hand-made raw dict (no search), so
+    display formatting can be tested deterministically."""
+    from rsymbolic2 import SymbolicRegressionResult
+
+    raw = {
+        "expression": f"expr{n_members - 1}",
+        "loss": 1.0 / n_members,
+        "complexity": n_members,
+        "recommended": f"expr{best_index}",
+        "best_index": best_index,
+        "pareto_front": {
+            "complexity": list(range(1, n_members + 1)),
+            "loss": [1.0 / (i + 1) for i in range(n_members)],
+            "score": [0.0] + [0.1] * (n_members - 1),
+            "expression": [f"expr{i}" for i in range(n_members)],
+            "latex": [f"latex{i}" for i in range(n_members)],
+        },
+    }
+    return SymbolicRegressionResult(raw, n_features=1)
+
+
+def test_repr_marks_recommended_row_and_shows_score():
+    res = _synthetic_result(3, best_index=1)
+    out = repr(res)
+    assert "complexity | loss | score | expression" in out
+    lines = out.splitlines()
+    marked = [l for l in lines if l.lstrip().startswith(">")]
+    assert len(marked) == 1
+    assert "expr1" in marked[0]
+    assert "0.1" in marked[0]  # score column rendered
+
+
+def test_repr_elides_long_fronts():
+    res = _synthetic_result(30, best_index=2)
+    out = repr(res)
+    # 20 rows shown, the 10 in the middle elided (mirrors R format_pareto_lines).
+    assert "... (10 more) ..." in out
+    assert "expr0" in out and "expr29" in out
+    assert "expr15" not in out
+
+
+def test_get_best():
+    res = _synthetic_result(3, best_index=1)
+    assert res.get_best()["expression"] == "expr1"
+    assert res.get_best(index=2)["expression"] == "expr2"
+    with pytest.raises(IndexError):
+        res.get_best(index=3)
+
+
+def test_get_best_empty_front():
+    from rsymbolic2 import SymbolicRegressionResult
+
+    raw = {
+        "expression": "", "loss": float("inf"), "complexity": 0,
+        "recommended": "", "best_index": None,
+        "pareto_front": {
+            "complexity": [], "loss": [], "score": [],
+            "expression": [], "latex": [],
+        },
+    }
+    res = SymbolicRegressionResult(raw, n_features=1)
+    with pytest.raises(ValueError):
+        res.get_best()
+
+
+def test_latex_accessor_and_name_substitution():
+    from rsymbolic2 import SymbolicRegressionResult
+
+    n = 11  # >= 10 features so x_{1} vs x_{10} substitution is exercised
+    raw = {
+        "expression": "x0", "loss": 0.1, "complexity": 1,
+        "recommended": "x0", "best_index": 0,
+        "pareto_front": {
+            "complexity": [1], "loss": [0.1], "score": [0.0],
+            "expression": ["x0"],
+            "latex": ["x_{1} + x_{10} \\cdot x_{0}"],
+        },
+    }
+    res = SymbolicRegressionResult(raw, n_features=n)
+    assert res.latex() == "x_{1} + x_{10} \\cdot x_{0}"
+
+    names = [f"v{i}" for i in range(n)]
+    names[10] = "big_name"  # underscore must be escaped
+    out = res.latex(variable_names=names)
+    assert out == "v1 + big\\_name \\cdot v0"
+
+    with pytest.raises(ValueError):
+        res.latex(variable_names=["only_one"])
+    # Empty list forces the raw x_{i} form even when feature_names exist.
+    res.feature_names = names
+    assert res.latex(variable_names=[]) == "x_{1} + x_{10} \\cdot x_{0}"
+
+
+def test_latex_from_fit_recovers_line():
+    X = np.linspace(-2, 2, 25).reshape(-1, 1)
+    y = 2.0 * X[:, 0]
+    res = symbolic_regression(
+        X, y, unary_ops=[], population_size=100, generations=30, seed=7
+    )
+    s = res.latex()
+    assert isinstance(s, str) and len(s) > 0
+    assert "x_{0}" in s
+
+
+def test_plot_returns_axes():
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")  # headless-safe on Windows and CI
+
+    res = _synthetic_result(3, best_index=1)
+    ax = res.plot()
+    assert ax.get_xlabel() == "Complexity (nodes)"
+    assert ax.get_yscale() == "log"
+    # log_loss=False keeps a linear axis.
+    ax2 = res.plot(log_loss=False, label_exprs=False)
+    assert ax2.get_yscale() == "linear"
+    import matplotlib.pyplot as plt
+
+    plt.close("all")
+
+
+def test_plot_zero_loss_falls_back_to_linear():
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+
+    from rsymbolic2 import SymbolicRegressionResult
+
+    raw = {
+        "expression": "x0", "loss": 0.0, "complexity": 1,
+        "recommended": "x0", "best_index": 1,
+        "pareto_front": {
+            "complexity": [1, 3], "loss": [1.0, 0.0],
+            "score": [0.0, 345.0], "expression": ["1", "x0"],
+            "latex": ["1", "x_{0}"],
+        },
+    }
+    res = SymbolicRegressionResult(raw, n_features=1)
+    ax = res.plot()  # must not crash on log-scale with a zero loss
+    assert ax.get_yscale() == "linear"
+    import matplotlib.pyplot as plt
+
+    plt.close("all")
 
 
 def test_feature_names_from_dataframe_are_display_only():

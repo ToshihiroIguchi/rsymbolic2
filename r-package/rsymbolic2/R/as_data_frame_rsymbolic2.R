@@ -12,7 +12,8 @@
 #'   \code{\link{symbolic_regression}}.
 #' @param ... Ignored (present for S3 compatibility).
 #' @param score Logical; if \code{TRUE} (default) include a \code{score} column
-#'   (loss-drop-per-complexity; \code{NA} for the simplest member).
+#'   (loss-drop-per-complexity, computed by the C++ core; \code{0} for the
+#'   simplest member).
 #'
 #' @return A data frame with columns \code{complexity}, \code{loss},
 #'   (optionally \code{score}), \code{recommended} (logical; \code{TRUE} for the
@@ -37,7 +38,7 @@ as.data.frame.rsymbolic2 <- function(x, ..., score = TRUE) {
         stringsAsFactors = FALSE
     )
     if (isTRUE(score))
-        out$score <- pareto_score(df$complexity, df$loss)
+        out$score <- df$score
     out$recommended <- seq_len(nrow(df)) == x$best_index
     out$expression  <- df$expression
     out

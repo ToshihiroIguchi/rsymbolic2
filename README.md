@@ -163,7 +163,7 @@ python -c "import rsymbolic2; print(rsymbolic2.__version__)"
 - **Compiler not found on Windows**: confirm `gcc` and `cmake` are on `PATH` (see the
   Windows tip above), then retry.
 - Optional extras: `pip install "./python[pandas,plot]"` enables `result.to_pandas()`
-  and the plotting helpers in the examples. From GitHub, append the extras to the URL:
+  (pandas) and `result.plot()` (matplotlib). From GitHub, append the extras to the URL:
   `pip install "rsymbolic2[pandas,plot] @ git+https://github.com/ToshihiroIguchi/rsymbolic2.git#subdirectory=python"`.
 
 </details>
@@ -252,7 +252,10 @@ result = symbolic_regression(
 print(result.expression)     # lowest-loss formula, e.g. ((square(x0) * 2.5) - 1.3)
 print(result.loss)           # training sum-of-squared-errors
 print(result.recommended)    # Pareto "best" accuracy/complexity trade-off
-print(result)                # pretty-prints the whole Pareto front
+print(result)                # Pareto front table with per-member score, training
+                             # R-squared, and a ">" marker on the recommended row
+print(result.latex())        # LaTeX of the recommended member (display-only)
+result.get_best()            # the recommended member as a dict (pass index= for others)
 ```
 
 **Step 4 — predict on new data.** `predict` evaluates the recommended formula (pass
@@ -263,11 +266,13 @@ X_new = np.array([[0.0], [1.0], [-2.0]])
 print(result.predict(X_new))             # ≈ [-1.3, 1.2, 8.7]
 ```
 
-**Step 5 (optional) — inspect the Pareto front as a table.**
+**Step 5 (optional) — inspect the Pareto front as a table or plot.**
 
 ```python
 df = result.to_pandas()      # requires pandas: pip install "./python[pandas]"
-print(df)                    # columns: complexity, loss, expression
+print(df)                    # columns: complexity, loss, score, expression
+
+ax = result.plot()           # requires matplotlib: pip install "./python[plot]"
 ```
 
 ### R tutorial
@@ -305,8 +310,9 @@ result$recommended    # Pareto "best" trade-off
 result$pareto_front   # data frame: complexity, loss, expression
 
 print(result)         # compact view: recommended, best, and the Pareto front
-summary(result)       # full Pareto front with a per-member score
+summary(result)       # full front with per-member score and training R-squared
 as.data.frame(result) # the front as a tidy data frame (cf. Python .to_pandas())
+to_latex(result)      # LaTeX of the recommended member (display-only)
 ```
 
 **Step 4 — predict on new data.** `predict` evaluates the recommended formula by

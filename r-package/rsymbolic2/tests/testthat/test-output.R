@@ -9,7 +9,10 @@ test_that("result has the documented structure", {
     seed           = 1L
   )
   expect_named(res, c("expression", "loss", "complexity", "recommended",
-                      "best_index", "pareto_front", "n_features"))
+                      "best_index", "pareto_front", "n_obs", "sst",
+                      "n_features"))
+  expect_identical(res$n_obs, 12L)
+  expect_true(is.finite(res$sst) && res$sst > 0)
   expect_type(res$expression, "character")
   expect_true(nchar(res$expression) > 0)
   expect_true(is.finite(res$loss))
@@ -18,7 +21,10 @@ test_that("result has the documented structure", {
   expect_true(nchar(res$recommended) > 0)
   expect_true(res$best_index >= 1L && res$best_index <= nrow(res$pareto_front))
   expect_s3_class(res$pareto_front, "data.frame")
-  expect_named(res$pareto_front, c("complexity", "loss", "expression"))
+  expect_named(res$pareto_front,
+               c("complexity", "loss", "score", "expression", "latex"))
+  expect_type(res$pareto_front$score, "double")
+  expect_identical(res$pareto_front$score[1L], 0)
   expect_true(nrow(res$pareto_front) >= 1L)
   # The recommended expression must be the one best_index points to in the front.
   expect_equal(res$recommended, res$pareto_front$expression[res$best_index])

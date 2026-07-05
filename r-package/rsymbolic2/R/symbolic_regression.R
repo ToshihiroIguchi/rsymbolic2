@@ -236,8 +236,16 @@
 #'       accuracy/complexity "knee").}
 #'     \item{best_index}{Row of \code{pareto_front} the recommendation came from
 #'       (1-based); \code{NA} if the front is empty.}
-#'     \item{pareto_front}{Data frame of non-dominated (complexity, loss,
-#'       expression) trade-offs from accuracy-vs-complexity Pareto front.}
+#'     \item{pareto_front}{Data frame of non-dominated trade-offs from the
+#'       accuracy-vs-complexity Pareto front, with columns \code{complexity},
+#'       \code{loss}, \code{score} (log-loss drop per unit of added complexity,
+#'       the value \code{model_selection} ranks by; \code{0} for the simplest
+#'       member), \code{expression}, and \code{latex} (display-only LaTeX
+#'       rendering; see \code{\link{to_latex.rsymbolic2}}).}
+#'     \item{n_obs}{Number of training observations (rows of \code{X}).}
+#'     \item{sst}{Total sum of squares of \code{y} about its (weighted) mean on
+#'       the training data; basis for the \code{r_squared} column reported by
+#'       \code{\link{summary.rsymbolic2}}.}
 #'     \item{n_features}{Number of input features (columns of \code{X}) used
 #'       during fitting; required by \code{\link{predict.rsymbolic2}}.}
 #'     \item{feature_names}{Column names of \code{X}, or \code{NULL} when \code{X}
