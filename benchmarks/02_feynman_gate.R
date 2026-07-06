@@ -30,6 +30,12 @@
 # cache_misses columns (from eval_counts) carry the hit rate in every CSV; they
 # are 0/0 when the cache is off.
 #
+# `linear_scaling` enables the opt-in Keijzer (2003) linear scaling (docs/50):
+# linear_scaling=TRUE is passed to symbolic_regression(); everything else stays
+# at the frozen parity values. Results are written under a separate
+# '<label>_linear_scaling' name so a scaling run never overwrites the
+# authoritative scaling-off CSV.
+#
 # See docs/19 for full protocol.
 
 # ---- Setup ------------------------------------------------------------------
@@ -256,6 +262,18 @@ if (CACHE_ON) {
   label <- paste0(label, "_cache")
   BENCH_PARAMS$eval_cache <- TRUE
   cat("Override: eval_cache ON (duplicate-evaluation cache; bit-identical)\n")
+}
+
+# Optional `linear_scaling` flag: opt-in Keijzer (2003) linear scaling (docs/50
+# accuracy screen). Passed straight through as linear_scaling=TRUE; every other
+# setting stays at the frozen parity values. Results are written under a
+# separate '<label>_linear_scaling' name so a scaling run never overwrites the
+# authoritative scaling-off CSV.
+LINSCALE_ON <- any(args == "linear_scaling")
+if (LINSCALE_ON) {
+  label <- paste0(label, "_linear_scaling")
+  BENCH_PARAMS$linear_scaling <- TRUE
+  cat("Override: linear_scaling ON (Keijzer 2003 best-affine-fit loss)\n")
 }
 
 DATA_SEED <- 42L   # Matches export_feynman_data.R DATA_SEED_TRAIN
