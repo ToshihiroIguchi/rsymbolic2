@@ -1,0 +1,9 @@
+# CMake build directory for the WASM target
+wasm/build/
+
+# Node test variant artifacts (rebuilt by the WASM build)
+wasm/test/rsymbolic2_node.cjs
+wasm/test/rsymbolic2_node.wasm
+
+# The deployed engine (app/vendor/rsymbolic2.{js,wasm}) IS committed so the static site
+# is servable without a local emsdk. It is rebuilt by web/wasm/build.{ps1,sh}.

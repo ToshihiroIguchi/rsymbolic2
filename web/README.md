@@ -1,0 +1,85 @@
+<!--
+SPDX-License-Identifier: Apache-2.0
+Part of rsymbolic2, Copyright 2026 Toshihiro Iguchi.
+-->
+
+# rsymbolic2 web GUI (static site)
+
+A browser front end for rsymbolic2 that runs the **same C++ symbolic-regression engine**
+as the R and Python packages, compiled to WebAssembly. It is a **static site** — no
+backend server — so it can be hosted on GitHub Pages or opened from any static file host.
+The engine runs single-threaded in the browser and is **deterministic and reproducible**
+for a fixed seed (identical result every run). It uses the identical search algorithm and
+PySR-parity defaults as R/Python, so it recovers the same problems with the same quality.
+The *specific* expression returned can differ from a native (R/Python) build: the
+evolutionary trajectory is sensitive to last-bit floating-point differences between
+Emscripten's libm and the native (MinGW) libm, so the two builds may converge to different
+but equally valid expressions — this is normal for FP-sensitive GP search, not a weaker
+search. For large or long searches, prefer the R or Python package.
+
+This subtree does **not** touch the shared C++ core (`r-package/rsymbolic2/src/`): the
+WASM binding (`wasm/rsymbolic2_wasm.cpp`) is a third thin bridge over the same
+`run_evolution()` entry point, exactly parallel to the R (cpp11) and Python (pybind11)
+bridges.
+
+## Layout
+
+```
+web/
+  wasm/                     C++ -> WebAssembly binding + build
+    rsymbolic2_wasm.cpp     embind bridge (sibling of python/src/rsymbolic2_py.cpp)
+    CMakeLists.txt          emcmake target (compiles the SAME 9 core .cpp, OpenMP off)
+    build.ps1 / build.sh    emcc build wrappers
+    test/parity_test.cjs    Phase-0 correctness gate (Node)
+  app/                      the static site (this is what gets deployed)
+    index.html
+    css/style.css
+    js/*.js                 UI (main, worker, predict, data, plots, latex, export)
+    vendor/                 KaTeX + Chart.js (vendored, MIT) + built rsymbolic2.{js,wasm}
+    examples/ (inline)      example datasets live in js/examples.js
+```
+
+## Building the WebAssembly module
+
+Requires the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html).
+Install and activate it once, then put it on PATH for the build shell:
+
+```bash
+# one-time
+git clone https://github.com/emscripten-core/emsdk.git
+cd emsdk && ./emsdk install latest && ./emsdk activate latest
+```
+
+Build (from the repo root), after sourcing the emsdk environment:
+
+- **Windows (PowerShell):** `. C:\path\to\emsdk\emsdk_env.ps1; web\wasm\build.ps1`
+- **Ubuntu/macOS:** `source /path/to/emsdk/emsdk_env.sh && web/wasm/build.sh`
+
+This emits `web/app/vendor/rsymbolic2.js` + `rsymbolic2.wasm`.
+
+## Running the correctness gate
+
+```bash
+# build the Node variant too (the build above builds both targets)
+node web/wasm/test/parity_test.cjs
+```
+
+It checks recovery of the quadratic example, run-to-run determinism, and — if the Python
+`rsymbolic2` package is importable — bit-parity of the best expression and Pareto losses
+between the WASM and Python builds.
+
+## Serving the site locally
+
+The site must be served over HTTP (ES module workers + WASM do not load from `file://`):
+
+```bash
+cd web/app
+python -m http.server 8080      # or: npx serve .
+# open http://localhost:8080
+```
+
+## Deployment
+
+Deploy the contents of `web/app/` to any static host (e.g. GitHub Pages). No
+cross-origin-isolation (COOP/COEP) headers are needed because the build is
+single-threaded. Uploads/deploys are done on a dedicated branch, never on `master`.
