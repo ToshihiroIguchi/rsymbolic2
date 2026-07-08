@@ -140,13 +140,19 @@ portability for speed unless a benchmark shows the speed matters and the user ag
 - Correctness is verified, not assumed: unit tests for every component, numerical
   checks for automatic differentiation (compare against finite differences), and
   comparison against known-answer problems before trusting the search.
-- **Delegate broad or independent work to subagents.** Prefer to hand off wide
-  read-only exploration (cross-codebase surveys, "where/how is X done") and
-  independently runnable verification or benchmark jobs to subagents, taking their
-  conclusions back into the main thread and confirming the load-bearing files
-  directly when a change depends on them. This conserves context and cost on
-  large tasks. It is not a licence to fan out speculatively: delegate when the scope
-  is genuinely broad or the user asks, not for small local edits.
+- **Reserve the expensive main thread for planning, orchestration, hard or
+  repeatedly-failing work, and load-bearing edits; delegate what can be cleanly
+  cut out.** Hand off wide read-only exploration (cross-codebase surveys,
+  "where/how is X done") and independently runnable verification or benchmark
+  jobs to subagents, taking their conclusions back into the main thread and
+  confirming the load-bearing files directly when a change depends on them. This
+  conserves the main thread's scarce context and cost on large tasks. Cost is
+  saved only when the delegated task is self-contained AND handed to a cheaper
+  model (specify `model` explicitly, e.g. Haiku/Sonnet) — spawning is otherwise
+  the expensive path, since each subagent re-derives context from cold. So do
+  **not** delegate small local edits (inline is cheaper than a cold start), and
+  do not fan out speculatively: delegate when the scope is genuinely broad, when
+  a self-contained task can move to a cheaper model, or when the user asks.
 
 ## Benchmarking Requirements
 
