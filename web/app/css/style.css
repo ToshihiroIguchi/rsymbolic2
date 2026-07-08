@@ -13,11 +13,15 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
+/* App shell: a fixed-height column (header + run bar + body) so the page itself does not
+   scroll on desktop. The body region fills the rest and hosts its own internal scroll panes.
+   Narrow/short viewports release this to natural page scroll (see the media queries below). */
 body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color: var(--text);
   background: var(--bg);
   font-size: 14px;
+  display: flex; flex-direction: column; height: 100dvh; overflow: hidden;
 }
 
 .app-header {
@@ -30,12 +34,57 @@ body {
 .app-header .note { font-size: 0.78rem; color: #b8c4d6; max-width: 46ch; }
 .app-header a { color: #9ec1ff; }
 
-.layout {
-  display: grid;
-  grid-template-columns: minmax(300px, 1fr) minmax(360px, 1.4fr) minmax(300px, 1fr);
-  gap: 0.75rem; padding: 0.75rem; align-items: start;
+.run-bar {
+  z-index: 5;
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.5rem 1rem; background: var(--panel);
+  border-bottom: 1px solid var(--border);
 }
-@media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+
+/* Body fills the remaining shell height; min-height:0 lets the two columns own their scroll. */
+.layout {
+  flex: 1 1 auto; min-height: 0; overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(300px, 1fr) minmax(420px, 1.6fr);
+  gap: 0.75rem; padding: 0.75rem; align-items: stretch;
+}
+/* Config rail scrolls inside itself rather than lengthening the page. */
+.config { min-height: 0; overflow-y: auto; }
+
+/* Results region: a viewport-bounded 2-D grid so the Pareto explorer (left) and the selected-
+   equation detail (right) are co-visible; each pane scrolls internally. min-width/height:0 keep
+   the inner tables/charts from forcing the page to scroll. */
+.results-area {
+  min-height: 0; min-width: 0;
+  display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 0.75rem;
+}
+.results-area > .results,
+.results-area > .detail { min-height: 0; overflow-y: auto; }
+.placeholder { color: var(--muted); text-align: center; padding: 2.5rem 1rem; }
+.results-area > .placeholder { grid-column: 1 / -1; }
+.results-area:not(.has-result) .results,
+.results-area:not(.has-result) .detail { display: none; }
+.results-area.has-result .placeholder { display: none; }
+
+/* Fallbacks: on narrow OR short viewports the bounded shell would cramp, so release it to
+   natural page scroll and re-pin the run bar. */
+@media (max-width: 1100px) {
+  body { height: auto; overflow: visible; }
+  .run-bar { position: sticky; top: 0; }
+  .layout { grid-template-columns: 1fr; overflow: visible; }
+  .config { max-height: none; overflow: visible; }
+  .results-area { grid-template-columns: 1fr; }
+  .results-area > .results,
+  .results-area > .detail { overflow: visible; }
+}
+@media (max-height: 640px) {
+  body { height: auto; overflow: visible; }
+  .run-bar { position: sticky; top: 0; }
+  .layout { overflow: visible; }
+  .config { max-height: none; overflow: visible; }
+  .results-area > .results,
+  .results-area > .detail { overflow: visible; }
+}
 
 .panel {
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
@@ -86,8 +135,13 @@ legend { font-size: 0.75rem; color: var(--muted); padding: 0 0.3rem; }
 
 .advanced summary, details summary { cursor: pointer; color: var(--accent); font-size: 0.82rem; margin: 0.3rem 0; }
 
-.run-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem; }
 .status { font-size: 0.82rem; color: var(--muted); }
+
+.op-group { margin-bottom: 0.4rem; }
+.op-group > .op-group-label {
+  display: block; font-size: 0.72rem; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.03em; margin: 0.25rem 0 0.15rem;
+}
 
 .results-head { display: flex; align-items: center; justify-content: space-between; }
 .chart-box { position: relative; height: 300px; margin-bottom: 0.6rem; }

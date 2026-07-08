@@ -76,6 +76,49 @@ string. `web/app/js/predict.js` does the same with a small recursive-descent par
 evaluator (no `eval`) matching `tree.hpp::to_string`. Same safe-pow caveat as the Python
 wrapper: `^` maps to JS `**`, so a negative base to a fractional power yields NaN.
 
+## UI layout: deliberately a single-page lightweight entry point
+
+The layout was reviewed against TuringBot and other GUI SR tools (Eureqa, HeuristicLab),
+which use a **tabbed full workspace** (Input / Search / Analysis / Prediction / Log). We
+deliberately **do not** adopt that. Those are long-running, multi-core, persistent desktop
+tools; a tabbed full UI presumes a workload — hours-long continuous search, large data,
+background streaming — that this build cannot back: it is **single-threaded, 128 MB fixed
+memory, single-shot**, and is positioned as a *lightweight entry point* ("for large or long
+searches, use the R or Python package"). A full UI on the weakest backend would also violate
+the project's Simplicity priority and the anti-speculative-scope rule. If a TuringBot-class
+UI is ever wanted, it belongs on the **native / Python core** (where the compute can support
+it), not on WASM.
+
+The web GUI therefore stays a **single page**, refined only to remove three structural pain
+points (no new heavy features, no engine/default change):
+
+- **Persistent Run/Stop bar** above the config — the one useful idea borrowed from
+  TuringBot's top bar. IDs unchanged, so JS wiring is untouched.
+- **Viewport-bounded 2-D layout.** The page is a fixed-height app shell (`height: 100dvh`,
+  `overflow: hidden`): header + run bar on top, then a body that fills the rest without the
+  *page* scrolling. The body is **config rail** (internal scroll) | **results region**, and
+  the results region is itself a 2-column grid — **Pareto explorer** (chart + internally
+  scrolling table) | **selected-equation detail** (LaTeX + metrics + fit + export, internal
+  scroll). This keeps the Pareto front and the selected detail **co-visible** so the *pick →
+  inspect* loop needs no scrolling, and the primary payoff (best equation + fit) is never
+  below the fold. An earlier revision stacked the detail *below* the table in one column;
+  that removed horizontal eye-travel but pushed the payoff off-screen, so the viewport-bounded
+  2-D layout supersedes it. Narrow (`max-width: 1100px`) or short (`max-height: 640px`)
+  viewports release the shell to natural page scroll and re-pin the run bar (`position:
+  sticky`), since a bounded shell would cramp them. This is layout-only CSS; `main.js` and
+  all IDs are unchanged.
+- **Empty state**: results/detail are hidden behind a placeholder (spanning the results
+  region) until the first run.
+- **Operator checkboxes grouped** by meaning (Trigonometric / Exp·Log / Power·other) for
+  readability. Note: the core picks unary operators by a random index into the list
+  (`mutation.cpp: space.unary_ops[op(rng)]`), so list *order* is part of the fixed-seed
+  search trajectory; `checkedOps("un")` re-emits in the canonical `UNARY` order so the
+  visual grouping never changes the search.
+
+Explicitly **out of scope** (would make it a mismatched full UI): tabs, live log /
+records-over-time, a prediction/extrapolation workspace, an editable data grid, and a
+train/test-split UI.
+
 ## Deferred (later)
 
 Live per-epoch Pareto/best-loss updates (needs a behaviour-neutral core progress callback);

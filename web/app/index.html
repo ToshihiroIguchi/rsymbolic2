@@ -20,6 +20,13 @@
       </div>
     </header>
 
+    <!-- Persistent run controls: stays pinned while the config column scrolls. -->
+    <div class="run-bar">
+      <button id="run-btn" class="btn primary" disabled>Run</button>
+      <button id="stop-btn" class="btn" disabled>Stop</button>
+      <span id="status" class="status"></span>
+    </div>
+
     <main class="layout">
       <!-- LEFT: configuration -->
       <section class="panel config" aria-label="Configuration">
@@ -55,7 +62,7 @@
         </fieldset>
         <fieldset>
           <legend>Unary</legend>
-          <div id="unary-ops" class="checkgrid"></div>
+          <div id="unary-ops"></div>
         </fieldset>
 
         <h2>4 · Settings</h2>
@@ -106,15 +113,14 @@
           <label class="check"><input id="linear_scaling" type="checkbox" /> Linear scaling (Keijzer 2003)</label>
           <label class="check"><input id="eval_cache" type="checkbox" /> Duplicate-evaluation cache (speed only)</label>
         </details>
-
-        <div class="run-row">
-          <button id="run-btn" class="btn primary" disabled>Run</button>
-          <button id="stop-btn" class="btn" disabled>Stop</button>
-          <span id="status" class="status"></span>
-        </div>
       </section>
 
-      <!-- CENTER: results -->
+      <!-- RIGHT: results + selected-equation detail, stacked. Hidden until the first run. -->
+      <div class="results-area" id="results-area">
+      <div class="panel placeholder" id="results-placeholder">
+        Run a search to see the Pareto front and the best equation.
+      </div>
+
       <section class="panel results" aria-label="Results">
         <div class="results-head">
           <h2>Pareto front</h2>
@@ -132,7 +138,7 @@
         <div id="eval-accounting" class="muted small"></div>
       </section>
 
-      <!-- RIGHT: equation detail -->
+      <!-- Selected-equation detail: sits directly below the Pareto table. -->
       <section class="panel detail" aria-label="Selected equation">
         <h2>Selected equation</h2>
         <div id="eq-latex" class="eq-latex">—</div>
@@ -153,6 +159,7 @@
           <button id="download-csv" class="btn small">Download CSV</button>
         </div>
       </section>
+      </div>
     </main>
 
     <!-- Vendored libraries (same-origin, no CDN) -->

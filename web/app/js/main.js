@@ -14,7 +14,17 @@ import {
   copyText, pythonCall, rCall, paretoCsv, downloadText,
 } from "./export.js";
 
+// Canonical unary order sent to the engine. The core picks operators by a random index into
+// this list (mutation.cpp: space.unary_ops[op(rng)]), so the list ORDER is part of the search
+// trajectory for a fixed seed. The checkboxes are grouped only for readability (UNARY_GROUPS);
+// checkedOps("un") re-emits in this canonical order so the visual grouping never changes the
+// search. Keep this array's order stable.
 const UNARY = ["neg", "exp", "log", "sin", "cos", "sqrt", "tanh", "abs", "square"];
+const UNARY_GROUPS = [
+  { label: "Trigonometric", ops: ["sin", "cos", "tanh"] },
+  { label: "Exp / Log", ops: ["exp", "log"] },
+  { label: "Power / other", ops: ["sqrt", "square", "abs", "neg"] },
+];
 const UNARY_DEFAULT = new Set(["neg", "exp", "log", "sin", "cos"]);
 const BINARY = ["add", "sub", "mul", "div", "pow"];
 const BINARY_DEFAULT = new Set(["add", "sub", "mul"]);
@@ -48,7 +58,19 @@ function buildOperatorChecks() {
   const bwrap = $("binary-ops");
   BINARY.forEach((op) => bwrap.appendChild(opCheck("bin", op, BINARY_DEFAULT.has(op))));
   const uwrap = $("unary-ops");
-  UNARY.forEach((op) => uwrap.appendChild(opCheck("un", op, UNARY_DEFAULT.has(op))));
+  UNARY_GROUPS.forEach((g) => {
+    const group = document.createElement("div");
+    group.className = "op-group";
+    const label = document.createElement("span");
+    label.className = "op-group-label";
+    label.textContent = g.label;
+    group.appendChild(label);
+    const grid = document.createElement("div");
+    grid.className = "checkgrid";
+    g.ops.forEach((op) => grid.appendChild(opCheck("un", op, UNARY_DEFAULT.has(op))));
+    group.appendChild(grid);
+    uwrap.appendChild(group);
+  });
 }
 function opCheck(kind, op, checked) {
   const l = document.createElement("label");
@@ -63,7 +85,14 @@ function opCheck(kind, op, checked) {
   return l;
 }
 function checkedOps(kind) {
-  return [...document.querySelectorAll(`input[data-kind="${kind}"]:checked`)].map((e) => e.value);
+  const picked = new Set(
+    [...document.querySelectorAll(`input[data-kind="${kind}"]:checked`)].map((e) => e.value),
+  );
+  // Emit unary ops in the canonical UNARY order (not DOM order) so the grouped layout does not
+  // alter the operator-index -> RNG mapping and the search stays reproducible. Binary ops are
+  // not regrouped, so DOM order already matches their declared order.
+  if (kind === "un") return UNARY.filter((op) => picked.has(op));
+  return [...picked];
 }
 
 function buildExamples() {
@@ -265,6 +294,8 @@ function stopTimer() {
 
 // --- Results rendering ------------------------------------------------------------
 function renderResult() {
+  // Reveal the results + detail panels (hidden behind a placeholder until the first run).
+  $("results-area").classList.add("has-result");
   const res = state.result;
   const front = res.pareto_front;
   const hasSst = res.sst && isFinite(res.sst) && res.sst > 0;
