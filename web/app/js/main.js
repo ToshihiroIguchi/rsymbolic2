@@ -293,6 +293,27 @@ function stopTimer() {
 }
 
 // --- Results rendering ------------------------------------------------------------
+// Faithful port of the core select_best() (hall_of_fame.cpp) so the recommended (★) row can be
+// re-picked instantly when the user changes model_selection, without re-running the search. The
+// front already carries the same per-member `score` (pareto_scores) the core ranks by, so this
+// only re-applies the selection rule — the C++ implementation stays authoritative. The front is
+// strictly decreasing in loss, so its last (most complex) entry is the lowest-loss one.
+function selectBestIndex(front, mode) {
+  const n = front.complexity.length;
+  if (n <= 1) return 0;
+  if (mode === "accuracy") return n - 1; // lowest loss
+  // "best" keeps only members within 1.5× of the lowest loss; "score" keeps the whole front.
+  const minLoss = front.loss[n - 1];
+  const threshold = mode === "best" ? 1.5 * minLoss : Infinity;
+  let bestIdx = 0;
+  let bestScore = -Infinity;
+  for (let i = 1; i < n; i++) {
+    if (front.loss[i] > threshold) continue; // outside the accuracy band ("best")
+    if (front.score[i] > bestScore) { bestScore = front.score[i]; bestIdx = i; }
+  }
+  return bestIdx;
+}
+
 function renderResult() {
   // Reveal the results + detail panels (hidden behind a placeholder until the first run).
   $("results-area").classList.add("has-result");
@@ -305,6 +326,17 @@ function renderResult() {
   drawParetoChart();
   selectEquation(res.best_index != null ? res.best_index : front.complexity.length - 1);
   renderEvalAccounting(res);
+}
+
+// Re-pick the recommended equation for the current model_selection, in place (no re-run).
+function applyModelSelection() {
+  if (!state.result) return;
+  const front = state.result.pareto_front;
+  state.result.best_index = selectBestIndex(front, $("model_selection").value);
+  document.querySelectorAll("#pareto-table tbody tr").forEach((tr) => {
+    tr.classList.toggle("recommended", parseInt(tr.dataset.index, 10) === state.result.best_index);
+  });
+  selectEquation(state.result.best_index);
 }
 
 function renderTable(res, front) {
@@ -426,6 +458,7 @@ function init() {
     renderFeatureList();
   });
   $("logloss").addEventListener("change", () => { if (state.result) drawParetoChart(); });
+  $("model_selection").addEventListener("change", applyModelSelection);
 
   $("file-input").addEventListener("change", (e) => {
     const file = e.target.files[0];

@@ -143,7 +143,10 @@ legend { font-size: 0.75rem; color: var(--muted); padding: 0 0.3rem; }
   text-transform: uppercase; letter-spacing: 0.03em; margin: 0.25rem 0 0.15rem;
 }
 
-.results-head { display: flex; align-items: center; justify-content: space-between; }
+.results-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.results-head-controls { display: flex; align-items: center; gap: 0.8rem; }
+.inline-select { display: flex; align-items: center; gap: 0.3rem; margin: 0; font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
+.inline-select select { width: auto; padding: 0.15rem 0.3rem; font-size: 0.78rem; }
 .chart-box { position: relative; height: 300px; margin-bottom: 0.6rem; }
 .chart-box.small { height: 240px; }
 

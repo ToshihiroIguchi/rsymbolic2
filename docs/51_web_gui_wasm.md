@@ -114,6 +114,17 @@ points (no new heavy features, no engine/default change):
   (`mutation.cpp: space.unary_ops[op(rng)]`), so list *order* is part of the fixed-seed
   search trajectory; `checkedOps("un")` re-emits in the canonical `UNARY` order so the
   visual grouping never changes the search.
+- **`model_selection` is a results-side live control** (a `recommend: best/accuracy/score`
+  dropdown in the Pareto-front header, not a config knob buried in Advanced). It re-picks the
+  recommended (★) member of the *existing* front instantly, with no re-run, because the
+  returned front already carries the `loss/complexity/score` the rule needs. `main.js`
+  `selectBestIndex()` is a faithful port of the core `select_best()` (`hall_of_fame.cpp`) —
+  the C++ stays authoritative and computes `best_index` on each run; the JS port only
+  re-applies the same rule (verified: default "best" agrees with the run's `best_index`).
+  This resolves the common confusion that PySR's default "best" (highest score *within 1.5×
+  of the lowest loss*) can, in a near-recovery regime, highlight a bloated near-zero-loss
+  equation rather than the clean high-score one — switching to "score" now needs one click,
+  not a re-run.
 
 Explicitly **out of scope** (would make it a mismatched full UI): tabs, live log /
 records-over-time, a prediction/extrapolation workspace, an editable data grid, and a
