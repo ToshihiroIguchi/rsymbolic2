@@ -1,0 +1,80 @@
+# SPDX-License-Identifier: Apache-2.0
+# Part of rsymbolic2, Copyright 2026 Toshihiro Iguchi.
+#
+# Builds the WebAssembly module (web/wasm/) and deploys the static web GUI
+# (web/app/) to GitHub Pages. The emsdk version is pinned (not "latest") so CI
+# produces the same deterministic WASM output as the locally verified build
+# (docs/51) -- an unpinned toolchain could silently change codegen/libm and
+# invalidate the parity guarantees the site's README documents. The Node
+# parity test is the correctness gate: it must pass before anything is
+# published.
+name: Deploy web GUI to GitHub Pages
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - "web/**"
+      - "r-package/rsymbolic2/src/**"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deployment at a time; let an in-flight deployment finish
+# rather than cancel it mid-publish.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Pinned to 6.0.2 (the version this project is developed/verified against,
+      # per web/README.md) -- never "latest". The official emsdk installer is
+      # used directly (no third-party setup action, per the dependency policy);
+      # emsdk_env.sh must be sourced in the same step as the build.
+      - name: Install emsdk 6.0.2 and build WebAssembly module
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git
+          ./emsdk/emsdk install 6.0.2
+          ./emsdk/emsdk activate 6.0.2
+          source ./emsdk/emsdk_env.sh
+          bash web/wasm/build.sh
+
+      # Correctness gate: recovery + determinism (and Python cross-check,
+      # best-effort -- it skips itself when the Python package isn't
+      # importable, which is expected in this CI environment). Node 20+ is
+      # preinstalled on ubuntu-latest; no npm install needed.
+      - name: Run parity test (correctness gate)
+        run: node web/wasm/test/parity_test.cjs
+
+      # Attempts to enable Pages for the repo automatically. If this fails on
+      # the first run, enable it manually once: Settings -> Pages -> Source:
+      # GitHub Actions.
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/app
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

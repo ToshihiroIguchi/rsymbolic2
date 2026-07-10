@@ -80,6 +80,17 @@ python -m http.server 8080      # or: npx serve .
 
 ## Deployment
 
-Deploy the contents of `web/app/` to any static host (e.g. GitHub Pages). No
+The site deploys to **GitHub Pages via GitHub Actions**
+(`.github/workflows/deploy-pages.yml`): on every push to `master` that touches the
+web subtree or the shared C++ core (and on manual `workflow_dispatch`), CI rebuilds
+the WASM module from source with the pinned Emscripten toolchain, runs the Node
+parity gate, and publishes `web/app/` to Pages. Building in CI (rather than
+deploying the committed `vendor/rsymbolic2.{js,wasm}`) guarantees the published
+binary matches the sources at that commit; with the same pinned toolchain the WASM
+output is bit-identical to the verified local build.
+
+One-time repository setting: **Settings → Pages → Build and deployment → Source =
+"GitHub Actions"** (the workflow also tries to enable this automatically). No
 cross-origin-isolation (COOP/COEP) headers are needed because the build is
-single-threaded. Uploads/deploys are done on a dedicated branch, never on `master`.
+single-threaded, so plain Pages hosting suffices; the same `web/app/` directory can
+also be copied to any other static host.
