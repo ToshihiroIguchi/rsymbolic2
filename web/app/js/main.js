@@ -96,12 +96,14 @@ function checkedOps(kind) {
 }
 
 function buildExamples() {
-  const sel = $("example-select");
+  const wrap = $("example-list");
   EXAMPLES.forEach((ex) => {
-    const o = document.createElement("option");
-    o.value = ex.id;
-    o.textContent = ex.label;
-    sel.appendChild(o);
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "btn small";
+    b.textContent = ex.label;
+    b.addEventListener("click", () => loadTable(ex.make()));
+    wrap.appendChild(b);
   });
 }
 
@@ -120,6 +122,8 @@ function loadTable(table) {
   renderDataSummary();
   renderPreview();
   buildTargetAndFeatures();
+  // Progressive disclosure: the Model card stays hidden until there is data to model.
+  document.body.classList.add("has-data");
   $("run-btn").disabled = false;
 }
 
@@ -238,6 +242,7 @@ function run() {
 
   $("run-btn").disabled = true;
   $("stop-btn").disabled = false;
+  document.body.classList.add("running"); // shows the header progress bar
   startTimer();
   setStatus("running…");
 
@@ -277,6 +282,7 @@ function onError(message) {
 
 function finishRun() {
   stopTimer();
+  document.body.classList.remove("running");
   $("run-btn").disabled = false;
   $("stop-btn").disabled = true;
 }
@@ -430,6 +436,49 @@ function wireExport() {
   });
 }
 
+// --- Column splitters -------------------------------------------------------------
+// Each `.gutter` sits in a dedicated grid track between two panes. Dragging it writes the
+// left pane's pixel width into the container's CSS variable (--col-config on .layout);
+// the right pane keeps its `1fr`/minmax track and absorbs the rest. Chart.js is
+// responsive, so the plots re-fit to their container automatically.
+function initSplitters() {
+  const VAR = { main: "--col-config" };
+  const MIN_LEFT = 240; // px; keep the left pane usable
+  const MIN_RIGHT = 320; // px; keep the right pane usable
+  document.querySelectorAll(".gutter").forEach((gutter) => {
+    const container = gutter.parentElement;
+    const cssVar = VAR[gutter.dataset.split];
+    const leftPane = gutter.previousElementSibling;
+    if (!cssVar || !leftPane) return;
+
+    let startX = 0;
+    let startW = 0;
+    const onMove = (e) => {
+      const max = container.clientWidth - MIN_RIGHT - gutter.offsetWidth;
+      const w = Math.max(MIN_LEFT, Math.min(startW + (e.clientX - startX), max));
+      container.style.setProperty(cssVar, `${w}px`);
+      // Switch this grid from its static default tracks to the var()-driven tracks. Doing it
+      // only on the first drag keeps the never-dragged layout free of any var()-in-grid usage.
+      container.classList.add("resized");
+    };
+    const onUp = (e) => {
+      gutter.classList.remove("dragging");
+      gutter.releasePointerCapture(e.pointerId);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    gutter.addEventListener("pointerdown", (e) => {
+      startX = e.clientX;
+      startW = leftPane.getBoundingClientRect().width;
+      gutter.classList.add("dragging");
+      gutter.setPointerCapture(e.pointerId);
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      e.preventDefault();
+    });
+  });
+}
+
 // --- Helpers ----------------------------------------------------------------------
 function setStatus(s) { $("status").textContent = s; }
 function metric(k, v) { return `<span class="k">${k}</span><span>${v}</span>`; }
@@ -449,8 +498,11 @@ function init() {
   buildOperatorChecks();
   buildExamples();
   applyPreset("balanced");
+  initSplitters();
 
-  $("preset-select").addEventListener("change", (e) => applyPreset(e.target.value));
+  document.querySelectorAll('input[name="preset"]').forEach((r) => {
+    r.addEventListener("change", (e) => { if (e.target.checked) applyPreset(e.target.value); });
+  });
   $("run-btn").addEventListener("click", run);
   $("stop-btn").addEventListener("click", stop);
   $("target-select").addEventListener("change", (e) => {
@@ -470,10 +522,33 @@ function init() {
     };
     reader.readAsText(file);
   });
-  $("example-select").addEventListener("change", (e) => {
-    const ex = EXAMPLES.find((x) => x.id === e.target.value);
-    if (ex) loadTable(ex.make());
+  // Drag & drop onto the data card's drop zone (clicking it opens #file-input via the label).
+  const zone = $("drop-zone");
+  ["dragenter", "dragover"].forEach((t) => zone.addEventListener(t, (e) => {
+    e.preventDefault();
+    zone.classList.add("dragover");
+  }));
+  ["dragleave", "drop"].forEach((t) => zone.addEventListener(t, (e) => {
+    e.preventDefault();
+    zone.classList.remove("dragover");
+  }));
+  zone.addEventListener("drop", (e) => {
+    const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try { loadTable(parseTable(reader.result)); }
+      catch (err) { setStatus("parse error: " + err.message); }
+    };
+    reader.readAsText(file);
   });
+
+  // Empty-state shortcut: one click loads the first example dataset and runs it.
+  $("placeholder-run-example").addEventListener("click", () => {
+    loadTable(EXAMPLES[0].make());
+    run();
+  });
+
   $("paste-load").addEventListener("click", () => {
     const text = $("paste-area").value;
     if (!text.trim()) return;

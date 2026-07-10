@@ -8,162 +8,185 @@
     <link rel="stylesheet" href="css/style.css" />
   </head>
   <body>
+    <!-- Pinned top bar: brand on the left, Run/Stop/status pushed to the right so they never
+         scroll away. An indeterminate progress bar hugs the header's bottom edge while a
+         search is running (toggled by body.running, see main.js). -->
     <header class="app-header">
       <div class="brand">
         <strong>rsymbolic2</strong>
         <span class="tag">Symbolic Regression · in-browser (WebAssembly)</span>
       </div>
-      <div class="note">
-        Runs entirely in your browser — the same C++ engine as the R and Python packages,
-        single-threaded here. For large or long searches, use the
-        <a href="https://github.com/ToshihiroIguchi/rsymbolic2" target="_blank" rel="noopener">R or Python package</a>.
+      <div class="header-actions">
+        <button id="run-btn" class="btn primary" disabled>Run</button>
+        <button id="stop-btn" class="btn" disabled>Stop</button>
+        <span id="status" class="status"></span>
       </div>
+      <div class="progress" aria-hidden="true"></div>
     </header>
 
-    <!-- Persistent run controls: stays pinned while the config column scrolls. -->
-    <div class="run-bar">
-      <button id="run-btn" class="btn primary" disabled>Run</button>
-      <button id="stop-btn" class="btn" disabled>Stop</button>
-      <span id="status" class="status"></span>
-    </div>
-
     <main class="layout">
-      <!-- LEFT: configuration -->
-      <section class="panel config" aria-label="Configuration">
-        <h2>1 · Data</h2>
-        <div class="row">
-          <label class="btn">
-            Load CSV<input id="file-input" type="file" accept=".csv,.txt,.tsv" hidden />
+      <!-- LEFT: sidebar, scrolls internally so the header/results stay put. -->
+      <aside class="sidebar panel-scroll" aria-label="Configuration">
+        <section class="card">
+          <h2>Data</h2>
+          <label id="drop-zone" class="drop-zone">
+            Drop a CSV here, or click to browse
+            <input id="file-input" type="file" accept=".csv,.txt,.tsv" hidden />
           </label>
-          <select id="example-select">
-            <option value="">Load example…</option>
-          </select>
-        </div>
-        <details class="paste">
-          <summary>Paste data</summary>
-          <textarea id="paste-area" rows="5" placeholder="x,y&#10;0,1&#10;1,3.5&#10;..."></textarea>
-          <button id="paste-load" class="btn small">Use pasted data</button>
-        </details>
-        <div id="data-summary" class="muted">No data loaded.</div>
-        <div id="data-preview" class="preview"></div>
+          <p class="muted small">or try an example:</p>
+          <div id="example-list" class="example-list"></div>
+          <details class="disclosure">
+            <summary>Paste data</summary>
+            <textarea id="paste-area" rows="5" placeholder="x,y&#10;0,1&#10;1,3.5&#10;..."></textarea>
+            <button id="paste-load" class="btn small">Use pasted data</button>
+          </details>
+          <div id="data-summary" class="muted small">No data loaded.</div>
+          <details class="disclosure">
+            <summary>Preview</summary>
+            <div id="data-preview" class="preview"></div>
+          </details>
+        </section>
 
-        <h2>2 · Target &amp; features</h2>
-        <div class="row">
+        <!-- Hidden until data is loaded (body:not(.has-data) .card-model in style.css). -->
+        <section class="card card-model">
+          <h2>Model</h2>
           <label>Target
             <select id="target-select"></select>
           </label>
-        </div>
-        <div id="feature-list" class="checkgrid"></div>
+          <div class="group-label">Features</div>
+          <div id="feature-list" class="checkgrid"></div>
+        </section>
 
-        <h2>3 · Operators</h2>
-        <fieldset>
-          <legend>Binary</legend>
-          <div id="binary-ops" class="checkgrid"></div>
-        </fieldset>
-        <fieldset>
-          <legend>Unary</legend>
-          <div id="unary-ops"></div>
-        </fieldset>
-
-        <h2>4 · Settings</h2>
-        <div class="row">
-          <label>Preset
-            <select id="preset-select">
-              <option value="quick">Quick (fast, in-browser)</option>
-              <option value="balanced" selected>Balanced</option>
-              <option value="full">Full PySR parity (heavy)</option>
-            </select>
-          </label>
-        </div>
-        <div class="grid2">
-          <label>Generations<input id="generations" type="number" min="1" /></label>
-          <label>Populations<input id="n_populations" type="number" min="1" /></label>
-          <label>Population size<input id="population_size" type="number" min="1" /></label>
-          <label>Max nodes<input id="max_nodes" type="number" min="1" value="30" /></label>
-          <label>Seed<input id="seed" type="number" min="0" value="1" /></label>
-          <label>Timeout (s, 0=off)<input id="timeout_seconds" type="number" min="0" value="0" /></label>
-        </div>
-
-        <details class="advanced">
-          <summary>Advanced settings</summary>
-          <div class="grid2">
-            <label>Tournament size<input id="tournament_size" type="number" min="1" value="15" /></label>
-            <label>Tournament p<input id="tournament_selection_p" type="number" step="0.001" value="0.982" /></label>
-            <label>Parsimony<input id="parsimony" type="number" step="0.0001" value="0" /></label>
-            <label>Adaptive parsimony<input id="adaptive_parsimony_scaling" type="number" step="1" value="1040" /></label>
-            <label>Optimize prob.<input id="optimize_probability" type="number" step="0.01" value="0.14" /></label>
-            <label>Crossover prob.<input id="crossover_probability" type="number" step="0.0001" value="0.0259" /></label>
-            <label>HOF migration frac.<input id="fraction_replaced_hof" type="number" step="0.0001" value="0.0614" /></label>
-            <label>Max nodes depth<input id="max_depth" type="number" min="1" value="30" /></label>
-            <label>Target loss<input id="target_loss" type="number" step="1e-10" value="1e-10" /></label>
-            <label>Max evals (0=off)<input id="max_evals" type="number" min="0" value="0" /></label>
-            <label>Warmup maxsize by<input id="warmup_maxsize_by" type="number" step="0.05" min="0" value="0" /></label>
+        <section class="card">
+          <h2>Search</h2>
+          <div class="segmented" role="radiogroup" aria-label="Preset">
+            <label><input type="radio" name="preset" value="quick" /><span>Quick</span></label>
+            <label><input type="radio" name="preset" value="balanced" checked /><span>Balanced</span></label>
+            <label><input type="radio" name="preset" value="full" /><span>Full</span></label>
           </div>
-        </details>
+          <p class="muted small">Quick: fast demo · Balanced: default · Full: PySR-parity budget (heavy)</p>
 
-        <details class="advanced">
-          <summary>Opt-in high-accuracy (diverges from PySR defaults)</summary>
-          <label class="check"><input id="linear_scaling" type="checkbox" /> Linear scaling (Keijzer 2003)</label>
-          <label class="check"><input id="eval_cache" type="checkbox" /> Duplicate-evaluation cache (speed only)</label>
-        </details>
-      </section>
+          <details class="disclosure">
+            <summary>Settings</summary>
+            <div class="grid2">
+              <label>Generations<input id="generations" type="number" min="1" /></label>
+              <label>Populations<input id="n_populations" type="number" min="1" /></label>
+              <label>Population size<input id="population_size" type="number" min="1" /></label>
+              <label>Max nodes<input id="max_nodes" type="number" min="1" value="30" /></label>
+              <label>Seed<input id="seed" type="number" min="0" value="1" /></label>
+              <label>Timeout (s, 0=off)<input id="timeout_seconds" type="number" min="0" value="0" /></label>
+            </div>
+          </details>
 
-      <!-- RIGHT: results + selected-equation detail, stacked. Hidden until the first run. -->
-      <div class="results-area" id="results-area">
-      <div class="panel placeholder" id="results-placeholder">
-        Run a search to see the Pareto front and the best equation.
-      </div>
+          <details class="disclosure">
+            <summary>Operators</summary>
+            <div class="group-label">Binary</div>
+            <div id="binary-ops" class="checkgrid"></div>
+            <div class="group-label">Unary</div>
+            <div id="unary-ops"></div>
+          </details>
 
-      <section class="panel results" aria-label="Results">
-        <div class="results-head">
-          <h2>Pareto front</h2>
-          <div class="results-head-controls">
-            <label class="inline-select"
-                   title="Which Pareto member is highlighted as recommended (★). Applies instantly, no re-run.&#10;best = highest score among equations within 1.5× of the lowest loss (PySR default)&#10;score = highest score overall&#10;accuracy = lowest loss">
-              recommend
-              <select id="model_selection">
-                <option value="best" selected>best</option>
-                <option value="accuracy">accuracy</option>
-                <option value="score">score</option>
-              </select>
-            </label>
-            <label class="check small"><input id="logloss" type="checkbox" checked /> log loss</label>
+          <details class="disclosure">
+            <summary>Advanced (PySR parity)</summary>
+            <div class="grid2">
+              <label>Tournament size<input id="tournament_size" type="number" min="1" value="15" /></label>
+              <label>Tournament p<input id="tournament_selection_p" type="number" step="0.001" value="0.982" /></label>
+              <label>Parsimony<input id="parsimony" type="number" step="0.0001" value="0" /></label>
+              <label>Adaptive parsimony<input id="adaptive_parsimony_scaling" type="number" step="1" value="1040" /></label>
+              <label>Optimize prob.<input id="optimize_probability" type="number" step="0.01" value="0.14" /></label>
+              <label>Crossover prob.<input id="crossover_probability" type="number" step="0.0001" value="0.0259" /></label>
+              <label>HOF migration frac.<input id="fraction_replaced_hof" type="number" step="0.0001" value="0.0614" /></label>
+              <label>Max nodes depth<input id="max_depth" type="number" min="1" value="30" /></label>
+              <label>Target loss<input id="target_loss" type="number" step="1e-10" value="1e-10" /></label>
+              <label>Max evals (0=off)<input id="max_evals" type="number" min="0" value="0" /></label>
+              <label>Warmup maxsize by<input id="warmup_maxsize_by" type="number" step="0.05" min="0" value="0" /></label>
+            </div>
+          </details>
+
+          <details class="disclosure">
+            <summary>High-accuracy opt-ins (diverge from PySR)</summary>
+            <label class="check"><input id="linear_scaling" type="checkbox" /> Linear scaling (Keijzer 2003)</label>
+            <label class="check"><input id="eval_cache" type="checkbox" /> Duplicate-evaluation cache (speed only)</label>
+          </details>
+        </section>
+
+        <p class="sidebar-note muted small">
+          Runs entirely in your browser — the same C++ engine as the R and Python packages,
+          single-threaded here. For large or long searches, use the
+          <a href="https://github.com/ToshihiroIguchi/rsymbolic2" target="_blank" rel="noopener">R or Python package</a>.
+        </p>
+      </aside>
+
+      <!-- Draggable splitter between the sidebar and the results pane. -->
+      <div class="gutter" data-split="main" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
+
+      <!-- RIGHT: results, a single scrollable column of cards. Hidden result cards until the
+           first run finishes (results-area.has-result, see style.css). -->
+      <section class="results" id="results-area" aria-label="Results">
+        <div class="card placeholder" id="results-placeholder">
+          <ol>
+            <li>Load data or pick an example</li>
+            <li>Press Run</li>
+            <li>Explore the Pareto front and export the equation</li>
+          </ol>
+          <button id="placeholder-run-example" class="btn primary">Try an example ▶</button>
+        </div>
+
+        <section class="card hero">
+          <h2>Result</h2>
+          <div id="eq-latex" class="eq-latex"></div>
+          <div class="eq-string">
+            <code id="eq-string"></code>
+            <button id="copy-expr" class="btn small">copy</button>
           </div>
+          <div id="eq-metrics" class="metrics chips"></div>
+          <div class="row wrap">
+            <button id="copy-latex" class="btn small">Copy LaTeX</button>
+            <button id="copy-python" class="btn small">Copy Python</button>
+            <button id="copy-r" class="btn small">Copy R</button>
+            <button id="download-csv" class="btn small">Download CSV</button>
+          </div>
+        </section>
+
+        <div class="charts-row">
+          <section class="card">
+            <div class="results-head">
+              <h2>Pareto front</h2>
+              <div class="results-head-controls">
+                <label class="inline-select"
+                       title="Which Pareto member is highlighted as recommended (★). Applies instantly, no re-run.&#10;best = highest score among equations within 1.5× of the lowest loss (PySR default)&#10;score = highest score overall&#10;accuracy = lowest loss">
+                  recommend
+                  <select id="model_selection">
+                    <option value="best" selected>best</option>
+                    <option value="accuracy">accuracy</option>
+                    <option value="score">score</option>
+                  </select>
+                </label>
+                <label class="check small"><input id="logloss" type="checkbox" checked /> log loss</label>
+              </div>
+            </div>
+            <div class="chart-box"><canvas id="pareto-canvas"></canvas></div>
+          </section>
+
+          <section class="card">
+            <h2>Fit</h2>
+            <div class="chart-box small"><canvas id="pred-canvas"></canvas></div>
+          </section>
         </div>
-        <div class="chart-box"><canvas id="pareto-canvas"></canvas></div>
-        <div class="table-wrap">
-          <table id="pareto-table">
-            <thead>
-              <tr><th>#</th><th>complexity</th><th>loss</th><th>score</th><th>R²</th><th>equation</th></tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-        <div id="eval-accounting" class="muted small"></div>
+
+        <section class="card">
+          <h2>All equations</h2>
+          <div class="table-wrap">
+            <table id="pareto-table">
+              <thead>
+                <tr><th>#</th><th>complexity</th><th>loss</th><th>score</th><th>R²</th><th>equation</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div id="eval-accounting" class="muted small"></div>
+        </section>
       </section>
-
-      <!-- Selected-equation detail: sits directly below the Pareto table. -->
-      <section class="panel detail" aria-label="Selected equation">
-        <h2>Selected equation</h2>
-        <div id="eq-latex" class="eq-latex">—</div>
-        <div class="eq-string">
-          <code id="eq-string"></code>
-          <button id="copy-expr" class="btn small">copy</button>
-        </div>
-        <div id="eq-metrics" class="metrics"></div>
-
-        <h2>Fit</h2>
-        <div class="chart-box small"><canvas id="pred-canvas"></canvas></div>
-
-        <h2>Export</h2>
-        <div class="row wrap">
-          <button id="copy-latex" class="btn small">Copy LaTeX</button>
-          <button id="copy-python" class="btn small">Copy Python</button>
-          <button id="copy-r" class="btn small">Copy R</button>
-          <button id="download-csv" class="btn small">Download CSV</button>
-        </div>
-      </section>
-      </div>
     </main>
 
     <!-- Vendored libraries (same-origin, no CDN) -->

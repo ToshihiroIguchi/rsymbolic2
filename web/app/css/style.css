@@ -13,9 +13,9 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
-/* App shell: a fixed-height column (header + run bar + body) so the page itself does not
-   scroll on desktop. The body region fills the rest and hosts its own internal scroll panes.
-   Narrow/short viewports release this to natural page scroll (see the media queries below). */
+/* App shell: a fixed-height column (header + main) so the page itself does not scroll on
+   desktop; the body region fills the rest and hosts its own internal scroll panes. Narrow or
+   short viewports release this to natural page scroll (see the media queries below). */
 body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color: var(--text);
@@ -24,78 +24,116 @@ body {
   display: flex; flex-direction: column; height: 100dvh; overflow: hidden;
 }
 
+/* Pinned top bar: brand grows, the run-control group is pushed to the right and stays visible
+   on every viewport (sticky). position:relative anchors the running-indicator progress bar to
+   the header's own bottom edge. */
 .app-header {
-  display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center;
   gap: 1rem; padding: 0.55rem 1rem; background: #0f172a; color: #e5e9f0;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 .app-header .brand strong { font-size: 1.15rem; }
 .app-header .tag { margin-left: 0.5rem; color: #9fb0c8; font-size: 0.8rem; }
-.app-header .note { font-size: 0.78rem; color: #b8c4d6; max-width: 46ch; }
 .app-header a { color: #9ec1ff; }
 
-.run-bar {
-  z-index: 5;
+.header-actions {
+  margin-left: auto; flex: none;
   display: flex; align-items: center; gap: 0.5rem;
-  padding: 0.5rem 1rem; background: var(--panel);
-  border-bottom: 1px solid var(--border);
+}
+.status { color: #b8c4d6; font-size: 0.82rem; }
+
+/* Indeterminate progress bar, shown only while a search is running (body.running). A single
+   bar sweeps left-to-right on loop via CSS keyframes; no JS animation involved. */
+.app-header .progress {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+  overflow: hidden; display: none;
+}
+body.running .app-header .progress { display: block; }
+.app-header .progress::before {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 40%;
+  background: var(--accent); animation: progress-sweep 1.1s ease-in-out infinite;
+}
+@keyframes progress-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
 }
 
-/* Body fills the remaining shell height; min-height:0 lets the two columns own their scroll. */
+/* Body fills the remaining shell height; min-height:0 lets sidebar/results own their own
+   scroll. The middle 6px track is the draggable gutter. The DEFAULT columns are a plain static
+   track (no var()) so the common, never-dragged view can't be affected by any var()-in-grid
+   parsing quirk; only after a drag does JS add `.resized`, switching the sidebar track to the
+   dragged pixel width held in --col-config. */
 .layout {
   flex: 1 1 auto; min-height: 0; overflow: hidden;
   display: grid;
-  grid-template-columns: minmax(300px, 1fr) minmax(420px, 1.6fr);
-  gap: 0.75rem; padding: 0.75rem; align-items: stretch;
+  grid-template-columns: minmax(280px, 24rem) 6px minmax(420px, 1fr);
+  gap: 0 0.75rem; padding: 0.75rem; align-items: stretch;
 }
-/* Config rail scrolls inside itself rather than lengthening the page. */
-.config { min-height: 0; overflow-y: auto; }
+.layout.resized { grid-template-columns: var(--col-config) 6px minmax(420px, 1fr); }
 
-/* Results region: a viewport-bounded 2-D grid so the Pareto explorer (left) and the selected-
-   equation detail (right) are co-visible; each pane scrolls internally. min-width/height:0 keep
-   the inner tables/charts from forcing the page to scroll. */
-.results-area {
-  min-height: 0; min-width: 0;
-  display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 0.75rem;
+.sidebar, .results { min-height: 0; min-width: 0; overflow-y: auto; }
+/* Sidebar cards stack with a small consistent gap; footer note sits below them. */
+.sidebar { display: flex; flex-direction: column; gap: 0.75rem; }
+.sidebar-note { margin: 0; }
+/* Results is a single scrollable column of cards. */
+.results { display: flex; flex-direction: column; gap: 0.75rem; }
+/* Never let the flex column squash a card to fit the pane; overflow should scroll instead. */
+.sidebar > *, .results > * { flex: none; }
+
+/* Draggable column splitter. Sits in a dedicated 6px grid track between the two panes. */
+.gutter {
+  width: 6px; align-self: stretch; border-radius: 3px;
+  background: transparent; cursor: col-resize;
+  user-select: none; touch-action: none;
 }
-.results-area > .results,
-.results-area > .detail { min-height: 0; overflow-y: auto; }
-.placeholder { color: var(--muted); text-align: center; padding: 2.5rem 1rem; }
-.results-area > .placeholder { grid-column: 1 / -1; }
-.results-area:not(.has-result) .results,
-.results-area:not(.has-result) .detail { display: none; }
-.results-area.has-result .placeholder { display: none; }
+.gutter:hover { background: var(--border); }
+.gutter.dragging { background: var(--accent); }
 
 /* Fallbacks: on narrow OR short viewports the bounded shell would cramp, so release it to
-   natural page scroll and re-pin the run bar. */
+   natural page scroll. The header stays sticky (its own rule), keeping Run/Stop visible. The
+   grid collapses to one column, so the drag gutter is removed there. */
 @media (max-width: 1100px) {
   body { height: auto; overflow: visible; }
-  .run-bar { position: sticky; top: 0; }
-  .layout { grid-template-columns: 1fr; overflow: visible; }
-  .config { max-height: none; overflow: visible; }
-  .results-area { grid-template-columns: 1fr; }
-  .results-area > .results,
-  .results-area > .detail { overflow: visible; }
+  .app-header { flex-wrap: wrap; }
+  /* Include the .resized variant so a prior drag can't out-specify this single-column collapse. */
+  .layout, .layout.resized { grid-template-columns: 1fr; overflow: visible; }
+  .sidebar, .results { overflow: visible; max-height: none; }
+  .gutter { display: none; }
+  .charts-row { grid-template-columns: 1fr; }
 }
 @media (max-height: 640px) {
   body { height: auto; overflow: visible; }
-  .run-bar { position: sticky; top: 0; }
   .layout { overflow: visible; }
-  .config { max-height: none; overflow: visible; }
-  .results-area > .results,
-  .results-area > .detail { overflow: visible; }
+  .sidebar, .results { overflow: visible; max-height: none; }
 }
 
-.panel {
-  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
-  padding: 0.85rem; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+/* Cards: the common container for every sidebar/results section. */
+.card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 0.9rem 1rem; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
 }
-.panel h2 {
+.card h2 {
   font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.04em;
-  color: var(--muted); margin: 1rem 0 0.4rem; border-bottom: 1px solid var(--border);
+  color: var(--muted); margin: 0 0 0.5rem; border-bottom: 1px solid var(--border);
   padding-bottom: 0.25rem;
 }
-.panel h2:first-child { margin-top: 0; }
+/* Model card is only meaningful once data is loaded. */
+body:not(.has-data) .card-model { display: none; }
+
+.group-label {
+  display: block; font-size: 0.72rem; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.03em; margin: 0.5rem 0 0.15rem;
+}
+.op-group { margin-bottom: 0.4rem; }
+.op-group > .op-group-label {
+  display: block; font-size: 0.72rem; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.03em; margin: 0.25rem 0 0.15rem;
+}
+
+/* <details> disclosures: no nested boxes/borders, just an accent summary label. */
+details.disclosure { margin: 0.5rem 0; }
+details.disclosure summary { cursor: pointer; color: var(--accent); font-size: 0.82rem; }
 
 label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 0.15rem; }
 input[type="number"], input[type="text"], select, textarea {
@@ -111,8 +149,35 @@ textarea { resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospa
 .check { display: flex; align-items: center; gap: 0.35rem; color: var(--text); }
 .check input { width: auto; }
 .check.small { font-size: 0.78rem; }
-fieldset { border: 1px solid var(--border); border-radius: 6px; margin: 0 0 0.5rem; padding: 0.4rem 0.6rem; }
-legend { font-size: 0.75rem; color: var(--muted); padding: 0 0.3rem; }
+
+/* Drop zone for CSV files: dashed border, centered muted prompt, accent highlight on hover
+   or while a file is being dragged over it (JS toggles .dragover). */
+.drop-zone {
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  border: 2px dashed var(--border); border-radius: 8px; padding: 1.1rem 0.8rem;
+  color: var(--muted); font-size: 0.85rem; cursor: pointer; margin-bottom: 0.5rem;
+}
+.drop-zone:hover { border-color: var(--accent); }
+.drop-zone.dragover { border-color: var(--accent); background: var(--mark); }
+
+/* Example dataset buttons: a wrapping row of small pills. */
+.example-list { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.5rem; }
+
+/* Segmented preset control: one joined pill group, hidden radios, accent-filled when checked. */
+.segmented {
+  display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+}
+.segmented label {
+  flex: 1 1 0; margin: 0; display: flex; position: relative;
+}
+.segmented input { position: absolute; opacity: 0; pointer-events: none; }
+.segmented span {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  padding: 0.35rem 0.4rem; font-size: 0.82rem; color: var(--muted); cursor: pointer;
+  text-align: center;
+}
+.segmented label:not(:first-child) span { border-left: 1px solid var(--border); }
+.segmented input:checked + span { background: var(--accent); color: var(--accent-fg); }
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -131,26 +196,21 @@ legend { font-size: 0.75rem; color: var(--muted); padding: 0 0.3rem; }
 .preview { overflow: auto; max-height: 140px; margin-top: 0.4rem; }
 .preview table { border-collapse: collapse; font-size: 0.75rem; }
 .preview th, .preview td { border: 1px solid var(--border); padding: 0.12rem 0.35rem; text-align: right; }
-.paste summary { cursor: pointer; color: var(--accent); font-size: 0.82rem; margin: 0.3rem 0; }
 
-.advanced summary, details summary { cursor: pointer; color: var(--accent); font-size: 0.82rem; margin: 0.3rem 0; }
-
-.status { font-size: 0.82rem; color: var(--muted); }
-
-.op-group { margin-bottom: 0.4rem; }
-.op-group > .op-group-label {
-  display: block; font-size: 0.72rem; color: var(--muted);
-  text-transform: uppercase; letter-spacing: 0.03em; margin: 0.25rem 0 0.15rem;
-}
-
-.results-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.results-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.5rem; }
+.results-head h2 { margin: 0; border-bottom: none; padding-bottom: 0; }
 .results-head-controls { display: flex; align-items: center; gap: 0.8rem; }
 .inline-select { display: flex; align-items: center; gap: 0.3rem; margin: 0; font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
 .inline-select select { width: auto; padding: 0.15rem 0.3rem; font-size: 0.78rem; }
-.chart-box { position: relative; height: 300px; margin-bottom: 0.6rem; }
+
+/* Pareto / Fit charts, side by side on wide viewports, one column below the media query above. */
+.charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+/* Let each chart card shrink below its canvas width so the pane never scrolls sideways. */
+.charts-row > .card { min-width: 0; }
+.chart-box { position: relative; height: 300px; }
 .chart-box.small { height: 240px; }
 
-.table-wrap { overflow: auto; max-height: 260px; border: 1px solid var(--border); border-radius: 6px; }
+.table-wrap { overflow: auto; max-height: 320px; border: 1px solid var(--border); border-radius: 6px; }
 #pareto-table { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
 #pareto-table th, #pareto-table td { padding: 0.25rem 0.5rem; border-bottom: 1px solid var(--border); text-align: right; }
 #pareto-table th:last-child, #pareto-table td:last-child { text-align: left; font-family: ui-monospace, Menlo, Consolas, monospace; }
@@ -159,8 +219,29 @@ legend { font-size: 0.75rem; color: var(--muted); padding: 0 0.3rem; }
 #pareto-table tbody tr.selected { background: var(--mark); }
 #pareto-table tbody tr.recommended td:first-child::before { content: "★ "; color: #2ca02c; }
 
-.eq-latex { min-height: 2.4rem; padding: 0.5rem; background: #fbfcfe; border: 1px solid var(--border); border-radius: 6px; overflow-x: auto; }
+/* Hero "Result" card: the selected equation rendered large via KaTeX. */
+.eq-latex {
+  min-height: 2.6rem; padding: 0.7rem 0.8rem; background: #fbfcfe;
+  border: 1px solid var(--border); border-radius: 6px; overflow-x: auto;
+}
+.eq-latex .katex { font-size: 1.35em; }
 .eq-string { display: flex; gap: 0.4rem; align-items: center; margin: 0.5rem 0; }
 .eq-string code { flex: 1; overflow-x: auto; white-space: nowrap; background: #f4f5f7; padding: 0.3rem 0.4rem; border-radius: 5px; font-size: 0.8rem; }
-.metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 0.25rem 0.6rem; font-size: 0.82rem; }
-.metrics .k { color: var(--muted); }
+/* Metric chips: JS emits flat k/value span pairs; a wrapping flex row reads them as
+   "loss 1.2e-8   complexity 7   ...". */
+.metrics.chips { display: flex; flex-wrap: wrap; column-gap: 1.1rem; row-gap: 0.3rem; font-size: 0.82rem; }
+.metrics .k { color: var(--muted); margin-right: 0.3rem; }
+
+/* Empty-state placeholder shown until the first run produces a result. */
+.placeholder {
+  color: var(--muted); text-align: center; margin: auto; padding: 2.5rem 1.5rem;
+  max-width: 34rem;
+}
+.placeholder ol { text-align: left; display: inline-block; margin: 0 0 1rem; padding-left: 1.2rem; }
+/* The call-to-action sits on its own centered line below the steps, not inline after them. */
+.placeholder .btn { display: flex; margin: 0.25rem auto 0; }
+
+/* Visibility: only the placeholder is shown until a run completes, then JS adds .has-result. */
+#results-area:not(.has-result) .card:not(.placeholder) { display: none; }
+#results-area:not(.has-result) .charts-row { display: none; }
+#results-area.has-result .placeholder { display: none; }
