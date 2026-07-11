@@ -10,6 +10,8 @@
   --accent: #2563eb;
   --accent-fg: #ffffff;
   --mark: #e8f0ff;
+  --danger: #dc2626;
+  --danger-hover: #b91c1c;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
@@ -41,6 +43,9 @@ body {
   margin-left: auto; flex: none;
   display: flex; align-items: center; gap: 0.5rem;
 }
+/* The single Run/Stop toggle is the page's primary action: give it more presence than the
+   default .btn padding without affecting .btn.small elsewhere. */
+.header-actions .btn.primary { padding: 0.45rem 1.1rem; font-weight: 600; }
 .status { color: #b8c4d6; font-size: 0.82rem; }
 
 /* Indeterminate progress bar, shown only while a search is running (body.running). A single
@@ -191,6 +196,8 @@ textarea { resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospa
 }
 .btn:hover { background: #f0f2f5; }
 .btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.btn.primary.danger { background: var(--danger); border-color: var(--danger); }
+.btn.primary.danger:hover { background: var(--danger-hover); border-color: var(--danger-hover); }
 .btn.primary:disabled { background: #9db4e8; border-color: #9db4e8; cursor: not-allowed; }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .btn.small { padding: 0.2rem 0.5rem; font-size: 0.8rem; }

@@ -259,8 +259,7 @@ function run() {
   const config = readConfig();
   state.config = config;
 
-  $("run-btn").disabled = true;
-  $("stop-btn").disabled = false;
+  setRunButton(true);
   document.body.classList.add("running"); // shows the header progress bar
   startTimer();
   setStatus("running…");
@@ -302,8 +301,16 @@ function onError(message) {
 function finishRun() {
   stopTimer();
   document.body.classList.remove("running");
-  $("run-btn").disabled = false;
-  $("stop-btn").disabled = true;
+  setRunButton(false);
+}
+
+// One morphing header button: "▶ Run" when idle, "■ Stop" (danger red) while a search is
+// running. All three end-of-run paths (stop, result, error) restore it via finishRun().
+function setRunButton(running) {
+  const btn = $("run-btn");
+  btn.textContent = running ? "■ Stop" : "▶ Run";
+  btn.classList.toggle("danger", running);
+  btn.disabled = !running && !state.table;
 }
 
 function startTimer() {
@@ -515,8 +522,16 @@ function init() {
   document.querySelectorAll('input[name="preset"]').forEach((r) => {
     r.addEventListener("change", (e) => { if (e.target.checked) applyPreset(e.target.value); });
   });
-  $("run-btn").addEventListener("click", run);
-  $("stop-btn").addEventListener("click", stop);
+  $("run-btn").addEventListener("click", () => {
+    if (document.body.classList.contains("running")) stop();
+    else run();
+  });
+  document.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      if (state.table && !document.body.classList.contains("running")) run();
+    }
+  });
   $("target-select").addEventListener("change", (e) => {
     state.targetIndex = parseInt(e.target.value, 10);
     renderFeatureList();
