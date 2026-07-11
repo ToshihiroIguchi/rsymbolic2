@@ -108,7 +108,8 @@ export function drawPareto(canvas, front, { bestIndex, logLoss, onSelect, select
 // Draw the selected equation's fit. For a single feature (ncol === 1) overlay the fitted
 // curve on the data scatter (sorted by x). For multiple features, show predicted-vs-actual.
 // `X` = array of row arrays, `y` = array, `yhat` = Float64Array/array of predictions.
-export function drawPrediction(canvas, X, y, yhat) {
+// `xLabel`/`yLabel` are the real dataset column names for the axis titles.
+export function drawPrediction(canvas, X, y, yhat, { xLabel = "x0", yLabel = "y" } = {}) {
   if (predChart) predChart.destroy();
   const theme = themeColors();
   const legend = { display: true, labels: { color: theme.text } };
@@ -137,8 +138,8 @@ export function drawPrediction(canvas, X, y, yhat) {
         responsive: true,
         maintainAspectRatio: false,
         scales: {
-          x: themedScale(theme, "x0"),
-          y: themedScale(theme, "y"),
+          x: themedScale(theme, xLabel),
+          y: themedScale(theme, yLabel),
         },
         plugins: { legend },
       },
@@ -169,8 +170,8 @@ export function drawPrediction(canvas, X, y, yhat) {
         responsive: true,
         maintainAspectRatio: false,
         scales: {
-          x: themedScale(theme, "actual y"),
-          y: themedScale(theme, "predicted y"),
+          x: themedScale(theme, `actual ${yLabel}`),
+          y: themedScale(theme, `predicted ${yLabel}`),
         },
         plugins: { legend },
       },

@@ -48,6 +48,7 @@ const state = {
   X: null,
   y: null,
   featureNames: null,
+  targetName: null,
   selectedIndex: null,
   worker: null,
   timer: null,
@@ -297,6 +298,9 @@ function run() {
   state.X = X;
   state.y = y;
   state.featureNames = state.featureIndices.map((j) => state.table.columns[j]);
+  // Snapshot the target name with the matrices: the target <select> can change after the
+  // run, but the displayed result must keep the names it was fitted with.
+  state.targetName = state.table.columns[state.targetIndex];
   const config = readConfig();
   state.config = config;
 
@@ -422,7 +426,7 @@ function renderTable(res, front) {
     tr.innerHTML =
       `<td>${i}</td><td>${front.complexity[i]}</td><td>${fmt(front.loss[i])}</td>` +
       `<td>${fmt(front.score[i])}</td><td>${front.r2[i] == null ? "—" : fmt(front.r2[i])}</td>` +
-      `<td>${esc(front.expression[i])}</td>`;
+      `<td title="${esc(front.expression[i])}">${esc(front.expression[i])}</td>`;
     tr.addEventListener("click", () => selectEquation(i));
     tbody.appendChild(tr);
   }
@@ -459,10 +463,17 @@ function selectEquation(i) {
     metric("score", fmt(front.score[i])) +
     metric("R²", r2 == null ? "—" : fmt(r2));
 
-  // Prediction plot.
+  // Prediction plot, labelled with the real column names captured at run time.
+  const oneVar = state.X[0].length === 1;
+  $("fit-title").textContent = oneVar
+    ? `Fit: ${state.targetName} vs ${state.featureNames[0]}`
+    : "Predicted vs actual";
   try {
     const yhat = predict(front.expression[i], state.X);
-    drawPrediction($("pred-canvas"), state.X, state.y, yhat);
+    drawPrediction($("pred-canvas"), state.X, state.y, yhat, {
+      xLabel: state.featureNames[0],
+      yLabel: state.targetName,
+    });
   } catch (e) {
     destroyPlotsPred();
   }

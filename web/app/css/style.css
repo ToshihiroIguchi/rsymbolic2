@@ -297,6 +297,16 @@ dialog.modal::backdrop { background: rgba(0, 0, 0, 0.45); }
 .inline-select { display: flex; align-items: center; gap: 0.3rem; margin: 0; font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
 .inline-select select { width: auto; padding: 0.15rem 0.3rem; font-size: 0.78rem; }
 
+/* Static legend for the Pareto point colors; driven by the same --chart-* vars the chart
+   palette reads, so it stays in sync across theme switches with no JS. */
+.pareto-legend { display: flex; flex-wrap: wrap; gap: 0.25rem 0.9rem; align-items: center; margin-bottom: 0.25rem; }
+.pareto-legend .dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 0.3rem;
+}
+.pareto-legend .dot-selected { background: var(--chart-selected); }
+.pareto-legend .dot-recommended { background: var(--chart-recommended); }
+.pareto-legend .dot-front { background: var(--chart-data); }
+
 /* Pareto / Fit charts, side by side on wide viewports, one column below the media query above. */
 .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
 /* Let each chart card shrink below its canvas width so the pane never scrolls sideways. */
@@ -308,6 +318,9 @@ dialog.modal::backdrop { background: rgba(0, 0, 0, 0.45); }
 #pareto-table { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
 #pareto-table th, #pareto-table td { padding: 0.25rem 0.5rem; border-bottom: 1px solid var(--border); text-align: right; }
 #pareto-table th:last-child, #pareto-table td:last-child { text-align: left; font-family: ui-monospace, Menlo, Consolas, monospace; }
+/* Long expressions truncate with an ellipsis (full text in the title tooltip and, on row
+   click, in the hero card) instead of forcing the table to scroll sideways. */
+#pareto-table td:last-child { max-width: 22rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #pareto-table tbody tr { cursor: pointer; }
 #pareto-table tbody tr:hover { background: var(--table-hover); }
 #pareto-table tbody tr.selected { background: var(--mark); }
