@@ -1,7 +1,13 @@
 /* SPDX-License-Identifier: Apache-2.0
    Part of rsymbolic2, Copyright 2026 Toshihiro Iguchi. */
 
+/* Theme palettes. Every color in the app (including the Chart.js series/axis colors, read
+   from the --chart-* vars by plots.js at draw time) comes from these variables. The active
+   theme is the data-theme attribute on <html>, set before first paint by the inline script
+   in index.html (localStorage override, else prefers-color-scheme) and toggled from the
+   header button. */
 :root {
+  color-scheme: light; /* native controls/scrollbars follow the app theme, not the OS */
   --bg: #f6f7f9;
   --panel: #ffffff;
   --border: #d9dde3;
@@ -12,6 +18,57 @@
   --mark: #e8f0ff;
   --danger: #dc2626;
   --danger-hover: #b91c1c;
+  --header-bg: #0f172a;
+  --header-fg: #e5e9f0;
+  --header-tag: #9fb0c8;
+  --header-link: #9ec1ff;
+  --status-fg: #b8c4d6;
+  --input-bg: #ffffff;
+  --hover: #f0f2f5;
+  --table-hover: #f4f7ff;
+  --code-bg: #f4f5f7;
+  --eq-bg: #fbfcfe;
+  --disabled-bg: #9db4e8;
+  --good: #2ca02c;
+  --chart-grid: rgba(0, 0, 0, 0.1);
+  --chart-text: #4b5563;
+  --chart-selected: #d62728;
+  --chart-recommended: #2ca02c;
+  --chart-data: #1f77b4;
+  --chart-line: rgba(120, 120, 120, 0.6);
+  --chart-refline: #888888;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0b1220;
+  --panel: #111a2c;
+  --border: #263349;
+  --text: #e5e9f0;
+  --muted: #93a0b5;
+  --accent: #4f8dff;
+  --accent-fg: #08111f;
+  --mark: #1a2b47;
+  --danger: #ef4444;
+  --danger-hover: #dc2626;
+  --header-bg: #060c17;
+  --header-fg: #e5e9f0;
+  --header-tag: #7f90ac;
+  --header-link: #a9c8ff;
+  --status-fg: #93a0b5;
+  --input-bg: #16233a;
+  --hover: #1a2740;
+  --table-hover: #16233a;
+  --code-bg: #17233a;
+  --eq-bg: #0e1729;
+  --disabled-bg: #2a3550;
+  --good: #4ade80;
+  --chart-grid: rgba(255, 255, 255, 0.09);
+  --chart-text: #93a0b5;
+  --chart-selected: #f87171;
+  --chart-recommended: #4ade80;
+  --chart-data: #6fa8ff;
+  --chart-line: rgba(150, 160, 180, 0.5);
+  --chart-refline: #6b7688;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
@@ -32,12 +89,12 @@ body {
 .app-header {
   position: sticky; top: 0; z-index: 10;
   display: flex; align-items: center;
-  gap: 1rem; padding: 0.55rem 1rem; background: #0f172a; color: #e5e9f0;
+  gap: 1rem; padding: 0.55rem 1rem; background: var(--header-bg); color: var(--header-fg);
   flex-wrap: nowrap;
 }
 .app-header .brand strong { font-size: 1.15rem; }
-.app-header .tag { margin-left: 0.5rem; color: #9fb0c8; font-size: 0.8rem; }
-.app-header a { color: #9ec1ff; }
+.app-header .tag { margin-left: 0.5rem; color: var(--header-tag); font-size: 0.8rem; }
+.app-header a { color: var(--header-link); }
 
 .header-actions {
   margin-left: auto; flex: none;
@@ -46,7 +103,11 @@ body {
 /* The single Run/Stop toggle is the page's primary action: give it more presence than the
    default .btn padding without affecting .btn.small elsewhere. */
 .header-actions .btn.primary { padding: 0.45rem 1.1rem; font-weight: 600; }
-.status { color: #b8c4d6; font-size: 0.82rem; }
+/* Theme toggle lives on the always-dark header bar, so it uses white-alpha chrome in both
+   themes instead of the panel button colors. */
+.theme-toggle { background: transparent; color: var(--header-fg); border-color: rgba(255, 255, 255, 0.25); }
+.theme-toggle:hover { background: rgba(255, 255, 255, 0.12); }
+.status { color: var(--status-fg); font-size: 0.82rem; }
 
 /* Indeterminate progress bar, shown only while a search is running (body.running). A single
    bar sweeps left-to-right on loop via CSS keyframes; no JS animation involved. */
@@ -143,7 +204,7 @@ details.disclosure summary { cursor: pointer; color: var(--accent); font-size: 0
 label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 0.15rem; }
 input[type="number"], input[type="text"], select, textarea {
   width: 100%; padding: 0.3rem 0.4rem; border: 1px solid var(--border);
-  border-radius: 5px; font: inherit; background: #fff; color: var(--text);
+  border-radius: 5px; font: inherit; background: var(--input-bg); color: var(--text);
 }
 textarea { resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospace; }
 
@@ -192,13 +253,13 @@ textarea { resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospa
 .btn {
   display: inline-flex; align-items: center; justify-content: center;
   padding: 0.35rem 0.7rem; border: 1px solid var(--border); border-radius: 6px;
-  background: #fff; color: var(--text); cursor: pointer; font: inherit; white-space: nowrap;
+  background: var(--input-bg); color: var(--text); cursor: pointer; font: inherit; white-space: nowrap;
 }
-.btn:hover { background: #f0f2f5; }
+.btn:hover { background: var(--hover); }
 .btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 .btn.primary.danger { background: var(--danger); border-color: var(--danger); }
 .btn.primary.danger:hover { background: var(--danger-hover); border-color: var(--danger-hover); }
-.btn.primary:disabled { background: #9db4e8; border-color: #9db4e8; cursor: not-allowed; }
+.btn.primary:disabled { background: var(--disabled-bg); border-color: var(--disabled-bg); cursor: not-allowed; }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .btn.small { padding: 0.2rem 0.5rem; font-size: 0.8rem; }
 .btn input { display: none; }
@@ -248,18 +309,18 @@ dialog.modal::backdrop { background: rgba(0, 0, 0, 0.45); }
 #pareto-table th, #pareto-table td { padding: 0.25rem 0.5rem; border-bottom: 1px solid var(--border); text-align: right; }
 #pareto-table th:last-child, #pareto-table td:last-child { text-align: left; font-family: ui-monospace, Menlo, Consolas, monospace; }
 #pareto-table tbody tr { cursor: pointer; }
-#pareto-table tbody tr:hover { background: #f4f7ff; }
+#pareto-table tbody tr:hover { background: var(--table-hover); }
 #pareto-table tbody tr.selected { background: var(--mark); }
-#pareto-table tbody tr.recommended td:first-child::before { content: "★ "; color: #2ca02c; }
+#pareto-table tbody tr.recommended td:first-child::before { content: "★ "; color: var(--good); }
 
 /* Hero "Result" card: the selected equation rendered large via KaTeX. */
 .eq-latex {
-  min-height: 2.6rem; padding: 0.7rem 0.8rem; background: #fbfcfe;
+  min-height: 2.6rem; padding: 0.7rem 0.8rem; background: var(--eq-bg);
   border: 1px solid var(--border); border-radius: 6px; overflow-x: auto;
 }
 .eq-latex .katex { font-size: 1.35em; }
 .eq-string { display: flex; gap: 0.4rem; align-items: center; margin: 0.5rem 0; }
-.eq-string code { flex: 1; overflow-x: auto; white-space: nowrap; background: #f4f5f7; padding: 0.3rem 0.4rem; border-radius: 5px; font-size: 0.8rem; }
+.eq-string code { flex: 1; overflow-x: auto; white-space: nowrap; background: var(--code-bg); padding: 0.3rem 0.4rem; border-radius: 5px; font-size: 0.8rem; }
 /* Metric chips: JS emits flat k/value span pairs; a wrapping flex row reads them as
    "loss 1.2e-8   complexity 7   ...". */
 .metrics.chips { display: flex; flex-wrap: wrap; column-gap: 1.1rem; row-gap: 0.3rem; font-size: 0.82rem; }

@@ -54,6 +54,27 @@ const state = {
   t0: 0,
 };
 
+// --- Theme ------------------------------------------------------------------------
+// The <head> inline script already resolved data-theme before first paint; here we only
+// handle the toggle. Charts read their colors from CSS vars at draw time (plots.js
+// themeColors), so a toggle just redraws them.
+function toggleTheme() {
+  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("theme", next); } catch (e) { /* private mode etc. */ }
+  updateThemeToggleIcon();
+  redrawCharts();
+}
+function updateThemeToggleIcon() {
+  const dark = document.documentElement.dataset.theme === "dark";
+  $("theme-toggle").textContent = dark ? "☀" : "🌙";
+}
+function redrawCharts() {
+  if (!state.result) return;
+  drawParetoChart();
+  if (state.selectedIndex != null) selectEquation(state.selectedIndex);
+}
+
 // --- Setup static controls --------------------------------------------------------
 function buildOperatorChecks() {
   const bwrap = $("binary-ops");
@@ -534,6 +555,8 @@ function esc(s) {
 
 // --- Event wiring -----------------------------------------------------------------
 function init() {
+  updateThemeToggleIcon();
+  $("theme-toggle").addEventListener("click", toggleTheme);
   buildOperatorChecks();
   buildExamples();
   applyPreset("balanced");
