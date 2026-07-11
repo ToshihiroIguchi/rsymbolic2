@@ -209,6 +209,27 @@ textarea { resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospa
 .preview table { border-collapse: collapse; font-size: 0.75rem; }
 .preview th, .preview td { border: 1px solid var(--border); padding: 0.12rem 0.35rem; text-align: right; }
 
+/* Modal dialog (native <dialog>): the app's one reusable modal pattern, used by the
+   full-data preview. The element's own padding is zeroed so head/body control spacing. */
+dialog.modal {
+  border: 1px solid var(--border); border-radius: 10px; padding: 0;
+  color: var(--text); background: var(--panel);
+  max-width: min(90vw, 60rem); max-height: 80vh;
+}
+dialog.modal::backdrop { background: rgba(0, 0, 0, 0.45); }
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 0.7rem 1rem; border-bottom: 1px solid var(--border);
+}
+.modal-head h2 { margin: 0; font-size: 0.95rem; }
+.modal-body { padding: 0.8rem 1rem; overflow: auto; max-height: calc(80vh - 3.2rem); }
+.preview-full { margin-top: 0.4rem; }
+.preview-full table { border-collapse: collapse; font-size: 0.8rem; width: 100%; }
+.preview-full thead th { position: sticky; top: 0; background: var(--panel); }
+.preview-full th, .preview-full td {
+  border: 1px solid var(--border); padding: 0.2rem 0.5rem; text-align: right;
+}
+
 .results-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.5rem; }
 .results-head h2 { margin: 0; border-bottom: none; padding-bottom: 0; }
 .results-head-controls { display: flex; align-items: center; gap: 0.8rem; }

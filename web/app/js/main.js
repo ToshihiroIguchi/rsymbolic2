@@ -151,6 +151,26 @@ function renderDataSummary() {
   $("data-summary").textContent = `${rows.length} rows × ${columns.length} columns`;
 }
 
+// Full-data view in a modal <dialog>. Rendering is capped so a huge CSV cannot lock up the
+// UI building millions of DOM cells; the note says when rows are omitted.
+const PREVIEW_ROW_CAP = 2000;
+function openPreviewDialog() {
+  if (!state.table) return;
+  const { columns, rows } = state.table;
+  const cap = Math.min(rows.length, PREVIEW_ROW_CAP);
+  const table = $("preview-full-table");
+  table.querySelector("thead").innerHTML =
+    "<tr>" + columns.map((c) => `<th>${esc(c)}</th>`).join("") + "</tr>";
+  let html = "";
+  for (let i = 0; i < cap; i++) {
+    html += "<tr>" + rows[i].map((v) => `<td>${esc(v)}</td>`).join("") + "</tr>";
+  }
+  table.querySelector("tbody").innerHTML = html;
+  $("preview-note").textContent =
+    rows.length > cap ? `Showing first ${cap} of ${rows.length} rows.` : `${rows.length} rows.`;
+  $("preview-dialog").showModal();
+}
+
 function renderPreview() {
   const { columns, rows } = state.table;
   const max = Math.min(rows.length, 6);
@@ -574,6 +594,13 @@ function init() {
   $("placeholder-run-example").addEventListener("click", () => {
     loadTable(EXAMPLES[0].make());
     run();
+  });
+
+  $("preview-all-btn").addEventListener("click", openPreviewDialog);
+  $("preview-close").addEventListener("click", () => $("preview-dialog").close());
+  // Backdrop click closes: only the <dialog> element itself is hit outside the modal box.
+  $("preview-dialog").addEventListener("click", (e) => {
+    if (e.target === $("preview-dialog")) $("preview-dialog").close();
   });
 
   $("paste-load").addEventListener("click", () => {

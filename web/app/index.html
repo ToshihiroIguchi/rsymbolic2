@@ -46,6 +46,7 @@
           <details class="disclosure">
             <summary>Preview</summary>
             <div id="data-preview" class="preview"></div>
+            <button id="preview-all-btn" class="btn small" type="button">View all rows</button>
           </details>
         </section>
 
@@ -190,6 +191,25 @@
         </section>
       </section>
     </main>
+
+    <!-- Full-data preview. A native <dialog> (top layer, Esc closes it natively); read-only
+         by design — manual cell editing was considered and rejected, the paste-area covers
+         hand-entered data without a grid editor's validation/sync complexity. -->
+    <dialog id="preview-dialog" class="modal">
+      <div class="modal-head">
+        <h2>Data preview</h2>
+        <button id="preview-close" class="btn small" type="button" aria-label="Close">&#10005;</button>
+      </div>
+      <div class="modal-body">
+        <div id="preview-note" class="muted small"></div>
+        <div class="preview-full">
+          <table id="preview-full-table">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </dialog>
 
     <!-- Vendored libraries (same-origin, no CDN) -->
     <script src="vendor/katex.min.js"></script>
