@@ -97,15 +97,33 @@ function checkedOps(kind) {
 }
 
 function buildExamples() {
-  const wrap = $("example-list");
-  EXAMPLES.forEach((ex) => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = "btn small";
-    b.textContent = ex.label;
-    b.addEventListener("click", () => loadTable(ex.make()));
-    wrap.appendChild(b);
+  const sel = $("example-select");
+  EXAMPLES.forEach((ex, i) => {
+    const o = document.createElement("option");
+    o.value = String(i);
+    o.textContent = ex.label;
+    sel.appendChild(o);
   });
+  sel.addEventListener("change", () => {
+    const ex = EXAMPLES[parseInt(sel.value, 10)];
+    if (!ex) return;
+    applyExampleOps(ex.ops);
+    loadTable(ex.make());
+  });
+}
+
+// Check the operator boxes an example's target formula needs (e.g. div for a rational),
+// so a loaded example is always searchable without hunting through the Operators panel.
+// Never unchecks anything the user enabled. Operators are a problem input, not a PySR
+// parity default, so this does not touch any search setting.
+function applyExampleOps(ops) {
+  if (!ops) return;
+  (ops.binary || []).forEach((op) => setOpChecked("bin", op));
+  (ops.unary || []).forEach((op) => setOpChecked("un", op));
+}
+function setOpChecked(kind, op) {
+  const cb = document.querySelector(`input[data-kind="${kind}"][value="${op}"]`);
+  if (cb) cb.checked = true;
 }
 
 function applyPreset(name) {

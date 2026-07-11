@@ -160,8 +160,13 @@ textarea { resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospa
 .drop-zone:hover { border-color: var(--accent); }
 .drop-zone.dragover { border-color: var(--accent); background: var(--mark); }
 
-/* Example dataset buttons: a wrapping row of small pills. */
-.example-list { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.5rem; }
+/* Example dataset picker: a single compact dropdown row so a long example list never
+   crowds the Data card. */
+.example-picker {
+  display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.5rem;
+  font-size: 0.85rem; color: var(--muted); white-space: nowrap;
+}
+.example-picker select { width: auto; flex: 1; min-width: 0; }
 
 /* Segmented preset control: one joined pill group, hidden radios, accent-filled when checked. */
 .segmented {
