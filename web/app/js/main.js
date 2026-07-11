@@ -13,6 +13,7 @@ import { predict } from "./predict.js";
 import {
   copyText, pythonCall, rCall, paretoCsv, downloadText,
 } from "./export.js";
+import { fmt, fmtInt } from "./format.js";
 
 // Canonical unary order sent to the engine. The core picks operators by a random index into
 // this list (mutation.cpp: space.unary_ops[op(rng)]), so the list ORDER is part of the search
@@ -485,13 +486,6 @@ function metric(k, v) { return `<span class="k">${k}</span><span>${v}</span>`; }
 function esc(s) {
   return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 }
-function fmt(v) {
-  if (v == null || Number.isNaN(v)) return "—";
-  const a = Math.abs(v);
-  if (a !== 0 && (a < 1e-3 || a >= 1e5)) return v.toExponential(3);
-  return String(Math.round(v * 1e6) / 1e6);
-}
-function fmtInt(v) { return v == null ? "0" : Math.round(v).toLocaleString(); }
 
 // --- Event wiring -----------------------------------------------------------------
 function init() {

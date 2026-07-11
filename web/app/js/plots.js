@@ -8,6 +8,8 @@
 
 /* global Chart */
 
+import { fmt } from "./format.js";
+
 let paretoChart = null;
 let predChart = null;
 
@@ -155,11 +157,4 @@ export function destroyPlots() {
     predChart.destroy();
     predChart = null;
   }
-}
-
-function fmt(v) {
-  if (v === null || v === undefined || Number.isNaN(v)) return "—";
-  const a = Math.abs(v);
-  if (a !== 0 && (a < 1e-3 || a >= 1e5)) return v.toExponential(3);
-  return v.toPrecision(4).replace(/\.?0+$/, "");
 }
