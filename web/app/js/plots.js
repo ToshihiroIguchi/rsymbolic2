@@ -79,7 +79,11 @@ export function drawPareto(canvas, front, { bestIndex, logLoss, onSelect, select
       maintainAspectRatio: false,
       onClick: (_evt, elements) => {
         if (elements && elements.length && onSelect) {
-          onSelect(points[elements[0].index].i);
+          const idx = points[elements[0].index].i;
+          // Defer past Chart.js's event pipeline: onSelect redraws (destroys) this very
+          // chart, and destroying it synchronously inside its own onClick throws inside
+          // chart.umd.js (handleEvent on undefined).
+          setTimeout(() => onSelect(idx), 0);
         }
       },
       scales: {
