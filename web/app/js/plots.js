@@ -8,7 +8,7 @@
 
 /* global Chart */
 
-import { fmt } from "./format.js";
+import { fmt, fmtTick } from "./format.js";
 
 let paretoChart = null;
 let predChart = null;
@@ -94,6 +94,9 @@ export function drawPareto(canvas, front, { bestIndex, logLoss, onSelect, select
         x: themedScale(theme, "Complexity (nodes)", { ticks: { precision: 0 } }),
         y: themedScale(theme, useLog ? "Loss (SSE, log)" : "Loss (SSE)", {
           type: useLog ? "logarithmic" : "linear",
+          // Tiny losses otherwise render as long decimal strings; exponential ticks
+          // keep the axis readable (fmtTick handles both the log and linear scale).
+          ticks: { callback: fmtTick },
         }),
       },
       plugins: {

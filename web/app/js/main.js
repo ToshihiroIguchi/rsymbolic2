@@ -30,12 +30,6 @@ const UNARY_DEFAULT = new Set(["neg", "exp", "log", "sin", "cos"]);
 const BINARY = ["add", "sub", "mul", "div", "pow"];
 const BINARY_DEFAULT = new Set(["add", "sub", "mul"]);
 
-const PRESETS = {
-  quick: { generations: 200, n_populations: 6, population_size: 27 },
-  balanced: { generations: 600, n_populations: 15, population_size: 27 },
-  full: { generations: 2800, n_populations: 31, population_size: 27 },
-};
-
 const $ = (id) => document.getElementById(id);
 
 const state = {
@@ -149,24 +143,16 @@ function setOpChecked(kind, op) {
   if (cb) cb.checked = true;
 }
 
-function applyPreset(name) {
-  const p = PRESETS[name];
-  if (!p) return;
-  $("generations").value = p.generations;
-  $("n_populations").value = p.n_populations;
-  $("population_size").value = p.population_size;
-}
-
 // --- Data intake ------------------------------------------------------------------
 function loadTable(table) {
   state.table = table;
   state.numeric = numericColumns(table);
   renderDataSummary();
-  renderPreview();
   buildTargetAndFeatures();
   // Progressive disclosure: the Model card stays hidden until there is data to model.
   document.body.classList.add("has-data");
   $("run-btn").disabled = false;
+  $("preview-all-btn").disabled = false;
 }
 
 function renderDataSummary() {
@@ -192,17 +178,6 @@ function openPreviewDialog() {
   $("preview-note").textContent =
     rows.length > cap ? `Showing first ${cap} of ${rows.length} rows.` : `${rows.length} rows.`;
   $("preview-dialog").showModal();
-}
-
-function renderPreview() {
-  const { columns, rows } = state.table;
-  const max = Math.min(rows.length, 6);
-  let html = "<table><thead><tr>" + columns.map((c) => `<th>${esc(c)}</th>`).join("") + "</tr></thead><tbody>";
-  for (let i = 0; i < max; i++) {
-    html += "<tr>" + rows[i].map((v) => `<td>${esc(v)}</td>`).join("") + "</tr>";
-  }
-  html += "</tbody></table>";
-  $("data-preview").innerHTML = html;
 }
 
 function buildTargetAndFeatures() {
@@ -263,8 +238,8 @@ function readConfig() {
   return {
     unary_ops: checkedOps("un"),
     binary_ops: checkedOps("bin"),
-    generations: intById("generations", 600),
-    n_populations: intById("n_populations", 15),
+    generations: intById("generations", 2800),
+    n_populations: intById("n_populations", 31),
     population_size: intById("population_size", 27),
     max_nodes: intById("max_nodes", 30),
     max_depth: intById("max_depth", 30),
@@ -603,12 +578,8 @@ function init() {
   $("theme-toggle").addEventListener("click", toggleTheme);
   buildOperatorChecks();
   buildExamples();
-  applyPreset("balanced");
   initSplitters();
 
-  document.querySelectorAll('input[name="preset"]').forEach((r) => {
-    r.addEventListener("change", (e) => { if (e.target.checked) applyPreset(e.target.value); });
-  });
   $("run-btn").addEventListener("click", () => {
     if (document.body.classList.contains("running")) stop();
     else run();

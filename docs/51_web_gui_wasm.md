@@ -148,12 +148,22 @@ points (no new heavy features, no engine/default change):
   operator boxes. This is a UI convenience only — **operators are the shared problem input**
   (per the Benchmarking Requirements), not a PySR-parity default, so pre-checking them touches
   no search default.
-- **Full-data preview modal.** The inline 6-row preview is unchanged; a new "View all rows"
-  button opens the app's first native `<dialog>` (sticky header row, closed via ×, Esc, or a
-  backdrop click), rendering up to 2000 rows with a note if the table is larger. In-place cell
-  editing in this grid was **considered and rejected**: the existing paste-area already covers
-  hand-entered/edited data, and a spreadsheet-style editor's validation and data-sync
-  complexity is not worth it in an analysis GUI — see "Explicitly out of scope" below.
+- **Full-data preview modal.** A "Preview data" button (enabled once data is loaded) opens
+  the app's first native `<dialog>` (sticky header row, closed via ×, Esc, or a backdrop
+  click), rendering up to 2000 rows with a note if the table is larger. An earlier revision
+  additionally kept an inline 6-row mini-table behind a disclosure; it was removed as
+  redundant — the modal is the preview. In-place cell editing in this grid was **considered
+  and rejected**: the existing paste-area already covers hand-entered/edited data, and a
+  spreadsheet-style editor's validation and data-sync complexity is not worth it in an
+  analysis GUI — see "Explicitly out of scope" below.
+- **Single search budget (no presets).** An earlier revision offered Quick/Balanced/Full
+  preset pills; they were removed. The demo datasets finish fast enough that a reduced
+  budget is unnecessary, so the GUI now always defaults to the PySR-parity budget
+  (generations 2800, 31 populations × 27) — the same search the R/Python packages run by
+  default. Anyone who wants a shorter run can still lower Generations under Settings.
+- **Exponential loss ticks.** The Pareto chart's loss axis formats ticks via
+  `fmtTick()` (`format.js`): exponential notation once labels leave the readable
+  mid-range, so tiny SSE values never render as long decimal strings.
 - **Light/dark theme.** A `data-theme` attribute on `<html>` is resolved before first paint by
   an inline `<head>` script (a `localStorage` override, else `prefers-color-scheme`), toggled
   by a header button and persisted. All colors moved to CSS custom properties with a slate

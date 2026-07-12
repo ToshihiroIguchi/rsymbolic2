@@ -57,11 +57,7 @@
             <button id="paste-load" class="btn small">Use pasted data</button>
           </details>
           <div id="data-summary" class="muted small">No data loaded.</div>
-          <details class="disclosure">
-            <summary>Preview</summary>
-            <div id="data-preview" class="preview"></div>
-            <button id="preview-all-btn" class="btn small" type="button">View all rows</button>
-          </details>
+          <button id="preview-all-btn" class="btn small" type="button" disabled>Preview data</button>
         </section>
 
         <!-- Hidden until data is loaded (body:not(.has-data) .card-model in style.css). -->
@@ -76,19 +72,12 @@
 
         <section class="card">
           <h2>Search</h2>
-          <div class="segmented" role="radiogroup" aria-label="Preset">
-            <label><input type="radio" name="preset" value="quick" /><span>Quick</span></label>
-            <label><input type="radio" name="preset" value="balanced" checked /><span>Balanced</span></label>
-            <label><input type="radio" name="preset" value="full" /><span>Full</span></label>
-          </div>
-          <p class="muted small">Quick: fast demo · Balanced: default · Full: PySR-parity budget (heavy)</p>
-
           <details class="disclosure">
             <summary>Settings</summary>
             <div class="grid2">
-              <label>Generations<input id="generations" type="number" min="1" /></label>
-              <label>Populations<input id="n_populations" type="number" min="1" /></label>
-              <label>Population size<input id="population_size" type="number" min="1" /></label>
+              <label>Generations<input id="generations" type="number" min="1" value="2800" /></label>
+              <label>Populations<input id="n_populations" type="number" min="1" value="31" /></label>
+              <label>Population size<input id="population_size" type="number" min="1" value="27" /></label>
               <label>Max nodes<input id="max_nodes" type="number" min="1" value="30" /></label>
               <label>Seed<input id="seed" type="number" min="0" value="1" /></label>
               <label>Timeout (s, 0=off)<input id="timeout_seconds" type="number" min="0" value="0" /></label>
