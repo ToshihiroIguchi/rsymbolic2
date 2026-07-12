@@ -27,6 +27,7 @@
 #include "rsymbolic/search/evolutionary_search.hpp"
 #include "rsymbolic/expression/latex.hpp"
 #include "rsymbolic/expression/tree.hpp"
+#include "rsymbolic/simplification/display_simplify.hpp"
 #include "rsymbolic/units/unit_parser.hpp"
 
 namespace py = pybind11;
@@ -262,6 +263,7 @@ py::dict symbolic_regression_cpp(
     // --- Pareto front -> parallel lists ---------------------------------------------
     const std::vector<double> scores = pareto_scores(res.pareto_front);
     py::list pf_complexity, pf_loss, pf_score, pf_expr, pf_latex;
+    py::list pf_expr_simplified, pf_latex_simplified;
     for (std::size_t i = 0; i < res.pareto_front.size(); ++i) {
         const auto& m = res.pareto_front[i];
         pf_complexity.append(m.complexity);
@@ -269,6 +271,10 @@ py::dict symbolic_regression_cpp(
         pf_score.append(scores[i]);
         pf_expr.append(to_string(m.tree));
         pf_latex.append(to_latex(m.tree));
+        // Display-only companions (docs/52): computed on a COPY of m.tree.
+        const Tree simplified = display_simplify(m.tree);
+        pf_expr_simplified.append(to_string(simplified));
+        pf_latex_simplified.append(to_latex(simplified));
     }
 
     // Recommended ("best") trade-off; best_index is 0-based in C++ and is kept 0-based
@@ -284,7 +290,8 @@ py::dict symbolic_regression_cpp(
     }
 
     py::dict result;
-    result["expression"]   = res.expression;
+    result["expression"]            = res.expression;
+    result["expression_simplified"] = res.expression_simplified;
     result["loss"]         = res.loss;
     result["complexity"]   = res.complexity;
     result["recommended"]  = recommended;
@@ -304,11 +311,13 @@ py::dict symbolic_regression_cpp(
     eval_counts["cache_misses"] = py::int_(res.cache_misses);
     result["eval_counts"]  = eval_counts;
     result["pareto_front"] = py::dict(
-        py::arg("complexity") = pf_complexity,
-        py::arg("loss")       = pf_loss,
-        py::arg("score")      = pf_score,
-        py::arg("expression") = pf_expr,
-        py::arg("latex")      = pf_latex);
+        py::arg("complexity")             = pf_complexity,
+        py::arg("loss")                   = pf_loss,
+        py::arg("score")                  = pf_score,
+        py::arg("expression")             = pf_expr,
+        py::arg("latex")                  = pf_latex,
+        py::arg("expression_simplified")  = pf_expr_simplified,
+        py::arg("latex_simplified")       = pf_latex_simplified);
     return result;
 }
 

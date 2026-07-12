@@ -43,6 +43,11 @@ class SymbolicRegressionResult:
     expression : str
         Best (lowest-loss) expression found, as an infix string. Variables are named
         ``x0, x1, ...`` (0-based, matching the column order of ``X``).
+    expression_simplified : Optional[str]
+        Display-only, algebraically-simplified rewrite of ``expression`` (docs/52) —
+        e.g. collapses a chain of constant multiplications/divisions into one constant.
+        Never used by :meth:`predict`; ``expression`` remains the evaluatable
+        round-trip source (docs/48 D2).
     loss : float
         Training loss (sum of squared residuals, or weighted SSE) of ``expression``.
     complexity : int
@@ -56,12 +61,16 @@ class SymbolicRegressionResult:
         ``None`` if the front is empty.
     pareto_front : list[dict]
         Non-dominated ``{"complexity", "loss", "score", "r_squared", "expression",
-        "latex"}`` trade-offs, sorted by increasing complexity. ``score`` is the
-        drop in log-loss per unit of added complexity relative to the next-simpler
-        member — the value ``model_selection`` ranks by; ``0.0`` for the simplest
-        member. ``r_squared`` is the training ``1 - loss / sst`` (``None`` when the
-        target is constant). ``latex`` is a display-only LaTeX rendering of the
-        expression (variables as ``x_{i}``); see :meth:`latex`.
+        "latex", "expression_simplified", "latex_simplified"}`` trade-offs, sorted by
+        increasing complexity. ``score`` is the drop in log-loss per unit of added
+        complexity relative to the next-simpler member — the value ``model_selection``
+        ranks by; ``0.0`` for the simplest member. ``r_squared`` is the training
+        ``1 - loss / sst`` (``None`` when the target is constant). ``latex`` is a
+        display-only LaTeX rendering of the expression (variables as ``x_{i}``); see
+        :meth:`latex`. ``expression_simplified``/``latex_simplified`` are a further
+        algebraically-simplified (display-only) rewrite of ``expression``/``latex``
+        (docs/52) — never used by :meth:`predict`, which always evaluates the frozen
+        ``expression``/``recommended`` strings.
     n_obs : Optional[int]
         Number of training observations (rows of ``X``).
     sst : Optional[float]
@@ -98,6 +107,11 @@ class SymbolicRegressionResult:
         feature_names: Optional[Sequence[str]] = None,
     ):
         self.expression: str = raw["expression"]
+        # Display-only companion to `expression` (docs/52): a shorter/more-readable
+        # algebraic rewrite. None when the raw dict predates this field. Never used by
+        # predict() (docs/48 D2 frozen-expression rule: `expression` stays the
+        # evaluatable round-trip source).
+        self.expression_simplified: Optional[str] = raw.get("expression_simplified")
         self.loss: float = raw["loss"]
         self.complexity: int = raw["complexity"]
         self.recommended: str = raw["recommended"]
@@ -112,6 +126,12 @@ class SymbolicRegressionResult:
         # valid (a fit worse than the mean).
         has_sst = self.sst is not None and np.isfinite(self.sst) and self.sst > 0
         pf = raw["pareto_front"]
+        # expression_simplified/latex_simplified (docs/52) are display-only companions
+        # to expression/latex, parallel arrays of the same length; None per-member when
+        # the raw dict predates these fields (an older compiled extension).
+        n_pf = len(pf["complexity"])
+        pf_expr_simplified = pf.get("expression_simplified", [None] * n_pf)
+        pf_latex_simplified = pf.get("latex_simplified", [None] * n_pf)
         self.pareto_front = [
             {
                 "complexity": c,
@@ -120,10 +140,12 @@ class SymbolicRegressionResult:
                 "r_squared": (1.0 - l / self.sst) if has_sst else None,
                 "expression": e,
                 "latex": t,
+                "expression_simplified": es,
+                "latex_simplified": ts,
             }
-            for c, l, s, e, t in zip(
+            for c, l, s, e, t, es, ts in zip(
                 pf["complexity"], pf["loss"], pf["score"], pf["expression"],
-                pf["latex"],
+                pf["latex"], pf_expr_simplified, pf_latex_simplified,
             )
         ]
         self.n_features: int = n_features

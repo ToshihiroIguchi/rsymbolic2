@@ -16,6 +16,7 @@
 #include "rsymbolic/search/evolutionary_search.hpp"
 #include "rsymbolic/expression/latex.hpp"
 #include "rsymbolic/expression/tree.hpp"
+#include "rsymbolic/simplification/display_simplify.hpp"
 #include "rsymbolic/units/unit_parser.hpp"
 
 using namespace cpp11;
@@ -243,6 +244,8 @@ cpp11::writable::list symbolic_regression_cpp(
     cpp11::writable::doubles  pf_score;
     cpp11::writable::strings  pf_expr;
     cpp11::writable::strings  pf_latex;
+    cpp11::writable::strings  pf_expr_simplified;
+    cpp11::writable::strings  pf_latex_simplified;
     for (std::size_t i = 0; i < res.pareto_front.size(); ++i) {
         const auto& m = res.pareto_front[i];
         pf_complexity.push_back(m.complexity);
@@ -250,6 +253,11 @@ cpp11::writable::list symbolic_regression_cpp(
         pf_score.push_back(scores[i]);
         pf_expr.push_back(to_string(m.tree));
         pf_latex.push_back(to_latex(m.tree));
+        // Display-only companions (docs/52): computed on a COPY of m.tree via
+        // display_simplify(); m.tree itself is never modified.
+        const Tree simplified = display_simplify(m.tree);
+        pf_expr_simplified.push_back(to_string(simplified));
+        pf_latex_simplified.push_back(to_latex(simplified));
     }
 
     // Recommended ("best") accuracy/complexity trade-off from the Pareto front
@@ -257,16 +265,22 @@ cpp11::writable::list symbolic_regression_cpp(
     // for R. Fall back to the overall-best expression when the front is empty.
     const int n_front = static_cast<int>(res.pareto_front.size());
     std::string recommended = res.expression;
+    std::string recommended_simplified = res.expression_simplified;
     int best_index_r = (n_front > 0) ? (res.best_index + 1) : NA_INTEGER;
-    if (res.best_index >= 0 && res.best_index < n_front)
-        recommended = to_string(res.pareto_front[static_cast<std::size_t>(res.best_index)].tree);
+    if (res.best_index >= 0 && res.best_index < n_front) {
+        const Tree& best_tree = res.pareto_front[static_cast<std::size_t>(res.best_index)].tree;
+        recommended = to_string(best_tree);
+        recommended_simplified = to_string(display_simplify(best_tree));
+    }
 
     cpp11::writable::data_frame pareto_front({
-        "complexity"_nm = pf_complexity,
-        "loss"_nm       = pf_loss,
-        "score"_nm      = pf_score,
-        "expression"_nm = pf_expr,
-        "latex"_nm      = pf_latex
+        "complexity"_nm            = pf_complexity,
+        "loss"_nm                  = pf_loss,
+        "score"_nm                 = pf_score,
+        "expression"_nm            = pf_expr,
+        "latex"_nm                 = pf_latex,
+        "expression_simplified"_nm = pf_expr_simplified,
+        "latex_simplified"_nm      = pf_latex_simplified
     });
 
     // Evaluation accounting (reporting only): counts are exposed as doubles because R
@@ -284,16 +298,18 @@ cpp11::writable::list symbolic_regression_cpp(
     eval_counts.names() = {"forward", "lm_resid", "lm_jac", "cache_hits", "cache_misses"};
 
     cpp11::writable::list result({
-        "expression"_nm   = res.expression,
-        "loss"_nm         = res.loss,
-        "complexity"_nm   = res.complexity,
-        "recommended"_nm  = recommended,
-        "best_index"_nm   = best_index_r,
-        "pareto_front"_nm = pareto_front,
-        "n_obs"_nm        = static_cast<int>(y_cpp.size()),
-        "sst"_nm          = sst,
-        "n_evals"_nm      = static_cast<double>(res.n_evals),
-        "eval_counts"_nm  = eval_counts
+        "expression"_nm            = res.expression,
+        "loss"_nm                  = res.loss,
+        "complexity"_nm            = res.complexity,
+        "recommended"_nm           = recommended,
+        "expression_simplified"_nm = res.expression_simplified,
+        "recommended_simplified"_nm = recommended_simplified,
+        "best_index"_nm            = best_index_r,
+        "pareto_front"_nm          = pareto_front,
+        "n_obs"_nm                 = static_cast<int>(y_cpp.size()),
+        "sst"_nm                   = sst,
+        "n_evals"_nm               = static_cast<double>(res.n_evals),
+        "eval_counts"_nm           = eval_counts
     });
     result.attr("class") = "rsymbolic2";
     return result;

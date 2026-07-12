@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -21,6 +22,15 @@
 #include "rsymbolic/optimization/optimizer_factory.hpp"
 
 namespace rsymbolic {
+
+// A read-only snapshot of the global Pareto front, offered to an optional progress
+// callback once per epoch (docs/53). Pure observation data: nothing in the search
+// reads it back, so attaching a callback cannot influence the run.
+struct ProgressSnapshot {
+    std::size_t epoch = 0;          // completed outer iterations
+    std::vector<int> complexity;    // current global pareto front
+    std::vector<double> loss;
+};
 
 // Configuration for the (minimal, steady-state) evolutionary search.
 struct SearchOptions {
@@ -297,6 +307,18 @@ struct SearchOptions {
     // island's initial population are copies of these trees instead of random trees.
     // Empty (the default) leaves the default search path byte-identical.
     std::vector<Tree> seed_trees;
+
+    // Optional per-epoch progress observer (docs/53). Invoked once per outer epoch, at
+    // a serial point after every island's evolution/migration for that epoch has
+    // completed (all OpenMP island workers have joined and HOF/ring migration is done),
+    // with a ProgressSnapshot of the current global Pareto front. Pure observation: it
+    // is never read by the search, never mutates search state, and consumes no RNG —
+    // attaching it cannot change the result. null by default (the default constructor
+    // leaves it unset), in which case the call site is a single untaken branch and the
+    // run is bit-identical to the callback-less path (PySR Default Parity, CLAUDE.md).
+    // Left unset by the R and Python bindings for now (docs/53); only the WASM binding
+    // wires it, for the web GUI's live Pareto chart.
+    std::function<void(const ProgressSnapshot&)> progress_callback;
 };
 
 // PySR `warmup_maxsize_by` (SR.jl get_cur_maxsize, SearchUtils.jl 1.11.0). Returns the size
@@ -342,6 +364,11 @@ struct SearchResult {
     double loss = 0.0;
     int complexity = 0;
     std::string expression;
+    // Display-only companion to `expression`, produced by display_simplify() (docs/52)
+    // on a COPY of `tree` at finalization time. Never fed back into the search, never
+    // used by predict() (docs/48 D2 "frozen-expression rule": `expression` alone is the
+    // evaluatable round-trip source) — purely a shorter/more-readable rendering.
+    std::string expression_simplified;
     std::vector<PopMember> pareto_front;
     // Index into pareto_front of the recommended ("best") accuracy/complexity trade-off
     // (PySR model_selection="best"; see select_best). 0 when the front is empty.

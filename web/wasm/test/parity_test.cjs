@@ -91,6 +91,40 @@ function assert(cond, msg) {
   const l2 = r2.pareto_front.loss.join(",");
   assert(l1 === l2, "Pareto losses identical across runs (determinism)");
 
+  // 2b. Display-simplification fields (docs/52), covering the feature for the WASM
+  // binding: the Pareto front and the top-level result both carry a *_simplified
+  // companion alongside the raw (evaluatable) expression.
+  assert(typeof r1.expression_simplified === "string" && r1.expression_simplified.length > 0,
+    "top-level expression_simplified is a non-empty string");
+  const pf = r1.pareto_front;
+  assert(Array.isArray(pf.expression_simplified) && Array.isArray(pf.latex_simplified),
+    "pareto_front carries expression_simplified/latex_simplified arrays");
+  assert(pf.expression_simplified.length === pf.complexity.length,
+    "pareto_front.expression_simplified has one entry per front member");
+  assert(pf.latex_simplified.length === pf.complexity.length,
+    "pareto_front.latex_simplified has one entry per front member");
+  assert(pf.expression_simplified.every((s) => typeof s === "string" && s.length > 0),
+    "every pareto_front.expression_simplified entry is a non-empty string");
+  assert(pf.latex_simplified.every((s) => typeof s === "string" && s.length > 0),
+    "every pareto_front.latex_simplified entry is a non-empty string");
+
+  // 2c. Progress callback (docs/53): purely observational — attaching one must not
+  // change the result — and it fires at least once on this multi-iteration config
+  // (generations=200 with the default migration_interval=28 gives multiple epochs).
+  let fireCount = 0;
+  const { flat, nrow, ncol } = flatten(X);
+  const optsWithProgress = Object.assign({}, OPTIONS, {
+    X: flat, y: Float64Array.from(y), nrow, ncol,
+    on_progress: () => { fireCount++; },
+  });
+  const r3 = Module.run(optsWithProgress);
+  if (r3 && r3.error) throw new Error("WASM run error (with on_progress): " + r3.error);
+  assert(fireCount >= 1, "on_progress fired at least once on a multi-iteration run");
+  assert(r3.expression === r1.expression,
+    "on_progress does not change the recovered expression (bit-identical, same seed)");
+  assert(r3.pareto_front.loss.join(",") === l1,
+    "on_progress does not change the Pareto front losses (bit-identical, same seed)");
+
   // 3. Cross-build equivalence vs Python (best-effort; outcome, not string equality).
   let py = null;
   try {

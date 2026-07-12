@@ -22,6 +22,7 @@ add_library(rsymbolic2_core
     ${CORE_SRC}/crossover.cpp
     ${CORE_SRC}/hall_of_fame.cpp
     ${CORE_SRC}/simplify.cpp
+    ${CORE_SRC}/display_simplify.cpp
     ${CORE_SRC}/evolutionary_search.cpp
 )
 target_include_directories(rsymbolic2_core PUBLIC ${CORE_SRC})
@@ -57,7 +58,11 @@ if(RSYMBOLIC2_BUILD_TESTS)
     add_core_test(hall_of_fame             tests/test_hall_of_fame.cpp)
     add_core_test(to_latex                 tests/test_to_latex.cpp)
     add_core_test(evolutionary_search      tests/test_evolutionary_search.cpp)
+    # Progress callback (docs/53): bit-identity with the callback unset/attached,
+    # fire-count bound, and per-snapshot Pareto-front invariants.
+    add_core_test(progress_callback        tests/test_progress_callback.cpp)
     add_core_test(simplify                 tests/test_simplify.cpp)
+    add_core_test(display_simplify         tests/test_display_simplify.cpp)
     add_core_test(structural_mutation      tests/test_structural_mutation.cpp)
     add_core_test(mutation_operators       tests/test_mutation_operators.cpp)
     add_core_test(crossover                tests/test_crossover.cpp)
@@ -68,6 +73,7 @@ if(RSYMBOLIC2_BUILD_TESTS)
     add_core_test(dimension                tests/test_dimension.cpp)
     add_core_test(unit_parser              tests/test_unit_parser.cpp)
     add_core_test(dimensional_analysis     tests/test_dimensional_analysis.cpp)
+    set_tests_properties(progress_callback PROPERTIES TIMEOUT 60)
 
     # benchmark_quick uses the benchmark harness, not just core.
     add_executable(test_benchmark_quick tests/test_benchmark_quick.cpp)

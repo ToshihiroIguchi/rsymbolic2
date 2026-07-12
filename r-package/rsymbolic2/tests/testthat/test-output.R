@@ -9,6 +9,7 @@ test_that("result has the documented structure", {
     seed           = 1L
   )
   expect_named(res, c("expression", "loss", "complexity", "recommended",
+                      "expression_simplified", "recommended_simplified",
                       "best_index", "pareto_front", "n_obs", "sst",
                       "n_evals", "eval_counts", "n_features"))
   expect_identical(res$n_obs, 12L)
@@ -22,7 +23,8 @@ test_that("result has the documented structure", {
   expect_true(res$best_index >= 1L && res$best_index <= nrow(res$pareto_front))
   expect_s3_class(res$pareto_front, "data.frame")
   expect_named(res$pareto_front,
-               c("complexity", "loss", "score", "expression", "latex"))
+               c("complexity", "loss", "score", "expression", "latex",
+                 "expression_simplified", "latex_simplified"))
   expect_type(res$pareto_front$score, "double")
   expect_identical(res$pareto_front$score[1L], 0)
   expect_true(nrow(res$pareto_front) >= 1L)

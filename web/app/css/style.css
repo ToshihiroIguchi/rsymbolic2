@@ -352,3 +352,43 @@ dialog.modal::backdrop { background: rgba(0, 0, 0, 0.45); }
 #results-area:not(.has-result) .card:not(.placeholder) { display: none; }
 #results-area:not(.has-result) .charts-row { display: none; }
 #results-area.has-result .placeholder { display: none; }
+
+/* While a search is running, the previous run's results are stale: dim them and block
+   interaction (row/point clicks, copy buttons) until finishRun() removes body.running.
+   Interaction is disabled on the whole container (a parent's pointer-events: none already
+   blocks every descendant), but the dim itself is applied per-card rather than on the
+   container: opacity on a parent composites its children too, so a child's own
+   opacity: 1 could never "undo" a dimmed ancestor. Applying opacity per-card lets the
+   live Pareto card (main.js: .live while snapshots are streaming in) opt back out to
+   full opacity while every other result card stays dimmed. */
+body.running #results-area {
+  pointer-events: none;
+  user-select: none;
+}
+body.running #results-area .card {
+  opacity: 0.45;
+  transition: opacity 0.15s ease;
+}
+body.running #results-area .card.live {
+  opacity: 1;
+  position: relative;
+}
+/* "live" affordance: a small badge on the Pareto card while it is receiving progress
+   snapshots. Bottom-right (not top-right) so it never overlaps the card's own header
+   controls (recommend/log-loss). Only shown mid-run (body.running); once the run
+   finishes, main.js removes .live and renderResult() replaces the chart with the
+   authoritative final render. */
+body.running #results-area .card.live::after {
+  content: "updating…";
+  position: absolute;
+  bottom: 0.7rem;
+  right: 0.9rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--accent-fg);
+  background: var(--accent);
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  pointer-events: none;
+}

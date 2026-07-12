@@ -41,10 +41,14 @@ function themedScale(theme, title, extra = {}) {
   };
 }
 
-// Draw / redraw the Pareto front. `front` = {complexity[], loss[], score[]}.
+// Draw / redraw the Pareto front. `front` = {complexity[], loss[], score[]}. `score`
+// (and `r2`) may be null/absent — e.g. a live in-progress snapshot only has
+// complexity/loss — in which case the tooltip degrades to those two fields.
 // `bestIndex` marks the recommended member. `logLoss` toggles a log y-axis.
-// `onSelect(i)` fires when a point is clicked. `selectedIndex` is highlighted.
-export function drawPareto(canvas, front, { bestIndex, logLoss, onSelect, selectedIndex }) {
+// `onSelect(i)` fires when a point is clicked; both `onSelect` and `bestIndex` /
+// `selectedIndex` are optional (a live snapshot passes neither: nothing is
+// clickable or highlighted yet).
+export function drawPareto(canvas, front, { bestIndex, logLoss, onSelect, selectedIndex } = {}) {
   const theme = themeColors();
   const points = front.complexity.map((c, i) => ({ x: c, y: front.loss[i], i }));
   const pointColors = points.map((_, i) =>
@@ -98,9 +102,8 @@ export function drawPareto(canvas, front, { bestIndex, logLoss, onSelect, select
           callbacks: {
             label: (ctx) => {
               const i = points[ctx.dataIndex].i;
-              return `complexity ${front.complexity[i]}, loss ${fmt(front.loss[i])}, score ${fmt(
-                front.score[i]
-              )}`;
+              const base = `complexity ${front.complexity[i]}, loss ${fmt(front.loss[i])}`;
+              return front.score ? `${base}, score ${fmt(front.score[i])}` : base;
             },
           },
         },

@@ -39,6 +39,7 @@
 #include "rsymbolic/evolution/random_tree.hpp"
 #include "rsymbolic/expression/least_squares_problem.hpp"
 #include "rsymbolic/search/eval_cache.hpp"
+#include "rsymbolic/simplification/display_simplify.hpp"
 #include "rsymbolic/simplification/simplify.hpp"
 #include "rsymbolic/units/dimensional_analysis.hpp"
 
@@ -1239,6 +1240,32 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
         migrate_hof(islands, options.fraction_replaced_hof, migration_rng);
         RSYM_PROF_END(migrate_sec, migrate_n)
 
+        // Optional progress observer (docs/53): all islands are quiescent here (the
+        // OpenMP island-parallel region above has joined, and both ring and HOF
+        // migration for this epoch are done), so this is a safe serial point to merge
+        // a read-only snapshot of the global Pareto front and hand it to the caller.
+        // Pure observation — no RNG use, no mutation of search state — so with the
+        // callback unset (the default) this is a single untaken branch and the run is
+        // unaffected (PySR Default Parity, CLAUDE.md).
+        if (options.progress_callback) {
+            HallOfFame snapshot_hof;
+            for (const auto& isl : islands) snapshot_hof.merge(isl.hof);
+            const std::vector<PopMember> front = snapshot_hof.pareto_front();
+            ProgressSnapshot snap;
+            // `epoch` is still the 0-based index of the iteration that just finished
+            // its evolution/migration (the loop's `++epoch` runs after this body), so
+            // +1 reports the count of COMPLETED outer iterations, matching the field's
+            // doc comment in evolutionary_search.hpp.
+            snap.epoch = epoch + 1;
+            snap.complexity.reserve(front.size());
+            snap.loss.reserve(front.size());
+            for (const auto& m : front) {
+                snap.complexity.push_back(m.complexity);
+                snap.loss.push_back(m.loss);
+            }
+            options.progress_callback(snap);
+        }
+
         // Global early stop: once any island reaches the target loss the answer is
         // found, so stop instead of grinding the remaining islands and epochs through
         // their full budget. Within-epoch early stop is handled inside evolve_island.
@@ -1425,6 +1452,9 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
     result.loss       = best.loss;
     result.complexity = best.complexity;
     result.expression = to_string(best.tree);
+    // Display-only companion (docs/52): operates on a COPY of best.tree; never written
+    // back, never used by predict() (docs/48 D2 frozen-expression rule).
+    result.expression_simplified = to_string(display_simplify(best.tree));
     result.pareto_front = global.pareto_front();
     result.best_index =
         static_cast<int>(select_best(result.pareto_front, options.model_selection));

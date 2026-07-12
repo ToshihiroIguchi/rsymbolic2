@@ -33,6 +33,7 @@
 #include "rsymbolic/expression/latex.hpp"
 #include "rsymbolic/expression/tree.hpp"
 #include "rsymbolic/search/evolutionary_search.hpp"
+#include "rsymbolic/simplification/display_simplify.hpp"
 #include "rsymbolic/units/unit_parser.hpp"
 
 using emscripten::val;
@@ -234,6 +235,24 @@ val run(val opts) {
             o.weights = weights;
         }
 
+        // Optional progress observer (docs/53): forwarded to JS as
+        // {epoch, complexity, loss} once per epoch. Safe to capture `cb` (and `opts`
+        // indirectly through it) by value in the closure below because run_evolution()
+        // completes synchronously within this call — the captured emscripten::val never
+        // outlives the `run()` invocation that created it. The WASM build is
+        // single-threaded, so the callback fires on the calling (worker) thread, i.e.
+        // synchronously inside this same run() call, never concurrently with it.
+        if (has(opts, "on_progress")) {
+            val cb = opts["on_progress"];
+            o.progress_callback = [cb](const ProgressSnapshot& s) {
+                val obj = val::object();
+                obj.set("epoch",      static_cast<double>(s.epoch));
+                obj.set("complexity", to_js_array(s.complexity));
+                obj.set("loss",       to_js_array(s.loss));
+                cb(obj);
+            };
+        }
+
         // --- Run --------------------------------------------------------------------
         SearchResult res = run_evolution(X, y, o);
 
@@ -257,6 +276,7 @@ val run(val opts) {
         std::vector<int>         pf_complexity;
         std::vector<double>      pf_loss, pf_score;
         std::vector<std::string> pf_expr, pf_latex;
+        std::vector<std::string> pf_expr_simplified, pf_latex_simplified;
         for (std::size_t i = 0; i < res.pareto_front.size(); ++i) {
             const auto& m = res.pareto_front[i];
             pf_complexity.push_back(m.complexity);
@@ -264,6 +284,10 @@ val run(val opts) {
             pf_score.push_back(scores[i]);
             pf_expr.push_back(to_string(m.tree));
             pf_latex.push_back(to_latex(m.tree));
+            // Display-only companions (docs/52): computed on a COPY of m.tree.
+            const Tree simplified = display_simplify(m.tree);
+            pf_expr_simplified.push_back(to_string(simplified));
+            pf_latex_simplified.push_back(to_latex(simplified));
         }
 
         const int n_front = static_cast<int>(res.pareto_front.size());
@@ -277,6 +301,8 @@ val run(val opts) {
         pareto.set("score",      to_js_array(pf_score));
         pareto.set("expression", to_js_array(pf_expr));
         pareto.set("latex",      to_js_array(pf_latex));
+        pareto.set("expression_simplified", to_js_array(pf_expr_simplified));
+        pareto.set("latex_simplified",      to_js_array(pf_latex_simplified));
 
         val eval_counts = val::object();
         eval_counts.set("forward",      static_cast<double>(res.n_forward_evals));
@@ -286,7 +312,8 @@ val run(val opts) {
         eval_counts.set("cache_misses", static_cast<double>(res.cache_misses));
 
         val result = val::object();
-        result.set("expression",   res.expression);
+        result.set("expression",            res.expression);
+        result.set("expression_simplified", res.expression_simplified);
         result.set("loss",         res.loss);
         result.set("complexity",   res.complexity);
         result.set("recommended",  recommended);

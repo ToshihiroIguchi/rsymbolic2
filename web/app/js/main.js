@@ -53,6 +53,7 @@ const state = {
   worker: null,
   timer: null,
   t0: 0,
+  lastProgressDraw: 0, // performance.now() of the last live-Pareto redraw (throttling)
 };
 
 // --- Theme ------------------------------------------------------------------------
@@ -306,6 +307,8 @@ function run() {
 
   setRunButton(true);
   document.body.classList.add("running"); // shows the header progress bar
+  $("pareto-card").classList.remove("live"); // cleared again on the first snapshot's redraw
+  state.lastProgressDraw = 0;
   startTimer();
   setStatus("running…");
 
@@ -317,6 +320,7 @@ function run() {
     if (msg.type === "ready") return;
     if (msg.type === "result") onResult(msg.result, msg.elapsed);
     else if (msg.type === "error") onError(msg.message);
+    else if (msg.type === "progress") onProgress(msg);
   };
   state.worker.onerror = (e) => onError(e.message || "worker error");
   state.worker.postMessage({ type: "run", X, y, options: config });
@@ -346,7 +350,24 @@ function onError(message) {
 function finishRun() {
   stopTimer();
   document.body.classList.remove("running");
+  $("pareto-card").classList.remove("live"); // Stop/error/result all end the live state
   setRunButton(false);
+}
+
+// Live Pareto updates (docs/53): one ProgressSnapshot arrives per completed epoch from
+// the worker. Redraws are throttled to >= 250 ms apart so a fast run (many small
+// epochs) cannot flood the main thread with Chart.js rebuilds. The snapshot has no
+// score/r2 (drawPareto degrades gracefully) and no bestIndex/selectedIndex/onSelect —
+// nothing in a live front is clickable or highlighted, matching the CSS's
+// pointer-events: none while body.running.
+function onProgress(msg) {
+  $("pareto-card").classList.add("live");
+  const now = performance.now();
+  if (now - state.lastProgressDraw < 250) return;
+  state.lastProgressDraw = now;
+  drawPareto($("pareto-canvas"), { complexity: msg.complexity, loss: msg.loss, score: null }, {
+    logLoss: $("logloss").checked,
+  });
 }
 
 // One morphing header button: "▶ Run" when idle, "■ Stop" (danger red) while a search is
@@ -394,6 +415,10 @@ function selectBestIndex(front, mode) {
 function renderResult() {
   // Reveal the results + detail panels (hidden behind a placeholder until the first run).
   $("results-area").classList.add("has-result");
+  // Defensive: the normal path already clears .live via finishRun() before this runs, but
+  // renderResult() is the authoritative "final answer replaces everything" point (docs/53),
+  // so it also guarantees no stale live badge/opacity-exemption survives a result render.
+  $("pareto-card").classList.remove("live");
   const res = state.result;
   const front = res.pareto_front;
   const hasSst = res.sst && isFinite(res.sst) && res.sst > 0;
@@ -426,7 +451,7 @@ function renderTable(res, front) {
     tr.innerHTML =
       `<td>${i}</td><td>${front.complexity[i]}</td><td>${fmt(front.loss[i])}</td>` +
       `<td>${fmt(front.score[i])}</td><td>${front.r2[i] == null ? "—" : fmt(front.r2[i])}</td>` +
-      `<td title="${esc(front.expression[i])}">${esc(front.expression[i])}</td>`;
+      `<td title="${esc(front.expression[i])}">${esc(front.expression_simplified ? front.expression_simplified[i] : front.expression[i])}</td>`;
     tr.addEventListener("click", () => selectEquation(i));
     tbody.appendChild(tr);
   }
@@ -453,9 +478,14 @@ function selectEquation(i) {
   });
   drawParetoChart();
 
-  // Equation detail.
-  renderInto($("eq-latex"), front.latex[i], state.featureNames);
-  $("eq-string").textContent = front.expression[i];
+  // Equation detail. Display surfaces prefer the simplified companions (docs/52);
+  // everything evaluated (predict below, Copy expression) stays on the raw string,
+  // which is the frozen round-trip source (docs/48 D2).
+  const latex = front.latex_simplified ? front.latex_simplified[i] : front.latex[i];
+  renderInto($("eq-latex"), latex, state.featureNames);
+  const eqEl = $("eq-string");
+  eqEl.textContent = front.expression_simplified ? front.expression_simplified[i] : front.expression[i];
+  eqEl.title = front.expression[i];
   const r2 = front.r2 ? front.r2[i] : null;
   $("eq-metrics").innerHTML =
     metric("loss", fmt(front.loss[i])) +
@@ -500,8 +530,11 @@ function wireExport() {
       copyText(state.result.pareto_front.expression[state.selectedIndex]);
   });
   $("copy-latex").addEventListener("click", () => {
-    if (state.selectedIndex != null)
-      copyText(state.result.pareto_front.latex[state.selectedIndex]);
+    if (state.selectedIndex != null) {
+      const front = state.result.pareto_front;
+      // Copy what is displayed: the simplified LaTeX (display-only, no round-trip duty).
+      copyText((front.latex_simplified || front.latex)[state.selectedIndex]);
+    }
   });
   $("copy-python").addEventListener("click", () => {
     if (state.config) copyText(pythonCall(state.config));

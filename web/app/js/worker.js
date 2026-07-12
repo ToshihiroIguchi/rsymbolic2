@@ -40,6 +40,13 @@ self.onmessage = async (ev) => {
     });
     if (msg.weights && msg.weights.length) opts.weights = Float64Array.from(msg.weights);
 
+    // Per-epoch progress observer (docs/53): the WASM build is single-threaded, so this
+    // fires synchronously inside Module.run() below, on this same worker thread. Purely
+    // additional postMessage traffic — never touches the search itself.
+    opts.on_progress = (snap) => {
+      self.postMessage({ type: "progress", epoch: snap.epoch, complexity: snap.complexity, loss: snap.loss });
+    };
+
     const t0 = performance.now();
     const result = Module.run(opts); // returns a plain JS object (or {error})
     const elapsed = (performance.now() - t0) / 1000;

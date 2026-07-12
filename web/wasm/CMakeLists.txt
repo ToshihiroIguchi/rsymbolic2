@@ -37,6 +37,7 @@ add_executable(rsymbolic2
     ${CORE_SRC}/crossover.cpp
     ${CORE_SRC}/hall_of_fame.cpp
     ${CORE_SRC}/simplify.cpp
+    ${CORE_SRC}/display_simplify.cpp
     ${CORE_SRC}/evolutionary_search.cpp
 )
 target_include_directories(rsymbolic2 PRIVATE ${CORE_SRC})
@@ -88,6 +89,7 @@ set(CORE_SRCS
     ${CORE_SRC}/crossover.cpp
     ${CORE_SRC}/hall_of_fame.cpp
     ${CORE_SRC}/simplify.cpp
+    ${CORE_SRC}/display_simplify.cpp
     ${CORE_SRC}/evolutionary_search.cpp
 )
 add_executable(rsymbolic2_node ${CORE_SRCS})

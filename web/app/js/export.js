@@ -55,12 +55,16 @@ export function rCall(cfg) {
   ].join("\n");
 }
 
-// CSV of the Pareto front.
+// CSV of the Pareto front. `expression` is the evaluatable round-trip string;
+// `expression_simplified` is the display-only companion (docs/52).
 export function paretoCsv(front) {
-  const rows = ["complexity,loss,score,expression"];
+  const rows = ["complexity,loss,score,expression,expression_simplified"];
   for (let i = 0; i < front.complexity.length; i++) {
     const expr = String(front.expression[i]).replace(/"/g, '""');
-    rows.push(`${front.complexity[i]},${front.loss[i]},${front.score[i]},"${expr}"`);
+    const simplified = String(
+      front.expression_simplified ? front.expression_simplified[i] : front.expression[i]
+    ).replace(/"/g, '""');
+    rows.push(`${front.complexity[i]},${front.loss[i]},${front.score[i]},"${expr}","${simplified}"`);
   }
   return rows.join("\n");
 }

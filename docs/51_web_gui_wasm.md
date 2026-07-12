@@ -43,9 +43,13 @@ A new `web/` subtree that is a **fourth consumer** of the shared core, exactly p
   engine, same defaults, same recovery quality. Opt-in high-accuracy options
   (`linear_scaling`, `eval_cache`, dimensional analysis) are surfaced but off by default,
   mirroring the library's second layer.
-- **The shared C++ core is not modified.** No change to `r-package/rsymbolic2/src/`, so the
-  standalone ctest suite, R `testthat` and Python `pytest` remain valid. (A future Phase-3
-  live-progress callback would touch the core and must be behaviour-neutral and guarded.)
+- **The shared C++ core is not modified in a behaviour-changing way.** The core does now
+  carry an optional per-epoch progress-observer hook (`SearchOptions::progress_callback`,
+  docs/53) used by the WASM binding to drive the live Pareto chart, but it is null by
+  default, pure observation (no RNG use, no search-state mutation), and proven
+  bit-identical with the hook unset vs. attached (`test_progress_callback`) — so the
+  standalone ctest suite, R `testthat` and Python `pytest` remain valid, and PySR Default
+  Parity is unaffected. See docs/53 for the full contract and the exact seam.
 
 ## Feasibility (why WASM is low-risk here)
 
@@ -171,8 +175,13 @@ records-over-time, a prediction/extrapolation workspace, an editable data grid (
 in-place cell editing in the full-data preview modal — rejected above), and a train/test-split
 UI.
 
+## Live per-epoch Pareto updates
+
+Implemented — see **docs/53** for the full contract: the core's behaviour-neutral
+`progress_callback` hook, the WASM/worker/main-thread relay, the redraw throttling, and
+the four GUI states (idle / running-dimmed / running-live / finished).
+
 ## Deferred (later)
 
-Live per-epoch Pareto/best-loss updates (needs a behaviour-neutral core progress callback);
 warm-start "continue"; feature-impact; full candidate-pool query (the engine currently
 returns only the Pareto front).
