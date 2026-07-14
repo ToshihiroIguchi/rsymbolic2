@@ -46,6 +46,7 @@ pybind11_add_module(_core
     ${CORE_SRC}/hall_of_fame.cpp
     ${CORE_SRC}/simplify.cpp
     ${CORE_SRC}/display_simplify.cpp
+    ${CORE_SRC}/egraph.cpp
     ${CORE_SRC}/evolutionary_search.cpp
 )
 target_include_directories(_core PRIVATE ${CORE_SRC})

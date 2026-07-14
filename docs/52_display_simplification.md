@@ -1,6 +1,11 @@
 # 52. Display-time expression simplification
 
-Status: implemented (2026-07-12).
+Status: implemented (2026-07-12). **Rule set superseded by docs/54** (2026-07-12):
+`display_simplify()` is now the two-layer simplifier (deterministic normalisation +
+bounded equality saturation); the "Rule set" / "Why a pass loop" sections below
+describe the first implementation and are kept as history. Still authoritative here:
+the purpose, the frozen-expression compliance section (docs/48 D2), and the
+`pow(x,1)` / `t*0` exclusion findings (docs/54 carries them forward).
 
 ## Purpose
 

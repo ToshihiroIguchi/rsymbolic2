@@ -6,6 +6,7 @@
 #pragma once
 
 #include "rsymbolic/expression/tree.hpp"
+#include "rsymbolic/simplification/egraph.hpp"
 
 namespace rsymbolic {
 
@@ -17,35 +18,47 @@ namespace rsymbolic {
 // more readable; the frozen `expression` field (docs/48 D2) is untouched and remains
 // the predict() round-trip source.
 //
-// Rule set (bottom-up, post-order; see docs/52 for the full rationale):
-//   1. Constant-subtree folding (as simplify()'s fold stage), isfinite-guarded.
-//   2. Add/Sub/Mul constant reassociation and commutative canonicalisation (identical
-//      logic to simplify()'s combine stage, duplicated here so this file has no
-//      dependency on simplify.cpp / the search-loop simplifier).
-//   3. NEW: Div/Mul constant-chain folding, isfinite-guarded (not part of SR.jl's
-//      combine_operators, hence not in simplify(); safe because this path is never
-//      evaluated during search):
-//        (t * c1) / c2 -> t * (c1/c2)      (t / c1) / c2 -> t / (c1*c2)
-//        (t / c1) * c2 -> t * (c2/c1)      c1 / (t * c2) -> (c1/c2) / t
-//        c1 / (t / c2) -> (c1*c2) / t
-//   4. Identity elimination: t*1, 1*t, t+0, 0+t, t-0, t/1 all -> t. Deliberately
-//      excludes t*0, 0*t, t^0 (would discard a NaN/Inf that t itself would have
-//      produced) and t^1 (the core's pow(x,1) is NOT exactly x for x>0 — it evaluates
-//      as exp(1*log(x)), which loses a rounding step relative to x — so t^1 -> t would
-//      silently change the displayed value's precision; excluded, see docs/52).
-//   5. Double negation: neg(neg(t)) -> t.
-//   6. t * (-1) -> neg(t) (IEEE-exact; safe even when neg is outside the user's
-//      requested unary_ops, since this is display-only).
+// Two layers (docs/54; supersedes the docs/52 rule list):
 //
-// Applied in a fixed-point loop (bounded passes) until the tree stops changing. Like
-// simplify()'s reassociation, floating-point reassociation here can shift the
-// evaluated value by a rounding step (same caveat as PySR's own sympy_format
-// simplification) — this function must never turn a finite value into NaN/Inf or vice
-// versa; every rewrite is isfinite-guarded to preserve that.
+//   Layer 1 — deterministic normalisation (Cohen 2003 "automatic simplification"
+//   style), always runs: isfinite-guarded constant folding; flattening of +/-/neg
+//   chains into an n-ary sum and of *//neg chains into a numerator/denominator
+//   product; collection of constants, like terms (c1*t + c2*t -> (c1+c2)*t) and like
+//   factors (t*t -> square(t), which is bit-exact because square evaluates as t*t);
+//   canonical operand ordering; negation normal form (neg(neg t) -> t,
+//   neg(a-b) -> b-a, sign absorption into constants); identity elimination (t+0, t*1,
+//   t/1, t*-1 -> neg t); and a small set of exact unary rewrites (abs/square of
+//   sign-invariant arguments, odd/even functions of neg, sqrt(square t) -> abs t).
 //
-// `passes_used`, when non-null, receives the number of fixed-point passes actually
-// run (for tests asserting the pass cap is never exhausted). Default nullptr keeps the
-// call site (result finalization) a plain single-argument call.
-Tree display_simplify(const Tree& tree, int* passes_used = nullptr);
+//   Layer 2 — bounded equality saturation (egraph.hpp): the Layer-1 form seeds an
+//   e-graph, an audited rule set saturates within hard limits (iterations / e-nodes /
+//   wall-clock; EGraphLimits), and the minimum-node-count equivalent is extracted.
+//   The result is adopted only when it is STRICTLY smaller than the Layer-1 form;
+//   otherwise — including when any limit was hit — the Layer-1 result stands (the
+//   fallback contract). Layer 2 is what finds cross-structure reductions Layer 1
+//   cannot, e.g. factoring x*y + x*z -> x*(y+z).
+//
+// Floating-point policy (docs/54): every rewrite is an exact identity over the reals
+// on the expression's domain; rewrites that reassociate/redistribute may shift the
+// evaluated value by a rounding step (the same caveat simplify()'s combine pass and
+// PySR's sympy display path carry), but no rewrite may change whether the expression
+// evaluates to NaN/Inf — so x*0 -> 0, exp(log x) -> x, log(exp x) -> x, pow rewrites,
+// and term cancellation to 0 are all excluded, and constant folding is isfinite-
+// guarded. The displayed value therefore never diverges from predict() beyond
+// rounding drift. Node count never increases.
+//
+// `stats` (optional) reports what Layer 2 did — for tests and diagnostics only.
+// `limits` bounds Layer 2; `limits.max_iterations = 0` disables Layer 2 entirely
+// (pure Layer-1 normalisation). The defaults keep the per-expression cost at a few
+// milliseconds. Existing one-argument call sites are unchanged.
+struct DisplaySimplifyStats {
+    int egraph_iterations = 0;
+    int egraph_enodes = 0;
+    bool egraph_saturated = false;
+    bool layer2_adopted = false;  // extraction was strictly smaller than Layer 1
+};
+
+Tree display_simplify(const Tree& tree, DisplaySimplifyStats* stats = nullptr,
+                      const EGraphLimits& limits = EGraphLimits());
 
 }  // namespace rsymbolic

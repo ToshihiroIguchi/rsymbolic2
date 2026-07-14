@@ -1,7 +1,7 @@
 # WebAssembly (Emscripten) build of the rsymbolic2 core + the embind bridge.
 #
 # Configure with `emcmake cmake` so CMAKE_CXX_COMPILER is em++. This target compiles
-# the SAME 9 core .cpp files the R package and Python extension compile (the shared
+# the SAME core .cpp files the R package and Python extension compile (the shared
 # source of truth in r-package/rsymbolic2/src/) plus the embind bridge — no source is
 # copied. It is single-threaded on purpose: no OpenMP, no pthreads, so the output runs
 # on plain static hosting (GitHub Pages) with no COOP/COEP cross-origin-isolation
@@ -38,6 +38,7 @@ add_executable(rsymbolic2
     ${CORE_SRC}/hall_of_fame.cpp
     ${CORE_SRC}/simplify.cpp
     ${CORE_SRC}/display_simplify.cpp
+    ${CORE_SRC}/egraph.cpp
     ${CORE_SRC}/evolutionary_search.cpp
 )
 target_include_directories(rsymbolic2 PRIVATE ${CORE_SRC})
@@ -90,6 +91,7 @@ set(CORE_SRCS
     ${CORE_SRC}/hall_of_fame.cpp
     ${CORE_SRC}/simplify.cpp
     ${CORE_SRC}/display_simplify.cpp
+    ${CORE_SRC}/egraph.cpp
     ${CORE_SRC}/evolutionary_search.cpp
 )
 add_executable(rsymbolic2_node ${CORE_SRCS})
