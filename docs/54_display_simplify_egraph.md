@@ -223,5 +223,9 @@ finalize time the function runs once per Pareto member (≤ ~25 calls).
 
 ## Phase 2 (not in this change)
 
-Search-time strong simplification (opt-in, default OFF, CLAUDE.md second layer)
-remains future work; it must go through a Feynman screen before adoption.
+Search-time strong simplification (opt-in, default OFF, CLAUDE.md second layer) is
+now implemented as `strong_simplify` (all bindings, default OFF). Its Feynman screen
+(`docs/55`) returned **NO-GO**: a small, mixed accuracy effect (+1 threshold and +2
+structural majority recoveries, 0 regressions) that falls below the pre-registered
+GO bar, so it ships as a documented experimental opt-in rather than a recommended
+option — the same outcome as `linear_scaling` (docs/50).

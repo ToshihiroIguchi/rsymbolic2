@@ -128,7 +128,8 @@ py::dict symbolic_regression_cpp(
     double                   dimensional_constraint_penalty,
     bool                     dimensionless_constants_only,
     bool                     eval_cache,
-    bool                     linear_scaling) {
+    bool                     linear_scaling,
+    bool                     strong_simplify) {
     // --- Marshal X (2-D) and y (1-D) ------------------------------------------------
     if (X.ndim() != 2)
         throw std::invalid_argument("X must be a 2-D array (rows = observations, "
@@ -221,6 +222,12 @@ py::dict symbolic_regression_cpp(
     // default False keeps exact PySR parity). The Python wrapper rejects combining it
     // with X_units/y_units, so the core never sees that (undefined) combination.
     opts.linear_scaling             = linear_scaling;
+    // Opt-in search-time strong simplification (behaviour-changing high-accuracy
+    // option; default False keeps exact PySR parity). Applies docs/54's display
+    // simplifier during the search under a small deterministic budget, adopting the
+    // result only when it is strictly smaller and stays within the enabled operator
+    // set (see docs/55).
+    opts.strong_simplify            = strong_simplify;
     // max_evals arrives as a double (mirrors the R bridge, where R has no 64-bit int);
     // negative/zero => off.
     opts.max_evals = max_evals > 0.0 ? static_cast<std::size_t>(max_evals) : 0;
@@ -309,6 +316,9 @@ py::dict symbolic_regression_cpp(
     // Duplicate-evaluation cache statistics (both 0 unless eval_cache is on).
     eval_counts["cache_hits"]   = py::int_(res.cache_hits);
     eval_counts["cache_misses"] = py::int_(res.cache_misses);
+    // Search-time strong-simplification statistics (both 0 unless strong_simplify is on).
+    eval_counts["strong_simplify_attempts"] = py::int_(res.n_strong_simplify_attempts);
+    eval_counts["strong_simplify_adopted"]  = py::int_(res.n_strong_simplify_adopted);
     result["eval_counts"]  = eval_counts;
     result["pareto_front"] = py::dict(
         py::arg("complexity")             = pf_complexity,

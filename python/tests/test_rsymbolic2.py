@@ -373,7 +373,8 @@ def test_eval_accounting():
 
     assert isinstance(r1.n_evals, int) and r1.n_evals > 0
     assert set(r1.eval_counts) == {
-        "forward", "lm_resid", "lm_jac", "cache_hits", "cache_misses"
+        "forward", "lm_resid", "lm_jac", "cache_hits", "cache_misses",
+        "strong_simplify_attempts", "strong_simplify_adopted",
     }
     assert all(v >= 0 for v in r1.eval_counts.values())
     # n_evals is the max_evals unit: forward passes + LM residual evaluations.

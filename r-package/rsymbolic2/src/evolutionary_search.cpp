@@ -55,6 +55,40 @@ constexpr double kInf = std::numeric_limits<double>::infinity();
 // per island. Purely an implementation constant — never a search setting.
 constexpr std::size_t kEvalCacheSlots = 1024;
 
+// Deterministic Layer-2 budget for opt-in options.strong_simplify (docs/55), applied
+// per population member in optimize_and_simplify_population. max_millis is neutralised
+// with a huge sentinel so the ONLY stops are max_iterations/max_enodes — both fully
+// deterministic, required for same-seed and thread-count reproducibility (a wall-clock
+// stop would make the search non-reproducible, exactly like SearchOptions::timeout_seconds).
+// Chosen by micro-benchmark (docs/55): {4, 1000, huge} gave p90 ~= 0.4ms per call over
+// ~30-node random trees across the full operator set, with a shrink rate (51.1%)
+// statistically indistinguishable from the generous {10, 10000} reference (51.2%) —
+// the smallest cap tried whose p90 was comfortably sub-millisecond. Never exposed via
+// any public API.
+const EGraphLimits kSearchStrongSimplifyLimits{4, 1000, 1.0e9};
+
+// True if every unary/binary operator node in `tree` is enabled in `space`'s operator
+// set. Used to gate opt-in options.strong_simplify adoption: display_simplify's
+// rewrites can introduce an operator the user did not enable (neg via negation-normal
+// form, square via like-factor collection, abs via sqrt(square t) -> abs(t)), and
+// operators define the user's search space (CLAUDE.md: operators are the shared
+// problem input), so such a rewrite must never be adopted. Constants introduced by
+// folding are unconstrained; only operator identity is gated. Pure; consumes no RNG.
+bool ops_within_search_space(const Tree& tree, const SearchSpace& space) {
+    for (const Node& node : tree) {
+        if (node.kind == NodeKind::Unary) {
+            const bool ok = std::find(space.unary_ops.begin(), space.unary_ops.end(),
+                                      node.uop) != space.unary_ops.end();
+            if (!ok) return false;
+        } else if (node.kind == NodeKind::Binary) {
+            const bool ok = std::find(space.binary_ops.begin(), space.binary_ops.end(),
+                                      node.bop) != space.binary_ops.end();
+            if (!ok) return false;
+        }
+    }
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // Optional hot-path phase profiler — DIAGNOSTIC ONLY.
 //
@@ -248,6 +282,11 @@ struct Island {
     // off (a batched SSE is never reusable across passes). Island-local, share-nothing:
     // no cross-island cache state, so the parallel region stays synchronisation-free.
     EvalCache                           cache;
+    // Opt-in strong-simplify telemetry (options.strong_simplify; reporting only, never
+    // enforced). Both stay 0 when the option is off. Summed across islands in
+    // run_evolution next to the cache counters. See SearchOptions::strong_simplify.
+    std::uint64_t                       n_strong_simplify_attempts = 0;
+    std::uint64_t                       n_strong_simplify_adopted  = 0;
 #ifdef RSYMBOLIC2_PROFILE
     IslandProfile                       prof;
 #endif
@@ -898,6 +937,22 @@ void optimize_and_simplify_population(Island& isl,
                      ? RSYM_TIMED(isl.prof.simplify_sec, isl.prof.simplify_n, simplify(m.tree))
                      : m.tree;
 
+        // Opt-in options.strong_simplify (docs/55): offer the weak-simplified tree to
+        // the display-only two-layer simplifier under a small deterministic budget.
+        // Adopted only when strictly smaller AND its operators stay within the
+        // search's enabled operator set (ops_within_search_space); otherwise `s` is
+        // left untouched. No RNG is consumed either way, so this cannot perturb the
+        // unit(isl.rng) draw below, and no extra forward pass is spent here — the
+        // existing fit()/score_sse() call below scores whichever `s` results.
+        if (opts.strong_simplify) {
+            Tree s2 = display_simplify(s, nullptr, kSearchStrongSimplifyLimits);
+            ++isl.n_strong_simplify_attempts;
+            if (s2.size() < s.size() && ops_within_search_space(s2, opts.space)) {
+                s = std::move(s2);
+                ++isl.n_strong_simplify_adopted;
+            }
+        }
+
         // SR.jl draws rand() < optimizer_probability per member (do_optimization), gated by
         // should_optimize_constants; trees with no constants are no-ops in the optimiser.
         const bool do_optimize =
@@ -1468,6 +1523,8 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
         result.n_lm_jac_evals   += isl.n_lm_jac_evals;
         result.cache_hits       += isl.cache.hits;
         result.cache_misses     += isl.cache.misses;
+        result.n_strong_simplify_attempts += isl.n_strong_simplify_attempts;
+        result.n_strong_simplify_adopted  += isl.n_strong_simplify_adopted;
     }
     // Main-thread finalize evaluations (opt-in linear_scaling materialisation): charged
     // to no island counter, counted directly here. 0 when the option is off.

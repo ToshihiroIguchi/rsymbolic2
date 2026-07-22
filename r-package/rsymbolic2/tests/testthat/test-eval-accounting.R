@@ -21,9 +21,10 @@ test_that("result carries n_evals and a consistent eval_counts breakdown", {
   expect_gt(res$n_evals, 0)
 
   expect_true(is.numeric(res$eval_counts))
-  expect_length(res$eval_counts, 5L)
+  expect_length(res$eval_counts, 7L)
   expect_named(res$eval_counts,
-               c("forward", "lm_resid", "lm_jac", "cache_hits", "cache_misses"))
+               c("forward", "lm_resid", "lm_jac", "cache_hits", "cache_misses",
+                 "strong_simplify_attempts", "strong_simplify_adopted"))
   expect_true(all(res$eval_counts >= 0))
   # n_evals is the max_evals unit: forward passes + LM residual evaluations.
   # Jacobian builds are reported only and never charged to n_evals.

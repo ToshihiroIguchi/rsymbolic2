@@ -90,7 +90,11 @@ class SymbolicRegressionResult:
         ``max_evals`` budget), and ``cache_hits``/``cache_misses``
         (duplicate-evaluation cache statistics; both 0 unless ``eval_cache=True``.
         A hit is still counted in ``forward``, so ``cache_hits + cache_misses``
-        is the number of forward passes routed through the cache, not extra work).
+        is the number of forward passes routed through the cache, not extra work),
+        and ``strong_simplify_attempts``/``strong_simplify_adopted``
+        (search-time strong-simplification statistics; both 0 unless
+        ``strong_simplify=True``. ``strong_simplify_adopted`` is always
+        ``<= strong_simplify_attempts``).
     n_features : int
         Number of input features (columns of ``X``) used during fitting.
     feature_names : Optional[list[str]]
@@ -413,6 +417,7 @@ def symbolic_regression(
     warmup_maxsize_by: float = 0.0,
     eval_cache: bool = False,
     linear_scaling: bool = False,
+    strong_simplify: bool = False,
     X_units: Optional[Sequence[str]] = None,
     y_units: Optional[str] = None,
     dimensional_constraint_penalty: Optional[float] = None,
@@ -558,6 +563,18 @@ def symbolic_regression(
         ``max_nodes``. Not compatible with dimensional analysis
         (``X_units``/``y_units``). The default False keeps the search at exact PySR
         parity.
+    strong_simplify : bool, default False
+        Enable search-time strong simplification. An opt-in high-accuracy option
+        (the project's second layer): it deliberately diverges from PySR, which has
+        no such mechanism, but defaults to False so the search stays at exact
+        PySR-parity behaviour. When enabled, applies docs/54's display simplifier to
+        candidates during the search itself (not just for display) under a small
+        deterministic budget, and adopts the simplified form only when it is
+        strictly smaller *and* stays within the search's enabled operator set (e.g.
+        a simplification that introduces ``neg``, ``square``, or ``abs`` is rejected
+        unless that operator is already enabled, so simplification never grows the
+        effective search space). See docs/55 for the accuracy evidence backing this
+        option.
     X_units : sequence of str, optional
         Units for each column of ``X``, enabling dimensional analysis (PySR ``X_units``).
         Each entry is a DynamicQuantities-style unit string such as ``"m/s^2"``, ``"kg"``,
@@ -730,6 +747,7 @@ def symbolic_regression(
         bool(dimensionless_constants_only),
         bool(eval_cache),
         bool(linear_scaling),
+        bool(strong_simplify),
     )
     if feature_names is not None and len(feature_names) != int(X_arr.shape[1]):
         feature_names = None  # shape changed (e.g. 1-D promoted); drop mismatched names

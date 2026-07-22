@@ -36,6 +36,15 @@
 # '<label>_linear_scaling' name so a scaling run never overwrites the
 # authoritative scaling-off CSV.
 #
+# `strong_simplify` enables the opt-in search-time strong simplification
+# (docs/55): strong_simplify=TRUE is passed to symbolic_regression(); everything
+# else stays at the frozen parity values. Results are written under a separate
+# '<label>_strong_simplify' name so a strong-simplify run never overwrites the
+# authoritative strong-simplify-off CSV. The per-run strong_simplify_attempts /
+# strong_simplify_adopted columns (from eval_counts) carry the adoption
+# telemetry in every CSV; they are NA when the installed package predates the
+# counters.
+#
 # See docs/19 for full protocol.
 
 # ---- Setup ------------------------------------------------------------------
@@ -276,6 +285,18 @@ if (LINSCALE_ON) {
   cat("Override: linear_scaling ON (Keijzer 2003 best-affine-fit loss)\n")
 }
 
+# Optional `strong_simplify` flag: opt-in search-time strong simplification
+# (docs/55 accuracy screen). Passed straight through as strong_simplify=TRUE;
+# every other setting stays at the frozen parity values. Results are written
+# under a separate '<label>_strong_simplify' name so a strong-simplify run
+# never overwrites the authoritative strong-simplify-off CSV.
+STRONG_SIMPLIFY_ON <- any(args == "strong_simplify")
+if (STRONG_SIMPLIFY_ON) {
+  label <- paste0(label, "_strong_simplify")
+  BENCH_PARAMS$strong_simplify <- TRUE
+  cat("Override: strong_simplify ON (search-time strong simplification)\n")
+}
+
 DATA_SEED <- 42L   # Matches export_feynman_data.R DATA_SEED_TRAIN
 
 # ---- Run --------------------------------------------------------------------
@@ -334,6 +355,8 @@ for (key in KEYS) {
       loss_val   <- Inf
       c_hits     <- NA_real_
       c_misses   <- NA_real_
+      ss_attempts <- NA_real_
+      ss_adopted  <- NA_real_
     } else {
       nmse       <- compute_nmse(result$loss, ds$y)
       expr_str   <- result$expression
@@ -342,6 +365,16 @@ for (key in KEYS) {
       # package predates the cache counters.
       c_hits     <- unname(result$eval_counts["cache_hits"])
       c_misses   <- unname(result$eval_counts["cache_misses"])
+      # Defensive: NA (not an error) if the installed package predates the
+      # strong_simplify counters.
+      ss_attempts <- tryCatch(
+        unname(result$eval_counts["strong_simplify_attempts"]),
+        error = function(e) NA_real_
+      )
+      ss_adopted <- tryCatch(
+        unname(result$eval_counts["strong_simplify_adopted"]),
+        error = function(e) NA_real_
+      )
     }
     hit_rate <- if (isTRUE(c_hits + c_misses > 0)) c_hits / (c_hits + c_misses)
                 else NA_real_
@@ -365,6 +398,8 @@ for (key in KEYS) {
       cache_hits   = c_hits,
       cache_misses = c_misses,
       hit_rate     = if (is.na(hit_rate)) NA_real_ else round(hit_rate, 4L),
+      strong_simplify_attempts = ss_attempts,
+      strong_simplify_adopted  = ss_adopted,
       expression  = expr_str,
       stringsAsFactors = FALSE
     )

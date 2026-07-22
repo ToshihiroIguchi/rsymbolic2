@@ -286,6 +286,22 @@ struct SearchOptions {
     // PySR-parity path.
     bool linear_scaling = false;
 
+    // Opt-in search-time strong simplification (docs/55) — an "opt-in high-accuracy
+    // option" per CLAUDE.md's second layer: a deliberate divergence from PySR's SR.jl
+    // simplifier, OFF by default so the default search reproduces the PySR-parity path
+    // byte-for-byte. display_simplify() (docs/54's two-layer Cohen normalisation +
+    // bounded e-graph) normally runs only once, at result finalization, on a copy of
+    // the reported tree. When this is on, optimize_and_simplify_population additionally
+    // offers each member's weak-simplified tree to display_simplify() under a small
+    // deterministic budget (kSearchStrongSimplifyLimits in evolutionary_search.cpp);
+    // the rewrite is adopted only when it is strictly smaller AND every operator it
+    // introduces is already enabled in the search's operator set (display_simplify can
+    // introduce neg/square/abs that the user did not enable — CLAUDE.md: operators are
+    // the shared problem input, not a rewrite side effect). false = off (default): the
+    // hook is an untaken branch and the search is byte-identical to today. See docs/55
+    // for the measured budget and effect.
+    bool strong_simplify = false;
+
     // Wall-clock timeout. 0 = no limit (fully deterministic; default). Any value > 0
     // stops the search after approximately this many seconds. A run that times out is
     // NOT reproducible across machines — document this in user-facing roxygen.
@@ -388,6 +404,12 @@ struct SearchResult {
     // a real evaluation (bit-identity with the cache off), so hits + misses equals the
     // number of forward passes routed through the cache, not extra work.
     std::uint64_t cache_hits = 0, cache_misses = 0;
+    // Opt-in strong-simplify telemetry (summed over islands; both stay 0 unless
+    // options.strong_simplify is on). n_strong_simplify_attempts counts members
+    // offered to display_simplify() in optimize_and_simplify_population;
+    // n_strong_simplify_adopted counts how many passed both adoption gates (strictly
+    // smaller AND within the search's operator set). See SearchOptions::strong_simplify.
+    std::uint64_t n_strong_simplify_attempts = 0, n_strong_simplify_adopted = 0;
 };
 
 // Run the search to fit y from X by discovering an expression structure and optimizing

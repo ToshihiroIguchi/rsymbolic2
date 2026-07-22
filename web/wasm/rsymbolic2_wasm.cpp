@@ -225,6 +225,7 @@ val run(val opts) {
             get_num(opts, "dimensional_constraint_penalty", 1000.0);
         o.eval_cache                 = get_bool(opts, "eval_cache", false);
         o.linear_scaling             = linear_scaling;
+        o.strong_simplify            = get_bool(opts, "strong_simplify", false);
         const double max_evals       = get_num(opts, "max_evals", 0.0);
         o.max_evals = max_evals > 0.0 ? static_cast<std::size_t>(max_evals) : 0;
 
@@ -310,6 +311,10 @@ val run(val opts) {
         eval_counts.set("lm_jac",       static_cast<double>(res.n_lm_jac_evals));
         eval_counts.set("cache_hits",   static_cast<double>(res.cache_hits));
         eval_counts.set("cache_misses", static_cast<double>(res.cache_misses));
+        eval_counts.set("strong_simplify_attempts",
+                         static_cast<double>(res.n_strong_simplify_attempts));
+        eval_counts.set("strong_simplify_adopted",
+                         static_cast<double>(res.n_strong_simplify_adopted));
 
         val result = val::object();
         result.set("expression",            res.expression);

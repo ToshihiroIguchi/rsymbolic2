@@ -56,9 +56,10 @@ test_that("eval_counts carries cache counters: populated on, zero off", {
   r_off <- do.call(symbolic_regression, common)
   r_on  <- do.call(symbolic_regression, c(common, list(eval_cache = TRUE)))
 
-  expect_length(r_off$eval_counts, 5L)
+  expect_length(r_off$eval_counts, 7L)
   expect_named(r_off$eval_counts,
-               c("forward", "lm_resid", "lm_jac", "cache_hits", "cache_misses"))
+               c("forward", "lm_resid", "lm_jac", "cache_hits", "cache_misses",
+                 "strong_simplify_attempts", "strong_simplify_adopted"))
   expect_identical(unname(r_off$eval_counts["cache_hits"]), 0)
   expect_identical(unname(r_off$eval_counts["cache_misses"]), 0)
   # The tiny operator set guarantees duplicate candidates, so the cache hits.

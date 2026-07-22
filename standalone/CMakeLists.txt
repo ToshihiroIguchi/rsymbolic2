@@ -108,6 +108,14 @@ if(RSYMBOLIC2_BUILD_TESTS)
     target_link_libraries(test_linear_scaling PRIVATE rsymbolic2_core)
     add_test(NAME linear_scaling COMMAND test_linear_scaling)
     set_tests_properties(linear_scaling PROPERTIES TIMEOUT 120)
+
+    # Opt-in search-time strong simplification (opt-in strong_simplify; docs/55):
+    # off-path bit-identity, on-path/thread-count determinism, recovery sanity,
+    # telemetry, and the operator-set adoption gate.
+    add_executable(test_strong_simplify tests/test_strong_simplify.cpp)
+    target_link_libraries(test_strong_simplify PRIVATE rsymbolic2_bench)
+    add_test(NAME strong_simplify COMMAND test_strong_simplify)
+    set_tests_properties(strong_simplify PROPERTIES TIMEOUT 120)
 endif()
 
 option(RSYMBOLIC2_BUILD_BENCHMARKS "Build the standalone benchmark executable" ON)

@@ -40,6 +40,7 @@ symbolic_regression(X, ...)
   warmup_maxsize_by = 0,
   eval_cache = FALSE,
   linear_scaling = FALSE,
+  strong_simplify = FALSE,
   X_units = NULL,
   y_units = NULL,
   dimensional_constraint_penalty = NULL,
@@ -278,6 +279,19 @@ up to 4 nodes past \code{max_nodes}. Not compatible with dimensional analysis
 (\code{X_units}/\code{y_units}). The default \code{FALSE} keeps the search at
 exact PySR parity.}
 
+\item{strong_simplify}{Enable search-time strong simplification (default
+\code{FALSE}). An opt-in high-accuracy option (the project's second layer):
+it deliberately diverges from PySR, which has no such mechanism, but is
+\code{FALSE} by default so the search stays at exact PySR-parity behaviour.
+When enabled, applies \code{docs/54}'s display simplifier to candidates
+during the search itself (not just for display) under a small deterministic
+budget, and adopts the simplified form only when it is strictly smaller
+\emph{and} stays within the search's enabled operator set (e.g. a
+simplification that introduces \code{neg}, \code{square}, or \code{abs} is
+rejected unless that operator is already enabled, so simplification never
+grows the effective search space). See \code{docs/55} for the accuracy
+evidence backing this option.}
+
 \item{X_units}{Optional character vector of units, one per column of \code{X},
 enabling dimensional analysis (PySR \code{X_units}). Each entry is a
 DynamicQuantities-style unit string such as \code{"m/s^2"}, \code{"kg"}, or
@@ -355,11 +369,17 @@ A list of class \code{"rsymbolic2"} with elements:
       (Levenberg-Marquardt residual evaluations; \code{forward + lm_resid ==
       n_evals}), \code{lm_jac} (LM Jacobian builds, reported for
       accounting only — never charged to \code{n_evals} or the
-      \code{max_evals} budget), and \code{cache_hits}/\code{cache_misses}
+      \code{max_evals} budget), \code{cache_hits}/\code{cache_misses}
       (duplicate-evaluation cache statistics; both \code{0} unless
       \code{eval_cache = TRUE}. A hit is still counted in \code{forward},
       so \code{cache_hits + cache_misses} is the number of forward passes
-      routed through the cache, not extra work).}
+      routed through the cache, not extra work), and
+      \code{strong_simplify_attempts}/\code{strong_simplify_adopted}
+      (search-time strong-simplification statistics; both \code{0} unless
+      \code{strong_simplify = TRUE}. \code{strong_simplify_adopted} is
+      always \code{<= strong_simplify_attempts}: attempts count every
+      candidate the simplifier was tried on, adopted counts how many passed
+      both adoption gates).}
     \item{n_features}{Number of input features (columns of \code{X}) used
       during fitting; required by \code{\link{predict.rsymbolic2}}.}
     \item{feature_names}{Column names of \code{X}, or \code{NULL} when \code{X}

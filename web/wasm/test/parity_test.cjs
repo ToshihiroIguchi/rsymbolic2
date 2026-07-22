@@ -125,6 +125,36 @@ function assert(cond, msg) {
   assert(r3.pareto_front.loss.join(",") === l1,
     "on_progress does not change the Pareto front losses (bit-identical, same seed)");
 
+  // 2d. Opt-in search-time strong simplification (strong_simplify; docs/55): an unset
+  // flag must behave identically to an explicit false (default-off parity), and
+  // enabling it must complete with a finite loss and populate the
+  // strong_simplify_attempts/adopted eval_counts entries.
+  const optsExplicitFalse = Object.assign({}, OPTIONS, {
+    X: flat, y: Float64Array.from(y), nrow, ncol, strong_simplify: false,
+  });
+  const r4 = Module.run(optsExplicitFalse);
+  if (r4 && r4.error) throw new Error("WASM run error (strong_simplify=false): " + r4.error);
+  assert(r4.expression === r1.expression,
+    "strong_simplify=false is identical to the flag being unset (same seed)");
+  assert(r4.pareto_front.loss.join(",") === l1,
+    "strong_simplify=false Pareto losses identical to the flag being unset");
+  assert(r4.eval_counts.strong_simplify_attempts === 0 &&
+    r4.eval_counts.strong_simplify_adopted === 0,
+    "strong_simplify counters are zero when the option is off");
+
+  const optsStrongSimplify = Object.assign({}, OPTIONS, {
+    X: flat, y: Float64Array.from(y), nrow, ncol, strong_simplify: true,
+    unary_ops: ["neg", "exp", "log", "sin", "cos", "sqrt", "tanh", "abs", "square"],
+    binary_ops: ["add", "sub", "mul", "div", "pow"],
+  });
+  const r5 = Module.run(optsStrongSimplify);
+  if (r5 && r5.error) throw new Error("WASM run error (strong_simplify=true): " + r5.error);
+  assert(Number.isFinite(r5.loss), "strong_simplify=true run completes with a finite loss");
+  assert(r5.eval_counts.strong_simplify_attempts > 0,
+    "strong_simplify=true records at least one attempt with a generous operator set");
+  assert(r5.eval_counts.strong_simplify_adopted <= r5.eval_counts.strong_simplify_attempts,
+    "strong_simplify adopted count never exceeds the attempt count");
+
   // 3. Cross-build equivalence vs Python (best-effort; outcome, not string equality).
   let py = null;
   try {
