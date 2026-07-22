@@ -160,12 +160,12 @@
               <h2>Pareto front</h2>
               <div class="results-head-controls">
                 <label class="inline-select"
-                       title="Which Pareto member is highlighted as recommended (★). Applies instantly, no re-run.&#10;best = highest score among equations within 1.5× of the lowest loss (PySR default)&#10;score = highest score overall&#10;accuracy = lowest loss">
+                       title="Which Pareto member is highlighted as recommended (★). Applies instantly, no re-run.&#10;score = highest score overall — the parsimony elbow (web default)&#10;best = highest score among equations within 1.5× of the lowest loss (PySR default)&#10;accuracy = lowest loss">
                   recommend
                   <select id="model_selection">
-                    <option value="best" selected>best (PySR default)</option>
+                    <option value="score" selected>score (default)</option>
+                    <option value="best">best (PySR default)</option>
                     <option value="accuracy">accuracy</option>
-                    <option value="score">score</option>
                   </select>
                 </label>
                 <label class="check small"><input id="logloss" type="checkbox" checked /> log loss</label>

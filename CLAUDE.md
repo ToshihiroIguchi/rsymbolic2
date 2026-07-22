@@ -49,6 +49,26 @@ trade-off to weigh — do **not** substitute a value chosen by our own benchmark
   is still a bug. Parity defines *what* the search is; the Project Priorities govern
   *how* it is built.
 
+### Scope: which components the parity rule binds (the web GUI is exempt)
+
+The PySR default-parity rule binds the **shipped library**: the R package, the Python
+package, and the shared C++ core they both call. Their defaults and search behaviour
+must be PySR-identical, per everything above.
+
+The **web GUI** (`web/app/`) is a browser-based *demonstration* front end, not the
+shipped library, and is **not required to adopt PySR's defaults.** It runs the same
+C++ engine (so a search launched with identical settings behaves identically), but it
+may choose UI/presentation defaults that suit an interactive demo over strict PySR
+parity. The concrete case: the web GUI defaults `model_selection` to **`score`** (the
+parsimony elbow), not PySR's **`best`**, because PySR's `best` rule can recommend an
+over-complex, noise-fitting expression when several equations are all effectively
+perfect fits (loss at floating-point-noise level) — a poor first impression for an
+answer-first demo. This divergence is confined to which Pareto member the GUI
+*highlights*; the search itself is unchanged, `best (PySR default)` stays available in
+the dropdown, and the R/Python/C++ layers keep `best` as their PySR-identical default.
+When a web-GUI default diverges from PySR, say so in `web/` docs and keep the change on
+the presentation side only — never let it reach the shared engine.
+
 ### Opt-in high-accuracy options (the second layer)
 
 The parity rule above binds **defaults**. On top of the PySR-identical default layer,
