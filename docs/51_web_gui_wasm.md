@@ -20,7 +20,8 @@ A new `web/` subtree that is a **fourth consumer** of the shared core, exactly p
   `SearchSpace`, calls the same `run_evolution()` entry point, and returns a JS object with
   the same shape as the Python dict (`expression`, `loss`, `complexity`, `recommended`,
   `best_index`, `sst`, `n_evals`, `eval_counts`, `pareto_front{complexity,loss,score,
-  expression,latex}`). It includes only `rsymbolic/...` headers — no R/Python headers.
+  expression,latex,expression_simplified,latex_simplified,complexity_simplified}`). It
+  includes only `rsymbolic/...` headers — no R/Python headers.
 - `web/wasm/CMakeLists.txt` — compiles the **same 9 core `.cpp`** files as
   `standalone/`/`python/` (single source of truth, nothing copied) with `emcmake`, plus a
   Node.js variant for the correctness gate.
@@ -130,6 +131,21 @@ points (no new heavy features, no engine/default change):
   default "best" (highest score *within 1.5× of the lowest loss*) can, in a near-recovery
   regime, highlight a bloated near-zero-loss equation rather than the clean high-score one —
   switching to "score" now needs one click, not a re-run.
+- **The complexity column reports both node counts (`10 → 7`)** when display simplification
+  shrinks the tree. Two columns of the results table describe two different trees: the hall
+  of fame archives the best member *per raw complexity* (`hall_of_fame.hpp`, complexity =
+  `tree.size()`), while the equation shown is its display-simplified form (docs/52, docs/54).
+  Distinct raw trees can therefore normalise to the *same* printed expression, which reads as
+  a contradiction — three rows showing the identical equation at complexity 7, 8 and 10. The
+  bridge now returns `pareto_front.complexity_simplified` (the node count of the simplified
+  tree; never larger than `complexity`, since `display_simplify()` adopts a rewrite only when
+  it shrinks) and `main.js` `fmtComplexity()` renders `raw → simplified` whenever the two
+  differ, plain `raw` otherwise. Two related display effects share the same cause and are
+  *not* bugs: the losses of such rows differ (the front is strictly decreasing in loss) but
+  round to the same string under `fmt()`'s 4 significant digits, and constants print at
+  `%.6g` (`tree.hpp`), so `2.4999999` and `2.5` look identical. The raw searched expression
+  stays available as the cell's `title` tooltip, and it — not the simplified string — remains
+  the evaluatable round-trip source (docs/48 D2).
 - **One morphing Run/Stop button** in place of two separate header buttons: idle shows
   "▶ Run", a run in progress swaps it in place for a red "■ Stop" (same slot in the sticky
   header, no layout shift), and `Ctrl`/`Cmd`+`Enter` starts a run from anywhere on the page.

@@ -56,15 +56,20 @@ export function rCall(cfg) {
 }
 
 // CSV of the Pareto front. `expression` is the evaluatable round-trip string;
-// `expression_simplified` is the display-only companion (docs/52).
+// `expression_simplified` is the display-only companion (docs/52), and
+// `complexity_simplified` is its node count — it can be smaller than `complexity`, which
+// counts the raw searched tree.
 export function paretoCsv(front) {
-  const rows = ["complexity,loss,score,expression,expression_simplified"];
+  const rows = ["complexity,complexity_simplified,loss,score,expression,expression_simplified"];
   for (let i = 0; i < front.complexity.length; i++) {
     const expr = String(front.expression[i]).replace(/"/g, '""');
     const simplified = String(
       front.expression_simplified ? front.expression_simplified[i] : front.expression[i]
     ).replace(/"/g, '""');
-    rows.push(`${front.complexity[i]},${front.loss[i]},${front.score[i]},"${expr}","${simplified}"`);
+    const cxSimplified = front.complexity_simplified
+      ? front.complexity_simplified[i] : front.complexity[i];
+    rows.push(`${front.complexity[i]},${cxSimplified},${front.loss[i]},` +
+              `${front.score[i]},"${expr}","${simplified}"`);
   }
   return rows.join("\n");
 }

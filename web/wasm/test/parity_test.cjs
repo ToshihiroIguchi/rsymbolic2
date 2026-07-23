@@ -107,6 +107,15 @@ function assert(cond, msg) {
     "every pareto_front.expression_simplified entry is a non-empty string");
   assert(pf.latex_simplified.every((s) => typeof s === "string" && s.length > 0),
     "every pareto_front.latex_simplified entry is a non-empty string");
+  // complexity_simplified is the node count of expression_simplified. display_simplify()
+  // adopts its rewrite only when it shrinks the tree, so it is never larger than the raw
+  // complexity — the UI relies on that to render "10 -> 7" only where it is meaningful.
+  assert(Array.isArray(pf.complexity_simplified)
+      && pf.complexity_simplified.length === pf.complexity.length,
+    "pareto_front.complexity_simplified has one entry per front member");
+  assert(pf.complexity_simplified.every((c, i) => Number.isInteger(c) && c >= 1
+      && c <= pf.complexity[i]),
+    "every complexity_simplified is a positive integer <= the raw complexity");
 
   // 2c. Progress callback (docs/53): purely observational — attaching one must not
   // change the result — and it fires at least once on this multi-iteration config

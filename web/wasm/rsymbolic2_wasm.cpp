@@ -278,6 +278,7 @@ val run(val opts) {
         std::vector<double>      pf_loss, pf_score;
         std::vector<std::string> pf_expr, pf_latex;
         std::vector<std::string> pf_expr_simplified, pf_latex_simplified;
+        std::vector<int>         pf_complexity_simplified;
         for (std::size_t i = 0; i < res.pareto_front.size(); ++i) {
             const auto& m = res.pareto_front[i];
             pf_complexity.push_back(m.complexity);
@@ -289,6 +290,13 @@ val run(val opts) {
             const Tree simplified = display_simplify(m.tree);
             pf_expr_simplified.push_back(to_string(simplified));
             pf_latex_simplified.push_back(to_latex(simplified));
+            // Node count of the SIMPLIFIED tree. `complexity` above is the node count of
+            // the raw tree the search actually archived (one member per complexity), so
+            // two front members can differ in `complexity` yet print the same simplified
+            // expression. Reporting both lets the UI show "10 -> 7" instead of an
+            // apparent contradiction. Complexity is tree.size() throughout the core
+            // (evolutionary_search.cpp), so the same definition applies here.
+            pf_complexity_simplified.push_back(static_cast<int>(simplified.size()));
         }
 
         const int n_front = static_cast<int>(res.pareto_front.size());
@@ -304,6 +312,7 @@ val run(val opts) {
         pareto.set("latex",      to_js_array(pf_latex));
         pareto.set("expression_simplified", to_js_array(pf_expr_simplified));
         pareto.set("latex_simplified",      to_js_array(pf_latex_simplified));
+        pareto.set("complexity_simplified", to_js_array(pf_complexity_simplified));
 
         val eval_counts = val::object();
         eval_counts.set("forward",      static_cast<double>(res.n_forward_evals));

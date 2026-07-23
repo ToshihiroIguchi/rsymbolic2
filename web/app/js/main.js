@@ -416,6 +416,17 @@ function applyModelSelection() {
   selectEquation(state.result.best_index);
 }
 
+// The `complexity` column is the node count of the RAW tree the search archived (the hall of
+// fame keeps one member per raw complexity), while the equation shown is its display-simplified
+// form (docs/52). Two front members can therefore differ in complexity yet print the identical
+// expression. Rendering both counts ("10 → 7") explains that instead of leaving what looks like
+// a contradiction between the two columns.
+function fmtComplexity(front, i) {
+  const raw = front.complexity[i];
+  const simplified = front.complexity_simplified ? front.complexity_simplified[i] : null;
+  return simplified == null || simplified === raw ? String(raw) : `${raw} → ${simplified}`;
+}
+
 function renderTable(res, front) {
   const tbody = $("pareto-table").querySelector("tbody");
   tbody.innerHTML = "";
@@ -424,7 +435,7 @@ function renderTable(res, front) {
     tr.dataset.index = String(i);
     if (i === res.best_index) tr.classList.add("recommended");
     tr.innerHTML =
-      `<td>${i}</td><td>${front.complexity[i]}</td><td>${fmt(front.loss[i])}</td>` +
+      `<td>${i}</td><td>${fmtComplexity(front, i)}</td><td>${fmt(front.loss[i])}</td>` +
       `<td>${fmt(front.score[i])}</td><td>${front.r2[i] == null ? "—" : fmt(front.r2[i])}</td>` +
       `<td title="${esc(front.expression[i])}">${esc(front.expression_simplified ? front.expression_simplified[i] : front.expression[i])}</td>`;
     tr.addEventListener("click", () => selectEquation(i));
@@ -464,7 +475,7 @@ function selectEquation(i) {
   const r2 = front.r2 ? front.r2[i] : null;
   $("eq-metrics").innerHTML =
     metric("loss", fmt(front.loss[i])) +
-    metric("complexity", front.complexity[i]) +
+    metric("complexity", fmtComplexity(front, i)) +
     metric("score", fmt(front.score[i])) +
     metric("R²", r2 == null ? "—" : fmt(r2));
 

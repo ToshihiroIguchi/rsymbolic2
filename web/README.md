@@ -73,10 +73,24 @@ between the WASM and Python builds.
 The site must be served over HTTP (ES module workers + WASM do not load from `file://`):
 
 ```bash
-cd web/app
-python -m http.server 8080      # or: npx serve .
-# open http://localhost:8080
+python web/serve.py             # serves web/app at http://localhost:8080
+python web/serve.py 8099        # ...on another port
 ```
+
+`web/serve.py` is `python -m http.server` plus a `Cache-Control: no-store` header. Use it
+rather than plain `http.server`: the latter sends no cache headers at all, so browsers apply
+*heuristic* freshness and can keep serving a stale `index.html` — or, far worse, a stale
+`vendor/rsymbolic2.wasm` — for hours after a rebuild. The page then silently runs the old
+engine behind the new UI.
+
+Cache entries already stored by a plain `http.server` stay fresh regardless of the new header,
+so you have to discard them once. Note that a **hard reload is not enough**: it re-fetches the
+document, `js/*.js` and `js/worker.js`, but the engine is imported *by the worker*
+(`worker.js`: `import ... from "../vendor/rsymbolic2.js"`), and a dedicated worker's own
+subresource fetches are not covered by the document's reload flag — verified from this
+server's access log, where `vendor/rsymbolic2.{js,wasm}` were never re-requested after a
+forced reload. Clear the browser cache instead (DevTools → Application → Clear storage, or
+Network tab → "Disable cache" while DevTools stays open), then reload.
 
 ## Deployment
 
