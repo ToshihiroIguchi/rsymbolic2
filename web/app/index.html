@@ -40,40 +40,55 @@
     <main class="layout">
       <!-- LEFT: sidebar, scrolls internally so the header/results stay put. -->
       <aside class="sidebar panel-scroll" aria-label="Configuration">
+        <!-- Data + model: one card, because "which table" and "which columns" are one
+             thought. The intake block collapses once data is loaded (style.css:
+             body.has-data:not(.editing-data) .data-intake) — it is useful for one click and
+             would otherwise hold ~150px of the rail for the whole session; "change" brings
+             it back. The model group is the mirror image: hidden until there is data. -->
         <section class="card">
           <h2>Data</h2>
-          <label id="drop-zone" class="drop-zone">
-            Drop a CSV here, or click to browse
-            <input id="file-input" type="file" accept=".csv,.txt,.tsv" hidden />
-          </label>
-          <label class="example-picker">or try an example
-            <select id="example-select">
-              <option value="" selected disabled>Choose a dataset…</option>
-            </select>
-          </label>
-          <details class="disclosure">
-            <summary>Paste data</summary>
-            <textarea id="paste-area" rows="5" placeholder="x,y&#10;0,1&#10;1,3.5&#10;..."></textarea>
-            <button id="paste-load" class="btn small">Use pasted data</button>
-          </details>
-          <div id="data-summary" class="muted small">No data loaded.</div>
-          <button id="preview-all-btn" class="btn small" type="button" disabled>Preview data</button>
-        </section>
+          <div class="data-intake">
+            <label id="drop-zone" class="drop-zone">
+              Drop a CSV here, click to browse, or paste (Ctrl+V)
+              <input id="file-input" type="file" accept=".csv,.txt,.tsv" hidden />
+            </label>
+            <label class="example-picker">or try an example
+              <select id="example-select">
+                <option value="" selected disabled>Choose a dataset…</option>
+              </select>
+            </label>
+          </div>
+          <div class="data-status">
+            <!-- The summary line is itself the preview trigger: "40 rows × 2 columns" and
+                 "show me those rows" are the same thought, so this replaces a separate
+                 Preview button. Disabled (inert) until there is data to preview. -->
+            <button id="data-summary" class="link-summary muted small" type="button"
+                    disabled title="Show the full data table">No data loaded.</button>
+            <button id="change-data" class="btn small" type="button">change</button>
+          </div>
 
-        <!-- Hidden until data is loaded (body:not(.has-data) .card-model in style.css). -->
-        <section class="card card-model">
-          <h2>Model</h2>
-          <label>Target
+          <div class="model-group">
+            <div class="group-label">Target</div>
             <select id="target-select"></select>
-          </label>
-          <div class="group-label">Features</div>
-          <div id="feature-list" class="checkgrid"></div>
+            <div class="group-label">Features</div>
+            <div id="feature-list" class="checkgrid"></div>
+          </div>
         </section>
 
         <section class="card">
           <h2>Search</h2>
+          <!-- Operators are always visible, not filed in a disclosure beside the parity
+               constants: they are the shared PROBLEM INPUT (CLAUDE.md Benchmarking
+               Requirements), and an unchecked box makes whole expressions unreachable no
+               matter how long the search runs. The numeric settings below are the opposite —
+               PySR-parity defaults that should rarely be touched — so they stay collapsed. -->
+          <div class="group-label">Binary operators</div>
+          <div id="binary-ops" class="checkgrid"></div>
+          <div class="group-label">Unary operators</div>
+          <div id="unary-ops"></div>
+
           <details class="disclosure">
-            <summary>Settings</summary>
+            <summary>Settings <span id="settings-summary" class="muted"></span></summary>
             <div class="grid2">
               <label>Generations<input id="generations" type="number" min="1" value="2800" /></label>
               <label>Populations<input id="n_populations" type="number" min="1" value="31" /></label>
@@ -82,18 +97,7 @@
               <label>Seed<input id="seed" type="number" min="0" value="1" /></label>
               <label>Timeout (s, 0=off)<input id="timeout_seconds" type="number" min="0" value="0" /></label>
             </div>
-          </details>
-
-          <details class="disclosure">
-            <summary>Operators</summary>
-            <div class="group-label">Binary</div>
-            <div id="binary-ops" class="checkgrid"></div>
-            <div class="group-label">Unary</div>
-            <div id="unary-ops"></div>
-          </details>
-
-          <details class="disclosure">
-            <summary>Advanced (PySR parity)</summary>
+            <div class="group-label">PySR parity constants</div>
             <div class="grid2">
               <label>Tournament size<input id="tournament_size" type="number" min="1" value="15" /></label>
               <label>Tournament p<input id="tournament_selection_p" type="number" step="0.001" value="0.982" /></label>
@@ -107,6 +111,7 @@
               <label>Max evals (0=off)<input id="max_evals" type="number" min="0" value="0" /></label>
               <label>Warmup maxsize by<input id="warmup_maxsize_by" type="number" step="0.05" min="0" value="0" /></label>
             </div>
+            <button id="reset-defaults" class="btn small" type="button">Reset to PySR defaults</button>
           </details>
 
           <details class="disclosure">
@@ -200,8 +205,9 @@
       </section>
     </main>
 
-    <!-- Full-data preview. A native <dialog> (top layer, Esc closes it natively); read-only
-         by design — manual cell editing was considered and rejected, the paste-area covers
+    <!-- Full-data preview, opened by clicking the data summary line. A native <dialog> (top
+         layer, Esc closes it natively); read-only by design — manual cell editing was
+         considered and rejected, pasting a corrected table (Ctrl+V anywhere) covers
          hand-entered data without a grid editor's validation/sync complexity. -->
     <dialog id="preview-dialog" class="modal">
       <div class="modal-head">

@@ -13,6 +13,13 @@ import { fmt, fmtTick } from "./format.js";
 let paretoChart = null;
 let predChart = null;
 
+// Options shared by every chart. Charts are destroyed and rebuilt on each redraw (theme
+// toggle, equation click, and once per throttled progress snapshot while a search runs), so
+// Chart.js's default grow-in animation would replay in full every time — a live Pareto front
+// that should converge gradually instead re-inflates from the axis several times a second.
+// Static draws are the correct behaviour here.
+const BASE_OPTIONS = { responsive: true, maintainAspectRatio: false, animation: false };
+
 // Chart colors come from the active theme's CSS variables, read fresh on every draw. Both
 // charts are destroyed and recreated by their draw functions, so a theme toggle only needs
 // to trigger a redraw (main.js redrawCharts) — Chart.defaults is never mutated.
@@ -79,8 +86,7 @@ export function drawPareto(canvas, front, { bestIndex, logLoss, onSelect, select
       ],
     },
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
+      ...BASE_OPTIONS,
       onClick: (_evt, elements) => {
         if (elements && elements.length && onSelect) {
           const idx = points[elements[0].index].i;
@@ -145,8 +151,7 @@ export function drawPrediction(canvas, X, y, yhat, { xLabel = "x0", yLabel = "y"
         ],
       },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
+        ...BASE_OPTIONS,
         scales: {
           x: themedScale(theme, xLabel),
           y: themedScale(theme, yLabel),
@@ -177,8 +182,7 @@ export function drawPrediction(canvas, X, y, yhat, { xLabel = "x0", yLabel = "y"
         ],
       },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
+        ...BASE_OPTIONS,
         scales: {
           x: themedScale(theme, `actual ${yLabel}`),
           y: themedScale(theme, `predicted ${yLabel}`),

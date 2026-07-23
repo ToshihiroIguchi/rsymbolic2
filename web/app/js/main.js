@@ -32,6 +32,32 @@ const BINARY_DEFAULT = new Set(["add", "sub", "mul"]);
 
 const $ = (id) => document.getElementById(id);
 
+// The shipped search defaults, PySR-identical (docs/28). Single source for three consumers:
+// readConfig()'s fallback when a field is blank, resetDefaults(), and the "modified" marker
+// in the Settings summary — so those can never drift apart. Keys are the input element ids;
+// `int` marks the fields parsed with parseInt. model_selection is deliberately absent: it is
+// a results-side display control (score, the web GUI's sanctioned divergence — CLAUDE.md
+// "the web GUI is exempt"), not a search setting, and it lives outside this panel.
+const DEFAULTS = {
+  generations: { value: 2800, int: true },
+  n_populations: { value: 31, int: true },
+  population_size: { value: 27, int: true },
+  max_nodes: { value: 30, int: true },
+  seed: { value: 1, int: true },
+  timeout_seconds: { value: 0 },
+  tournament_size: { value: 15, int: true },
+  tournament_selection_p: { value: 0.982 },
+  parsimony: { value: 0 },
+  adaptive_parsimony_scaling: { value: 1040 },
+  optimize_probability: { value: 0.14 },
+  crossover_probability: { value: 0.0259 },
+  fraction_replaced_hof: { value: 0.0614 },
+  max_depth: { value: 30, int: true },
+  target_loss: { value: 1e-10 },
+  max_evals: { value: 0 },
+  warmup_maxsize_by: { value: 0 },
+};
+
 const state = {
   table: null, // { columns, rows }
   numeric: [], // bool[] per column
@@ -149,10 +175,24 @@ function loadTable(table) {
   state.numeric = numericColumns(table);
   renderDataSummary();
   buildTargetAndFeatures();
-  // Progressive disclosure: the Model card stays hidden until there is data to model.
+  // Progressive disclosure: the target/feature controls stay hidden until there is data to
+  // model, and loading data collapses the intake block (drop zone + example picker) — the
+  // "change" button re-opens it.
   document.body.classList.add("has-data");
+  document.body.classList.remove("editing-data");
   $("run-btn").disabled = false;
-  $("preview-all-btn").disabled = false;
+  $("data-summary").disabled = false;
+}
+
+// Shared by all three intake paths (file input, drag & drop, clipboard paste).
+function loadTextAsTable(text) {
+  try { loadTable(parseTable(text)); }
+  catch (err) { setStatus("parse error: " + err.message); }
+}
+function loadFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => loadTextAsTable(reader.result);
+  reader.readAsText(file);
 }
 
 function renderDataSummary() {
@@ -223,42 +263,61 @@ function currentFeatureIndices() {
 }
 
 // --- Config -----------------------------------------------------------------------
-// Read a numeric input, falling back to `dflt` if the field is empty or non-numeric so a
-// cleared box never sends NaN to the engine (an out-of-range max_nodes/seed would degrade
-// the search — e.g. max_nodes=NaN collapses every candidate to a single constant).
+// Read each numeric input, falling back to its DEFAULTS entry if the field is empty or
+// non-numeric so a cleared box never sends NaN to the engine (an out-of-range max_nodes/seed
+// would degrade the search — e.g. max_nodes=NaN collapses every candidate to a single
+// constant).
 function readConfig() {
-  const numById = (id, dflt) => {
-    const v = parseFloat($(id).value);
-    return Number.isFinite(v) ? v : dflt;
-  };
-  const intById = (id, dflt) => {
-    const v = parseInt($(id).value, 10);
-    return Number.isFinite(v) ? v : dflt;
+  const field = (id) => {
+    const d = DEFAULTS[id];
+    const v = d.int ? parseInt($(id).value, 10) : parseFloat($(id).value);
+    return Number.isFinite(v) ? v : d.value;
   };
   return {
     unary_ops: checkedOps("un"),
     binary_ops: checkedOps("bin"),
-    generations: intById("generations", 2800),
-    n_populations: intById("n_populations", 31),
-    population_size: intById("population_size", 27),
-    max_nodes: intById("max_nodes", 30),
-    max_depth: intById("max_depth", 30),
-    seed: intById("seed", 1),
-    timeout_seconds: numById("timeout_seconds", 0),
-    tournament_size: intById("tournament_size", 15),
-    tournament_selection_p: numById("tournament_selection_p", 0.982),
-    parsimony: numById("parsimony", 0),
-    adaptive_parsimony_scaling: numById("adaptive_parsimony_scaling", 1040),
-    optimize_probability: numById("optimize_probability", 0.14),
-    crossover_probability: numById("crossover_probability", 0.0259),
-    fraction_replaced_hof: numById("fraction_replaced_hof", 0.0614),
-    target_loss: numById("target_loss", 1e-10),
-    max_evals: numById("max_evals", 0),
-    warmup_maxsize_by: numById("warmup_maxsize_by", 0),
+    generations: field("generations"),
+    n_populations: field("n_populations"),
+    population_size: field("population_size"),
+    max_nodes: field("max_nodes"),
+    max_depth: field("max_depth"),
+    seed: field("seed"),
+    timeout_seconds: field("timeout_seconds"),
+    tournament_size: field("tournament_size"),
+    tournament_selection_p: field("tournament_selection_p"),
+    parsimony: field("parsimony"),
+    adaptive_parsimony_scaling: field("adaptive_parsimony_scaling"),
+    optimize_probability: field("optimize_probability"),
+    crossover_probability: field("crossover_probability"),
+    fraction_replaced_hof: field("fraction_replaced_hof"),
+    target_loss: field("target_loss"),
+    max_evals: field("max_evals"),
+    warmup_maxsize_by: field("warmup_maxsize_by"),
     model_selection: $("model_selection").value,
     linear_scaling: $("linear_scaling").checked,
     eval_cache: $("eval_cache").checked,
   };
+}
+
+// A collapsed disclosure that says nothing forces a click just to learn the budget, so the
+// summary carries the two values users actually change plus a warning when anything has
+// drifted off the PySR-parity defaults (CLAUDE.md's highest-priority configuration rule —
+// the GUI should never let that happen silently).
+function settingsModified() {
+  return Object.keys(DEFAULTS).some((id) => {
+    const d = DEFAULTS[id];
+    const v = d.int ? parseInt($(id).value, 10) : parseFloat($(id).value);
+    return !Number.isFinite(v) || v !== d.value;
+  });
+}
+function updateSettingsSummary() {
+  $("settings-summary").textContent =
+    `— ${$("generations").value} generations · seed ${$("seed").value}` +
+    (settingsModified() ? " · modified" : "");
+}
+function resetDefaults() {
+  Object.keys(DEFAULTS).forEach((id) => { $(id).value = String(DEFAULTS[id].value); });
+  updateSettingsSummary();
 }
 
 // --- Run --------------------------------------------------------------------------
@@ -610,13 +669,7 @@ function init() {
 
   $("file-input").addEventListener("change", (e) => {
     const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try { loadTable(parseTable(reader.result)); }
-      catch (err) { setStatus("parse error: " + err.message); }
-    };
-    reader.readAsText(file);
+    if (file) loadFile(file);
   });
   // Drag & drop onto the data card's drop zone (clicking it opens #file-input via the label).
   const zone = $("drop-zone");
@@ -630,13 +683,20 @@ function init() {
   }));
   zone.addEventListener("drop", (e) => {
     const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try { loadTable(parseTable(reader.result)); }
-      catch (err) { setStatus("parse error: " + err.message); }
-    };
-    reader.readAsText(file);
+    if (file) loadFile(file);
+  });
+  // Paste a table from the clipboard anywhere on the page. This replaces a dedicated
+  // textarea + button: same destination (parseTable), no permanent UI. Typing/pasting into
+  // a real field must keep working, so events originating in a form control or editable
+  // element are left alone.
+  document.addEventListener("paste", (e) => {
+    const t = e.target;
+    const tag = t && t.tagName ? t.tagName.toLowerCase() : "";
+    if (tag === "input" || tag === "textarea" || tag === "select" || (t && t.isContentEditable)) return;
+    const text = e.clipboardData && e.clipboardData.getData("text");
+    if (!text || !text.trim()) return;
+    e.preventDefault();
+    loadTextAsTable(text);
   });
 
   // Empty-state shortcut: one click loads the first example dataset and runs it.
@@ -645,19 +705,22 @@ function init() {
     run();
   });
 
-  $("preview-all-btn").addEventListener("click", openPreviewDialog);
+  // The summary line is the preview trigger; "change" re-opens the intake block.
+  $("data-summary").addEventListener("click", openPreviewDialog);
+  $("change-data").addEventListener("click", () => {
+    document.body.classList.toggle("editing-data");
+  });
   $("preview-close").addEventListener("click", () => $("preview-dialog").close());
   // Backdrop click closes: only the <dialog> element itself is hit outside the modal box.
   $("preview-dialog").addEventListener("click", (e) => {
     if (e.target === $("preview-dialog")) $("preview-dialog").close();
   });
 
-  $("paste-load").addEventListener("click", () => {
-    const text = $("paste-area").value;
-    if (!text.trim()) return;
-    try { loadTable(parseTable(text)); }
-    catch (err) { setStatus("parse error: " + err.message); }
-  });
+  // Keep the Settings summary in step with the fields it reports (including the "modified"
+  // marker), and offer the one-click way back to the shipped PySR-parity defaults.
+  Object.keys(DEFAULTS).forEach((id) => $(id).addEventListener("input", updateSettingsSummary));
+  $("reset-defaults").addEventListener("click", resetDefaults);
+  updateSettingsSummary();
 
   wireExport();
 }

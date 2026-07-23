@@ -166,7 +166,8 @@ body.running .app-header .progress { display: block; }
   .layout, .layout.resized { grid-template-columns: 1fr; overflow: visible; }
   .sidebar, .results { overflow: visible; max-height: none; }
   .gutter { display: none; }
-  .charts-row { grid-template-columns: 1fr; }
+  /* NOTE: the .charts-row single-column collapse cannot live here — see the media query
+     next to the .charts-row base rule below. */
 }
 @media (max-height: 640px) {
   body { height: auto; overflow: visible; }
@@ -184,8 +185,24 @@ body.running .app-header .progress { display: block; }
   color: var(--muted); margin: 0 0 0.5rem; border-bottom: 1px solid var(--border);
   padding-bottom: 0.25rem;
 }
-/* Model card is only meaningful once data is loaded. */
-body:not(.has-data) .card-model { display: none; }
+/* Progressive disclosure inside the Data card, in both directions: the target/feature
+   controls are meaningless before there is data, and the intake block (drop zone + example
+   picker) is dead weight after it — one click's worth of use, then ~150px of rail held for
+   the rest of the session. The "change" button re-opens intake by toggling .editing-data on
+   <body>; it is pointless before any data is loaded, so it hides then. */
+body:not(.has-data) .model-group { display: none; }
+body.has-data:not(.editing-data) .data-intake { display: none; }
+body:not(.has-data) #change-data { display: none; }
+
+/* The data summary doubles as the "open the full preview" trigger, so it is a real <button>
+   styled as the muted text line it replaces. */
+.data-status { display: flex; align-items: baseline; gap: 0.5rem; }
+.link-summary {
+  flex: 1; min-width: 0; text-align: left; padding: 0;
+  background: none; border: none; font: inherit; color: inherit;
+  cursor: pointer; text-decoration: underline dotted; text-underline-offset: 0.2em;
+}
+.link-summary:disabled { cursor: default; text-decoration: none; }
 
 .group-label {
   display: block; font-size: 0.72rem; color: var(--muted);
@@ -290,10 +307,24 @@ dialog.modal::backdrop { background: rgba(0, 0, 0, 0.45); }
 
 /* Pareto / Fit charts, side by side on wide viewports, one column below the media query above. */
 .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
-/* Let each chart card shrink below its canvas width so the pane never scrolls sideways. */
-.charts-row > .card { min-width: 0; }
-.chart-box { position: relative; height: 300px; }
-.chart-box.small { height: 240px; }
+/* Let each chart card shrink below its canvas width so the pane never scrolls sideways.
+   The cards are flex columns so the canvas box can absorb the row's full height: grid
+   stretches both cards to the taller one (the Pareto card, which carries an extra control
+   row and the legend), and a fixed-height canvas would leave that difference as a blank
+   strip under the shorter card's chart. Growing the box instead of matching two magic
+   numbers keeps the gap closed if either card's header changes. Chart.js re-fits itself
+   (responsive + maintainAspectRatio: false inside a position: relative box). */
+.charts-row > .card { min-width: 0; display: flex; flex-direction: column; }
+.chart-box { position: relative; flex: 1 1 auto; min-height: 300px; }
+/* Height floor only; in a stretched row the box takes whatever the row gives it. */
+.chart-box.small { min-height: 240px; }
+/* Narrow viewports stack the two chart cards instead of squeezing both into the width.
+   This must sit AFTER the base rule above: a media query contributes no specificity, so an
+   identical selector declared later in the file wins even while the query matches — which is
+   why this collapse did nothing when it lived in the shared narrow-viewport block further up. */
+@media (max-width: 1100px) {
+  .charts-row { grid-template-columns: 1fr; }
+}
 
 .table-wrap { overflow: auto; max-height: 320px; border: 1px solid var(--border); border-radius: 6px; }
 #pareto-table { border-collapse: collapse; width: 100%; font-size: 0.8rem; }

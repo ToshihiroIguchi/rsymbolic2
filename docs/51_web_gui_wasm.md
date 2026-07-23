@@ -164,14 +164,15 @@ points (no new heavy features, no engine/default change):
   operator boxes. This is a UI convenience only — **operators are the shared problem input**
   (per the Benchmarking Requirements), not a PySR-parity default, so pre-checking them touches
   no search default.
-- **Full-data preview modal.** A "Preview data" button (enabled once data is loaded) opens
-  the app's first native `<dialog>` (sticky header row, closed via ×, Esc, or a backdrop
-  click), rendering up to 2000 rows with a note if the table is larger. An earlier revision
-  additionally kept an inline 6-row mini-table behind a disclosure; it was removed as
-  redundant — the modal is the preview. In-place cell editing in this grid was **considered
-  and rejected**: the existing paste-area already covers hand-entered/edited data, and a
-  spreadsheet-style editor's validation and data-sync complexity is not worth it in an
-  analysis GUI — see "Explicitly out of scope" below.
+- **Full-data preview modal.** Clicking the data-summary line ("40 rows × 2 columns", a
+  `<button>` styled as that text — the row count and "show me those rows" are one thought, so
+  a separate Preview button was folded into it) opens the app's first native `<dialog>`
+  (sticky header row, closed via ×, Esc, or a backdrop click), rendering up to 2000 rows with
+  a note if the table is larger. An earlier revision additionally kept an inline 6-row
+  mini-table behind a disclosure; it was removed as redundant — the modal is the preview.
+  In-place cell editing in this grid was **considered and rejected**: pasting a corrected
+  table covers hand-entered/edited data, and a spreadsheet-style editor's validation and
+  data-sync complexity is not worth it in an analysis GUI — see "Explicitly out of scope".
 - **Single search budget (no presets).** An earlier revision offered Quick/Balanced/Full
   preset pills; they were removed. The demo datasets finish fast enough that a reduced
   budget is unnecessary, so the GUI now always defaults to the PySR-parity budget
@@ -195,6 +196,57 @@ points (no new heavy features, no engine/default change):
   (`"Fit: <target> vs <feature>"` / `"Predicted vs actual"`) and real dataset column names on
   its axes instead of generic labels; a static HTML legend documents the Pareto point colors
   (selected / recommended ★ / front).
+
+- **Static charts (no draw animation).** All three Chart.js constructions share
+  `BASE_OPTIONS` in `plots.js`, which sets `animation: false`. Every redraw path destroys and
+  rebuilds the chart (theme toggle, equation click, and once per throttled progress snapshot
+  while a search runs), so Chart.js's default 1000 ms grow-from-the-axis would replay in
+  full each time — a live Pareto front that should be watched converging instead re-inflates
+  from zero several times a second, and clicking through equations flashes. Switching the
+  live path to an in-place `chart.update("none")` was **considered and rejected**: the
+  rebuild is what lets a draw pick up a new theme palette and swap the y-axis between linear
+  and logarithmic, and with animation off the visual result is identical.
+- **Data intake collapses after load; data and model are one card.** The Data card is the
+  problem definition, so Target/Features moved into it (`.model-group`, hidden until there is
+  data) and the separate Model card is gone. The intake block (drop zone + example picker) is
+  the mirror image — one click's worth of use, then ~150 px of rail held for the whole
+  session — so it hides once a table is loaded, behind a `change` button that reveals it
+  again (`body.has-data:not(.editing-data) .data-intake`). The **paste textarea and its
+  button were removed**: a document-level `paste` listener reaches the same `parseTable()`
+  from anywhere on the page with no permanent UI (events originating in an `input`/
+  `textarea`/`select`/contenteditable are ignored, so typing into a settings field still
+  pastes normally), and the drop zone advertises it — "Drop a CSV here, click to browse, or
+  paste (Ctrl+V)". Alternatives rejected: segmented File | Example | Paste tabs and a "Load
+  data ▾" popover both add a mode or a layer that costs more than the three inline paths they
+  replace.
+- **Operators are visible; the parity constants are not.** Operators decide the reachable
+  search space and are the shared **problem input** (per the Benchmarking Requirements), not
+  a default to tune — an unchecked box makes whole expressions unreachable no matter how long
+  the run — so the checkboxes now sit directly in the Search card instead of behind a
+  disclosure indistinguishable from the ones holding `tournament_selection_p`. The former
+  "Settings" and "Advanced (PySR parity)" disclosures were one panel split by importance
+  rather than by kind, so they merged into a single `Settings` disclosure (budget fields
+  first, then a `PySR parity constants` group). Its summary carries live values —
+  `Settings — 2800 generations · seed 1` — because a collapsed disclosure that says nothing
+  forces a click just to learn the budget, and appends `· modified` when **any** field
+  differs from its shipped default, next to a `Reset to PySR defaults` button: the GUI should
+  never let a user drift silently off the parity defaults with no way back. `main.js`
+  `DEFAULTS` is the single source for the reset, the modified marker, and `readConfig()`'s
+  blank-field fallback, so the three cannot drift apart. Operator preset chips were rejected
+  for the same reason the Quick/Balanced/Full budget pills were removed (above).
+- **Chart cards fill their row.** `.charts-row` stretches both cards to the taller one (the
+  Pareto card carries an extra control row and the legend), so the Fit card's fixed 240 px
+  canvas left a ~95 px blank strip under it — the tallest unused region in the answer-first
+  view. The cards are now flex columns whose `.chart-box` grows into the row height
+  (`flex: 1 1 auto` + a `min-height` floor), which closes the gap by construction for any
+  future header difference instead of by matching two magic numbers; Chart.js re-fits itself
+  (`responsive` + `maintainAspectRatio: false` inside a `position: relative` box), so no JS
+  changed. Fixed alongside: the narrow-viewport `.charts-row { grid-template-columns: 1fr }`
+  collapse had been dead — it sat in the `max-width: 1100px` block *above* the base
+  `.charts-row` rule, and since a media query adds no specificity the later identical
+  selector won even while the query matched, leaving two ~250 px charts side by side on a
+  phone-width screen. That one declaration now lives in its own media query placed after the
+  base rule.
 
 Explicitly **out of scope** (would make it a mismatched full UI): tabs, live log /
 records-over-time, a prediction/extrapolation workspace, an editable data grid (including
