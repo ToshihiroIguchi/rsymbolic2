@@ -268,6 +268,13 @@ function setOpChecked(kind, op) {
 
 // --- Data intake ------------------------------------------------------------------
 function loadTable(table) {
+  // New data invalidates everything downstream of it, including a search still in flight:
+  // its result would render against the table it can no longer be read as describing.
+  if (document.body.classList.contains("running")) {
+    if (state.worker) { state.worker.terminate(); state.worker = null; }
+    finishRun();
+  }
+  clearResults();
   state.table = table;
   state.numeric = numericColumns(table);
   renderDataSummary();
@@ -279,6 +286,33 @@ function loadTable(table) {
   document.body.classList.remove("editing-data");
   $("run-btn").disabled = false;
   $("data-summary").disabled = false;
+  setStatus("data loaded — press Run");
+}
+
+// Return the results panel to its pre-run placeholder state. A displayed result is an answer
+// ABOUT one dataset: the front, the fitted matrices (state.X/y) and the column names were all
+// snapshotted at run time, so once the table underneath them changes, leaving them on screen
+// invites reading the previous dataset's equation as the new one's answer. There is nothing to
+// preserve either — the next run overwrites them anyway. Charts are destroyed rather than left
+// stale because the hidden canvases keep their last drawing until something redraws them.
+function clearResults() {
+  if (!state.result) return;
+  destroyPlots();
+  state.result = null;
+  state.config = null;
+  state.X = null;
+  state.y = null;
+  state.featureNames = null;
+  state.targetName = null;
+  state.selectedIndex = null;
+  $("results-area").classList.remove("has-result");
+  $("pareto-card").classList.remove("live");
+  $("pareto-table").querySelector("tbody").innerHTML = "";
+  $("eq-latex").innerHTML = "";
+  $("eq-string").textContent = "";
+  $("eq-string").title = "";
+  $("eq-metrics").innerHTML = "";
+  $("eval-accounting").textContent = "";
 }
 
 // Shared by all three intake paths (file input, drag & drop, clipboard paste).
