@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Pinned to 6.0.2 (the version this project is developed/verified against,
       # per web/README.md) -- never "latest". The official emsdk installer is
@@ -50,7 +50,7 @@ jobs:
 
       # Correctness gate: recovery + determinism (and Python cross-check,
       # best-effort -- it skips itself when the Python package isn't
-      # importable, which is expected in this CI environment). Node 20+ is
+      # importable, which is expected in this CI environment). Node is
       # preinstalled on ubuntu-latest; no npm install needed.
       - name: Run parity test (correctness gate)
         run: node web/wasm/test/parity_test.cjs
@@ -59,12 +59,14 @@ jobs:
       # the first run, enable it manually once: Settings -> Pages -> Source:
       # GitHub Actions.
       - name: Configure Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
         with:
           enablement: true
 
+      # v4+ excludes hidden files (dotfiles) from the artifact; web/app has
+      # none, so the default is what we want.
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: web/app
 
@@ -77,4 +79,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
