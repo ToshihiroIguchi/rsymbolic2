@@ -68,6 +68,75 @@ def test_quadratic_recovery_with_square():
     np.testing.assert_allclose(pred, y, atol=1e-2)
 
 
+def test_reciprocal_recovery_with_inv():
+    """inv is opt-in (not a default) and must round-trip through predict()."""
+    X = np.linspace(0.5, 4.0, 40).reshape(-1, 1)  # away from the pole: inv is unguarded
+    y = 2.0 / X[:, 0]
+    res = symbolic_regression(
+        X, y, unary_ops=["inv"], population_size=200, generations=60, seed=1
+    )
+    assert res.loss < 1e-4
+    assert "inv" in res.expression
+    pred = res.predict(X, expression=res.expression)
+    np.testing.assert_allclose(pred, y, atol=1e-2)
+
+
+def test_macro_ops_default_none_is_inert():
+    """macro_ops=None must be the same run as not passing it at all."""
+    X = np.linspace(-2, 2, 20).reshape(-1, 1)
+    y = 1.5 * X[:, 0] + 0.5
+    common = dict(
+        unary_ops=["exp"], binary_ops=["add", "mul"],
+        population_size=60, generations=30, seed=11,
+    )
+    a = symbolic_regression(X, y, **common)
+    b = symbolic_regression(X, y, macro_ops=None, **common)
+    assert a.expression == b.expression
+    assert a.loss == b.loss
+
+
+def test_macro_op_reaches_an_otherwise_unreachable_target():
+    """y = 3*exp(-x^2) is unreachable with no unary operators; the macro supplies it."""
+    X = np.linspace(-2, 2, 30).reshape(-1, 1)
+    y = 3.0 * np.exp(-(X[:, 0] ** 2))
+    res = symbolic_regression(
+        X, y,
+        unary_ops=[], binary_ops=["add", "mul"],
+        macro_ops={"gauss": "exp(neg(square(x)))"},
+        population_size=200, generations=80, seed=4,
+    )
+    assert res.loss < 1e-3
+    # Macros are expanded, so the reported expression is in primitive form.
+    assert "exp" in res.expression
+    assert "gauss" not in res.expression
+    assert np.all(np.isfinite(res.predict(X, expression=res.expression)))
+
+
+@pytest.mark.parametrize(
+    "body, message",
+    [
+        ("exp(x) + x", "exactly once"),
+        ("exp(1)", "exactly once"),
+        ("gauss(x)", "unknown function"),
+        ("exp(x", "expected"),
+        ("x0 + x", "unknown identifier"),
+    ],
+)
+def test_macro_body_validation(body, message):
+    X = np.linspace(1.0, 2.0, 8).reshape(-1, 1)
+    with pytest.raises(ValueError, match=message):
+        symbolic_regression(
+            X, X[:, 0], binary_ops=["add", "mul"], macro_ops={"f": body},
+            population_size=10, generations=1,
+        )
+
+
+def test_unknown_operator_name_is_rejected():
+    X = np.linspace(1.0, 2.0, 10).reshape(-1, 1)
+    with pytest.raises(ValueError, match="Unknown unary operator"):
+        symbolic_regression(X, X[:, 0], unary_ops=["reciprocal"], generations=1)
+
+
 def test_pareto_front_and_repr():
     X = np.linspace(-2, 2, 25).reshape(-1, 1)
     y = X[:, 0] + 3.0

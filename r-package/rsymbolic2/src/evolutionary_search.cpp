@@ -74,16 +74,30 @@ const EGraphLimits kSearchStrongSimplifyLimits{4, 1000, 1.0e9};
 // operators define the user's search space (CLAUDE.md: operators are the shared
 // problem input), so such a rewrite must never be adopted. Constants introduced by
 // folding are unconstrained; only operator identity is gated. Pure; consumes no RNG.
+// Operators reachable through an opt-in macro operator count as enabled: a macro body is an
+// explicit user declaration ("this structure may appear"), so requiring the user to also
+// enable every primitive inside it would widen the search space they actually asked for.
+bool op_in_macro_body(const Node& node, const SearchSpace& space) {
+    for (const MacroOp& macro : space.macro_ops) {
+        for (const Node& body_node : macro.body) {
+            if (body_node.kind != node.kind) continue;
+            if (node.kind == NodeKind::Unary && body_node.uop == node.uop) return true;
+            if (node.kind == NodeKind::Binary && body_node.bop == node.bop) return true;
+        }
+    }
+    return false;
+}
+
 bool ops_within_search_space(const Tree& tree, const SearchSpace& space) {
     for (const Node& node : tree) {
         if (node.kind == NodeKind::Unary) {
             const bool ok = std::find(space.unary_ops.begin(), space.unary_ops.end(),
                                       node.uop) != space.unary_ops.end();
-            if (!ok) return false;
+            if (!ok && !op_in_macro_body(node, space)) return false;
         } else if (node.kind == NodeKind::Binary) {
             const bool ok = std::find(space.binary_ops.begin(), space.binary_ops.end(),
                                       node.bop) != space.binary_ops.end();
-            if (!ok) return false;
+            if (!ok && !op_in_macro_body(node, space)) return false;
         }
     }
     return true;

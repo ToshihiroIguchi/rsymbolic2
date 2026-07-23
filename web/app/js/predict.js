@@ -7,7 +7,7 @@
 // rsymbolic2/__init__.py::_eval_expression). We do the same here with a small, safe
 // recursive-descent parser (no `eval`), matching the grammar emitted by
 // tree.hpp::to_string: variables `x<i>`, `%.6g` constants (incl. inf / nan /
-// scientific), unary `name(arg)` for neg/exp/log/sin/cos/sqrt/tanh/abs/square, and
+// scientific), unary `name(arg)` for neg/exp/log/sin/cos/sqrt/tanh/abs/square/inv, and
 // fully-parenthesised binary `(a op b)` with op in + - * / ^.
 //
 // Safe-pow caveat (identical to the Python wrapper): `^` maps to JS `**`, which yields
@@ -18,6 +18,7 @@
 const UNARY_FNS = {
   neg: (v) => -v,
   square: (v) => v * v,
+  inv: (v) => 1 / v,
   exp: Math.exp,
   log: Math.log, // natural log, matching the core
   sin: Math.sin,

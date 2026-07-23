@@ -82,6 +82,17 @@ void test_sqrt_square_roundtrip() {
     CHECK(violates_dimensions(t, units({"m"}), parse_unit("s"), true));
 }
 
+// inv negates the exponents: 1/x0 with x0=s is a frequency (1/s = Hz).
+void test_inv_inverts_dimension() {
+    Tree t = {rsymbolic::variable_node(0), rsymbolic::unary_node(UnaryOp::Inv)};
+    CHECK(!violates_dimensions(t, units({"s"}), parse_unit("Hz"), true));
+    CHECK(violates_dimensions(t, units({"s"}), parse_unit("s"), true));
+    // inv(inv(x)) is back to the original dimension.
+    Tree t2 = {rsymbolic::variable_node(0), rsymbolic::unary_node(UnaryOp::Inv),
+               rsymbolic::unary_node(UnaryOp::Inv)};
+    CHECK(!violates_dimensions(t2, units({"s"}), parse_unit("s"), true));
+}
+
 // A bare variable with a y_units mismatch: [x0], x0=m, y=s -> violates.
 void test_y_units_mismatch() {
     Tree t = {rsymbolic::variable_node(0)};
@@ -144,6 +155,7 @@ int main() {
     test_force_ma_add_violates();
     test_transcendental_requires_dimensionless();
     test_sqrt_square_roundtrip();
+    test_inv_inverts_dimension();
     test_y_units_mismatch();
     test_wildcard_unification();
     test_pow_requires_dimensionless_base();

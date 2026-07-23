@@ -58,13 +58,72 @@ BinaryChildren binary_children(const Tree& tree, std::size_t i) {
     return {left_start, left_end, right_start, right_end};
 }
 
+// --- unary alphabet (primitive operators + opt-in macro operators) -------------------
+//
+// A growth mutation that creates a unary node draws from the enabled primitive operators
+// (one node each) followed by the macro operators that still fit in the free space
+// (macro_extra_nodes each; macro_op.hpp). With space.macro_ops empty — the default — the
+// alphabet IS space.unary_ops and the single index draw below is the identical RNG call
+// the pre-macro code made. That is what keeps the default search bit-identical.
+//
+// Size/at rather than a materialised vector: this is the hot path, and the no-macro case
+// must stay allocation-free.
+
+struct UnaryChoice {
+    bool is_macro = false;
+    UnaryOp op = UnaryOp::Neg;
+    std::size_t macro_index = 0;
+};
+
+// `primitives_only` restricts the alphabet to cost-one entries. Used by the forced-unary
+// step of gen_random_tree_fixed_size, whose size arithmetic assumes a unary operator adds
+// exactly one node — a macro would overshoot the requested tree size.
+std::size_t unary_alphabet_size(const SearchSpace& space, int room, bool primitives_only) {
+    std::size_t n = room >= 1 ? space.unary_ops.size() : 0;
+    if (primitives_only) return n;
+    for (const MacroOp& m : space.macro_ops) {
+        if (macro_extra_nodes(m) <= room) ++n;
+    }
+    return n;
+}
+
+UnaryChoice unary_alphabet_at(const SearchSpace& space, int room, bool primitives_only,
+                              std::size_t index) {
+    const std::size_t n_primitive = room >= 1 ? space.unary_ops.size() : 0;
+    if (index < n_primitive) return {false, space.unary_ops[index], 0};
+    std::size_t k = index - n_primitive;
+    for (std::size_t i = 0; i < space.macro_ops.size() && !primitives_only; ++i) {
+        if (macro_extra_nodes(space.macro_ops[i]) > room) continue;
+        if (k == 0) return {true, UnaryOp::Neg, i};
+        --k;
+    }
+    return {false, space.unary_ops.empty() ? UnaryOp::Neg : space.unary_ops[0], 0};
+}
+
+UnaryChoice draw_unary(const SearchSpace& space, int room, bool primitives_only,
+                       std::mt19937_64& rng) {
+    const std::size_t n = unary_alphabet_size(space, room, primitives_only);
+    std::uniform_int_distribution<std::size_t> op(0, n - 1);
+    return unary_alphabet_at(space, room, primitives_only, op(rng));
+}
+
+// Wrap `operand` (a complete postfix subtree) in the chosen unary form: one operator node
+// for a primitive, the expanded template for a macro.
+Tree wrap_unary(const UnaryChoice& choice, const SearchSpace& space, Tree operand) {
+    if (choice.is_macro) return expand_macro(space.macro_ops[choice.macro_index], operand);
+    operand.push_back(unary_node(choice.op));
+    return operand;
+}
+
 // Probability that a newly grown operator is binary, faithful to SR.jl
 // MutationFunctions.jl: `rand() < nbin / (nuna + nbin)`. This weights the unary/binary
 // split by the operator-set sizes rather than a fixed 50/50, so larger unary sets bias
-// growth toward unary operators exactly as the reference does.
-double binary_op_fraction(const SearchSpace& space) {
+// growth toward unary operators exactly as the reference does. `nuna` is the unary
+// alphabet size, so opt-in macros widen the unary side exactly as extra primitives would;
+// with no macros it is space.unary_ops.size(), the SR.jl-faithful value.
+double binary_op_fraction(const SearchSpace& space, std::size_t n_unary) {
     const double nbin = static_cast<double>(space.binary_ops.size());
-    const double nuna = static_cast<double>(space.unary_ops.size());
+    const double nuna = static_cast<double>(n_unary);
     const double total = nbin + nuna;
     return total > 0.0 ? nbin / total : 0.0;
 }
@@ -128,9 +187,14 @@ bool mutate_operator(Tree& tree, const SearchSpace& space, std::mt19937_64& rng)
 
 bool append_random_op(Tree& tree, const SearchSpace& space, std::mt19937_64& rng,
                       std::optional<bool> make_new_bin_op) {
-    // Net node growth: leaf -> op(leaf) adds 1; leaf -> op(leaf, leaf) adds 2.
+    // Net node growth: leaf -> op(leaf) adds 1; leaf -> op(leaf, leaf) adds 2. A macro
+    // operator adds macro_extra_nodes(m) and is offered only while that fits in `room`.
     const int room = space.max_nodes - static_cast<int>(tree.size());
-    const bool can_unary  = !space.unary_ops.empty()  && room >= 1;
+    // A forced-unary caller (gen_random_tree_fixed_size) needs exactly one added node, so
+    // it draws from the primitives only — see unary_alphabet_size.
+    const bool forced_unary = make_new_bin_op.has_value() && !*make_new_bin_op;
+    const std::size_t n_unary = unary_alphabet_size(space, room, forced_unary);
+    const bool can_unary  = n_unary > 0;
     const bool can_binary = !space.binary_ops.empty() && room >= 2;
     if (!can_unary && !can_binary) return false;
 
@@ -154,7 +218,8 @@ bool append_random_op(Tree& tree, const SearchSpace& space, std::mt19937_64& rng
         make_binary = *make_new_bin_op;
         if (make_binary ? !can_binary : !can_unary) return false;
     } else {
-        make_binary = can_binary && (!can_unary || uniform01(rng) < binary_op_fraction(space));
+        make_binary =
+            can_binary && (!can_unary || uniform01(rng) < binary_op_fraction(space, n_unary));
     }
     Tree replacement;
     if (make_binary) {
@@ -162,8 +227,11 @@ bool append_random_op(Tree& tree, const SearchSpace& space, std::mt19937_64& rng
         replacement = {make_random_leaf(space, rng), make_random_leaf(space, rng),
                        binary_node(space.binary_ops[op(rng)])};
     } else {
-        std::uniform_int_distribution<std::size_t> op(0, space.unary_ops.size() - 1);
-        replacement = {make_random_leaf(space, rng), unary_node(space.unary_ops[op(rng)])};
+        // RNG order is load-bearing: the leaf is drawn BEFORE the operator index, exactly as
+        // the braced initialiser did before macros existed.
+        Tree operand{make_random_leaf(space, rng)};
+        replacement = wrap_unary(draw_unary(space, room, forced_unary, rng), space,
+                                 std::move(operand));
     }
 
     Tree result;
@@ -177,9 +245,11 @@ bool append_random_op(Tree& tree, const SearchSpace& space, std::mt19937_64& rng
 }
 
 bool prepend_random_op(Tree& tree, const SearchSpace& space, std::mt19937_64& rng) {
-    // Net node growth: tree -> op(tree) adds 1; tree -> op(tree, leaf) adds 2.
+    // Net node growth: tree -> op(tree) adds 1; tree -> op(tree, leaf) adds 2 (a macro adds
+    // macro_extra_nodes(m)).
     const int room = space.max_nodes - static_cast<int>(tree.size());
-    const bool can_unary  = !space.unary_ops.empty()  && room >= 1;
+    const std::size_t n_unary = unary_alphabet_size(space, room, /*primitives_only=*/false);
+    const bool can_unary  = n_unary > 0;
     const bool can_binary = !space.binary_ops.empty() && room >= 2;
     if (!can_unary && !can_binary) return false;
     if (tree.empty()) return false;
@@ -189,14 +259,16 @@ bool prepend_random_op(Tree& tree, const SearchSpace& space, std::mt19937_64& rn
     // operand (`l=copy(tree), r=make_random_leaf`). Postfix: append the right leaf (if any)
     // then the new operator after the whole existing tree.
     const bool make_binary =
-        can_binary && (!can_unary || uniform01(rng) < binary_op_fraction(space));
+        can_binary && (!can_unary || uniform01(rng) < binary_op_fraction(space, n_unary));
     if (make_binary) {
         std::uniform_int_distribution<std::size_t> op(0, space.binary_ops.size() - 1);
         tree.push_back(make_random_leaf(space, rng));
         tree.push_back(binary_node(space.binary_ops[op(rng)]));
     } else {
-        std::uniform_int_distribution<std::size_t> op(0, space.unary_ops.size() - 1);
-        tree.push_back(unary_node(space.unary_ops[op(rng)]));
+        // The whole tree is the operand, so a macro wraps it by splicing it into the
+        // template's placeholder position.
+        tree = wrap_unary(draw_unary(space, room, /*primitives_only=*/false, rng), space,
+                          std::move(tree));
     }
     reindex_constants(tree);
     return true;
@@ -272,7 +344,9 @@ bool delete_random_op(const SearchSpace& space, Tree& tree, std::mt19937_64& rng
 
 bool insert_random_op(Tree& tree, const SearchSpace& space, std::mt19937_64& rng) {
     const int room = space.max_nodes - static_cast<int>(tree.size());
-    const bool can_unary  = !space.unary_ops.empty()  && room >= 1;  // adds 1 node
+    const std::size_t n_unary =  // a primitive adds 1 node, a macro macro_extra_nodes(m)
+        unary_alphabet_size(space, room, /*primitives_only=*/false);
+    const bool can_unary  = n_unary > 0;
     const bool can_binary = !space.binary_ops.empty() && room >= 2;  // adds 2 nodes
     if (!can_unary && !can_binary) return false;
     if (tree.empty()) return false;
@@ -282,7 +356,7 @@ bool insert_random_op(Tree& tree, const SearchSpace& space, std::mt19937_64& rng
     const std::size_t s = subtree_start(tree, p);    // subtree occupies [s, p]
 
     const bool make_binary =
-        can_binary && (!can_unary || uniform01(rng) < binary_op_fraction(space));
+        can_binary && (!can_unary || uniform01(rng) < binary_op_fraction(space, n_unary));
 
     Tree wrapped;  // the replacement for the span [s, p]
     wrapped.reserve((p - s + 1) + 2);
@@ -294,9 +368,9 @@ bool insert_random_op(Tree& tree, const SearchSpace& space, std::mt19937_64& rng
         wrapped.push_back(make_random_leaf(space, rng));
         wrapped.push_back(binary_node(space.binary_ops[op(rng)]));
     } else {
-        std::uniform_int_distribution<std::size_t> op(0, space.unary_ops.size() - 1);
+        const UnaryChoice choice = draw_unary(space, room, /*primitives_only=*/false, rng);
         wrapped.insert(wrapped.end(), tree.begin() + s, tree.begin() + p + 1);
-        wrapped.push_back(unary_node(space.unary_ops[op(rng)]));
+        wrapped = wrap_unary(choice, space, std::move(wrapped));
     }
 
     Tree result;
@@ -509,12 +583,14 @@ bool mutate(Tree& tree, const SearchSpace& space, std::mt19937_64& rng,
     const bool has_const = n_const > 0;
     const bool has_op    = has_operator(tree);
     const int  room      = space.max_nodes - static_cast<int>(tree.size());
-    const bool can_unary  = !space.unary_ops.empty();
     const bool can_binary = !space.binary_ops.empty();
     // add_node (append_random_op / prepend_random_op) and insert_random_op all grow the
-    // tree: a unary op adds 1 node, a binary op adds 2. So both need a unary op with one
-    // free slot, or a binary op with two.
-    const bool can_grow   = (can_unary && room >= 1) || (can_binary && room >= 2);
+    // tree: a unary op adds 1 node, a binary op adds 2, a macro operator adds
+    // macro_extra_nodes(m). So growth needs a unary alphabet entry that fits in `room`,
+    // or a binary op with two free slots.
+    const bool can_grow   =
+        unary_alphabet_size(space, room, /*primitives_only=*/false) > 0 ||
+        (can_binary && room >= 2);
     const bool can_add    = can_grow;
     const bool can_insert = can_grow;
 

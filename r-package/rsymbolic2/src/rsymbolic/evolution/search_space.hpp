@@ -8,6 +8,7 @@
 #include <optional>
 #include <vector>
 
+#include "rsymbolic/evolution/macro_op.hpp"
 #include "rsymbolic/expression/node.hpp"
 #include "rsymbolic/units/dimension.hpp"
 
@@ -27,6 +28,12 @@ struct SearchSpace {
     int max_nodes = 30;          // PySR maxsize = 30 (soft cap on tree size); docs/28 §A
     double terminal_prob = 0.3;  // probability of stopping at a leaf before max_depth
     double const_prob = 0.5;     // probability a leaf is a constant (vs a variable)
+
+    // Opt-in user-defined macro operators (docs/57): single-argument templates over the
+    // primitive operators, expanded when a growth mutation creates a unary node. Empty (the
+    // default) is the off-switch — the unary alphabet is then exactly `unary_ops` and the
+    // search is bit-identical to the PySR-parity default.
+    std::vector<MacroOp> macro_ops;
 
     // Opt-in dimensional analysis (PySR X_units / y_units / dimensionless_constants_only;
     // docs/46). All default-off: `x_units` empty means the feature is disabled and the

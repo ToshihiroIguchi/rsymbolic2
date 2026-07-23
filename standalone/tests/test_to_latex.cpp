@@ -87,6 +87,10 @@ void test_unary_operators() {
     CHECK_EQ(to_latex({x(0), c(2.0), b(BinaryOp::Mul), u(UnaryOp::Neg)}),
              "-x_{0} \\cdot 2");
     CHECK_EQ(to_latex({x(0), u(UnaryOp::Square)}), "x_{0}^{2}");
+    // inv renders as a fraction; \frac braces group, so no operand parentheses.
+    CHECK_EQ(to_latex({x(0), u(UnaryOp::Inv)}), "\\frac{1}{x_{0}}");
+    CHECK_EQ(to_latex({x(0), x(1), b(BinaryOp::Add), u(UnaryOp::Inv)}),
+             "\\frac{1}{x_{0} + x_{1}}");
     CHECK_EQ(to_latex({x(0), x(1), b(BinaryOp::Add), u(UnaryOp::Square)}),
              "\\left( x_{0} + x_{1} \\right)^{2}");
 }

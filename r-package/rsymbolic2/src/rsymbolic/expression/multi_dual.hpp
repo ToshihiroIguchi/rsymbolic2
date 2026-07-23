@@ -182,6 +182,17 @@ inline MultiDual<N> square(const MultiDual<N>& a) {
     return r;
 }
 
+// inv(x) = 1/x; derivative -1/x^2. Unguarded, like operator/ (see dual.hpp::recip).
+template <int N>
+inline MultiDual<N> recip(const MultiDual<N>& a) {
+    const double rv = 1.0 / a.value;
+    MultiDual<N> r;
+    r.value = rv;
+    // dual.hpp: -a.deriv * r * r — same left-associative product, same bits.
+    for (int c = 0; c < N; ++c) r.grad[c] = -a.grad[c] * rv * rv;
+    return r;
+}
+
 // safe_pow: identical value/guard logic and derivative formulas to dual.hpp's
 // pow(Dual, Dual). The scalar coefficients (p, dpdx, dpdy) are computed once and
 // applied per lane, so every result is bit-identical to the scalar k-pass version.

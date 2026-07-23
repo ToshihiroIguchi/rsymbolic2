@@ -427,7 +427,8 @@ fair comparison the same operator set is given to both tools.
 
 - **Binary:** `add` (`+`), `sub` (`−`), `mul` (`×`), `div` (`÷`), `pow` (`^`).
 - **Unary:** `neg` (`−x`), `exp`, `log`, `sin`, `cos`, `sqrt`, `tanh`, `abs`,
-  `square` (`x²` as a single cheap node).
+  `square` (`x²` as a single cheap node), `inv` (`1/x`, likewise a single node —
+  cheaper than `div` with a fitted numerator; unguarded like `div`).
 
 Two operators are **protected** so that an invalid intermediate value cannot poison the
 least-squares solver with `NaN` (matching SymbolicRegression.jl's `safe_*` semantics):
@@ -438,6 +439,28 @@ least-squares solver with `NaN` (matching SymbolicRegression.jl's `safe_*` seman
 > Note: during **prediction**, `pow` uses the host language's ordinary power operator
 > (`**` / `^`), which can return `NaN` for a negative base with a fractional exponent.
 > This only matters if your data domain includes such inputs.
+
+### User-defined operators (macro operators)
+
+The operator enum is fixed — rsymbolic2 has no runtime language to compile an arbitrary
+user function into, and will not gain one. What it offers instead is a **macro operator**:
+a single-argument template written in infix over the primitives, which is *expanded* into
+the expression whenever the search grows a unary node.
+
+```python
+symbolic_regression(X, y, unary_ops=[], binary_ops=["add", "mul"],
+                    macro_ops={"gauss": "exp(neg(square(x)))"})
+```
+
+```r
+symbolic_regression(X, y, unary_ops = character(0), binary_ops = c("add", "mul"),
+                    macro_ops = c(gauss = "exp(neg(square(x)))"))
+```
+
+Because expansion happens at construction, results are printed in primitive form, the
+macro's nodes count toward complexity normally, and numeric literals in a body become
+tunable constants seeded at that value. Off by default; see
+[docs/57](docs/57_macro_operators.md).
 
 ---
 
@@ -468,6 +491,7 @@ same names). **Every default below equals PySR's documented default** — see
 | `mutation_weights` | `None` | Override relative mutation-kind weights (`MutationWeights`). |
 | `model_selection` | `"best"` | Which Pareto member is `recommended` (`model_selection`). |
 | `weights` | `None` | Per-point weights for weighted least squares (`weights`). |
+| `macro_ops` | `None` | Opt-in user-defined operators: single-argument templates over the primitive operators, e.g. `{"gauss": "exp(neg(square(x)))"}`, expanded into the tree when it grows ([docs/57](docs/57_macro_operators.md)). No PySR equivalent that avoids a runtime language. |
 | `batching` | `False` | Score evolution/optimisation on a random `batch_size`-row subsample per iteration for large datasets (`batching`); the hall of fame and result stay full-data. |
 | `batch_size` | `50` | Rows sampled per iteration when `batching` is on (`batch_size`). |
 | `early_stop_condition` | `0.0` | Extra early-stop loss threshold (`early_stop_condition`). |

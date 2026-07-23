@@ -50,6 +50,25 @@ test_that("square operator: y = x^2 + 1 is recoverable", {
   expect_lt(res$loss, 1e-3)
 })
 
+test_that("inv operator: y = 1/x is recoverable", {
+  skip_on_cran()
+  # x stays away from 0: inv is unguarded (like div), so a pole would only be
+  # rejected by the loss guard, not silently absorbed.
+  X <- matrix(seq(0.5, 4, length.out = 25), ncol = 1)
+  y <- 1 / X[, 1]
+  res <- symbolic_regression(
+    X, y,
+    unary_ops       = "inv",
+    binary_ops      = c("add", "mul"),
+    population_size = 300L,
+    generations     = 100L,
+    seed            = 1L
+  )
+  expect_true(is.finite(res$loss))
+  expect_false(is.nan(res$loss))
+  expect_lt(res$loss, 1e-3)
+})
+
 test_that("pow operator: y = x^3 returns valid finite result", {
   skip_on_cran()
   X <- matrix(seq(0.5, 2.5, length.out = 20), ncol = 1)

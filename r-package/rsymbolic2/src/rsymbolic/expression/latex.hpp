@@ -117,6 +117,10 @@ inline std::string to_latex(const Tree& tree, int precision = 6) {
                                    "^{2}",
                                LatexPrec::Pow};
                         break;
+                    case UnaryOp::Inv:
+                        // \frac braces group on their own, like BinaryOp::Div below.
+                        out = {"\\frac{1}{" + a.first + "}", LatexPrec::Atom};
+                        break;
                 }
                 stack.back() = out;
                 break;

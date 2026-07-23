@@ -87,6 +87,16 @@ inline Dual square(const Dual& a) {
     return {a.value * a.value, 2.0 * a.value * a.deriv};
 }
 
+// inv(x) = 1/x; derivative -1/x^2. UNGUARDED, exactly like operator/ above: a zero
+// argument yields +-Inf and the loss finiteness guard rejects the candidate, which is the
+// established convention for division in this codebase (and matches SymbolicRegression.jl's
+// `inv`). Named recip() rather than inv() because operator/ declares a local `inv`.
+inline double recip(double a) { return 1.0 / a; }
+inline Dual recip(const Dual& a) {
+    const double r = 1.0 / a.value;
+    return {r, -a.deriv * r * r};
+}
+
 // safe_pow for plain doubles: same branch logic as the Dual overload so the value
 // path and the AD path always agree. Named pow() so ADL in apply_binary<double> picks
 // this instead of std::pow, giving both the same guarded semantics.

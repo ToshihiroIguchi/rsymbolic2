@@ -62,6 +62,15 @@ void test_recovers_linear() {
     CHECK(result.complexity >= 1);
     CHECK(!result.expression.empty());
     CHECK(!result.pareto_front.empty());
+
+    // RNG-STREAM GUARD. This problem uses no transcendental operator, so the trajectory is
+    // pure +-*/ arithmetic and the same seed must produce the same expression on every
+    // platform. Any change that perturbs the RNG stream — a reordered draw, an extra
+    // distribution, a differently-sized alphabet — breaks this string. That is the point:
+    // opt-in features (macro operators, new operators nobody selected) must be inert at
+    // their defaults (CLAUDE.md "Opt-in high-accuracy options"). If you are here because
+    // this failed, do not update the string until you can explain why the stream moved.
+    CHECK(result.expression == "(((x0 * 1.5) + x0) + 1.7)");
 }
 
 // Discover a genuinely nonlinear structure: y = a*exp(b*x). Unlike the linear case,

@@ -58,6 +58,7 @@ inline void soa_res_unary(UnaryOp op, double* a, std::size_t P) {
         case UnaryOp::Tanh:   for (std::size_t p = 0; p < P; ++p) a[p] = std::tanh(a[p]); break;
         case UnaryOp::Abs:    for (std::size_t p = 0; p < P; ++p) a[p] = std::abs(a[p]); break;
         case UnaryOp::Square: for (std::size_t p = 0; p < P; ++p) a[p] = a[p] * a[p]; break;
+        case UnaryOp::Inv:    for (std::size_t p = 0; p < P; ++p) a[p] = 1.0 / a[p]; break;
     }
 }
 
@@ -176,6 +177,13 @@ inline void soa_jac_unary(UnaryOp op, double* s, std::size_t P, double* coeff) {
             for (int c = 0; c < N; ++c) { double* gc = g(c);
                 for (std::size_t p = 0; p < P; ++p) gc[p] = (2.0 * val[p]) * gc[p]; }
             for (std::size_t p = 0; p < P; ++p) val[p] = val[p] * val[p];
+            break;
+        case UnaryOp::Inv:
+            // multi_dual.hpp recip: rv = 1/value; grad = -grad * rv * rv (left-assoc).
+            for (std::size_t p = 0; p < P; ++p) coeff[p] = 1.0 / val[p];
+            for (int c = 0; c < N; ++c) { double* gc = g(c);
+                for (std::size_t p = 0; p < P; ++p) gc[p] = -gc[p] * coeff[p] * coeff[p]; }
+            for (std::size_t p = 0; p < P; ++p) val[p] = coeff[p];
             break;
     }
 }

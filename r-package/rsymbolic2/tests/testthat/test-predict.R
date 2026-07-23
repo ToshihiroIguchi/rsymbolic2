@@ -63,6 +63,26 @@ test_that("predict handles multi-feature input", {
   expect_true(is.finite(preds))
 })
 
+test_that("predict handles the inv operator in expression", {
+  # y = 2/x forces inv into the expression; predict() re-parses the infix string,
+  # so this is what catches a missing inv() shim in the evaluation environment.
+  X <- matrix(seq(0.5, 4, length.out = 20), ncol = 1)
+  y <- 2 / X[, 1]
+  res <- symbolic_regression(
+    X, y,
+    unary_ops       = "inv",
+    binary_ops      = c("add", "mul"),
+    population_size = 200L,
+    generations     = 60L,
+    target_loss     = 1e-10,
+    seed            = 3L
+  )
+  preds <- predict(res, X, expression = res$expression)
+  expect_true(all(is.finite(preds)))
+  # The re-parsed expression must reproduce the fitted values.
+  expect_lt(sum((preds - y)^2), res$loss + 1e-8)
+})
+
 test_that("predict handles neg and square operators in expression", {
   # Construct a fit that forces neg and square into the expression by fitting
   # y = -x^2 (neg + square both needed)

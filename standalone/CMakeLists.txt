@@ -66,6 +66,7 @@ if(RSYMBOLIC2_BUILD_TESTS)
     add_core_test(display_simplify         tests/test_display_simplify.cpp)
     add_core_test(structural_mutation      tests/test_structural_mutation.cpp)
     add_core_test(mutation_operators       tests/test_mutation_operators.cpp)
+    add_core_test(macro_op                 tests/test_macro_op.cpp)
     add_core_test(crossover                tests/test_crossover.cpp)
     add_core_test(multivariate             tests/test_multivariate.cpp)
     # Phase 1 interruptible-evaluation tests (docs/22 §5.4).

@@ -20,11 +20,11 @@ import { fmt, fmtInt } from "./format.js";
 // trajectory for a fixed seed. The checkboxes are grouped only for readability (UNARY_GROUPS);
 // checkedOps("un") re-emits in this canonical order so the visual grouping never changes the
 // search. Keep this array's order stable.
-const UNARY = ["neg", "exp", "log", "sin", "cos", "sqrt", "tanh", "abs", "square"];
+const UNARY = ["neg", "exp", "log", "sin", "cos", "sqrt", "tanh", "abs", "square", "inv"];
 const UNARY_GROUPS = [
   { label: "Trigonometric", ops: ["sin", "cos", "tanh"] },
   { label: "Exp / Log", ops: ["exp", "log"] },
-  { label: "Power / other", ops: ["sqrt", "square", "abs", "neg"] },
+  { label: "Power / other", ops: ["sqrt", "square", "inv", "abs", "neg"] },
 ];
 const UNARY_DEFAULT = new Set(["neg", "exp", "log", "sin", "cos"]);
 const BINARY = ["add", "sub", "mul", "div", "pow"];

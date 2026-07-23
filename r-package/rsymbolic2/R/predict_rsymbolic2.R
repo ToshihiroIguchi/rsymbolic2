@@ -84,8 +84,10 @@ predict.rsymbolic2 <- function(object, newdata, expression = NULL, ...) {
     # Operators used in the expression string that are not in R's base:
     #   neg(x)    -> unary minus
     #   square(x) -> x^2
+    #   inv(x)    -> 1/x
     env$neg    <- function(x) -x
     env$square <- function(x) x * x
+    env$inv    <- function(x) 1 / x
 
     as.numeric(eval(parse(text = expr), envir = env))
 }

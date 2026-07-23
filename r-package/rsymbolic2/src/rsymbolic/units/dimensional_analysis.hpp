@@ -46,6 +46,9 @@ inline WildcardDim eval_unary(UnaryOp op, const WildcardDim& a) {
         case UnaryOp::Square:
             r.dim = a.dim.scaled(2);  // exponents double
             break;
+        case UnaryOp::Inv:
+            r.dim = a.dim.scaled(-1);  // exponents negate (1/x)
+            break;
         case UnaryOp::Sqrt: {
             Dimension out;
             if (a.dim.rooted(2, out)) {

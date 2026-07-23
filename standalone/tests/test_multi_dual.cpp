@@ -222,6 +222,15 @@ void test_all_unary() {
     run_case("all_unary", t, X, {0.4, 1.3, 0.8, -0.6, 0.2}, true);
 }
 
+// inv: c0 * inv(x0 + c1)  — 1/x is unguarded, so keep the inputs away from the pole.
+void test_inv() {
+    Tree t = {constant_node(0, 1.4), variable_node(0), constant_node(1, 0.5),
+              binary_node(BinaryOp::Add), unary_node(UnaryOp::Inv),
+              binary_node(BinaryOp::Mul)};
+    std::vector<std::vector<double>> X = {{1.0}, {2.5}, {-3.0}};
+    run_case("inv", t, X, {1.4, 0.5}, true);
+}
+
 // pow on its standard branch: (x0 ^ c0) / (c1 ^ x1)  — base > 0, smooth.
 void test_pow_standard() {
     Tree t = {variable_node(0), constant_node(0, 1.7), binary_node(BinaryOp::Pow),
@@ -284,6 +293,7 @@ int main() {
     test_linear();
     test_sin_sqrt();
     test_all_unary();
+    test_inv();
     test_pow_standard();
     test_pow_guarded();
     test_tiling_large_k();

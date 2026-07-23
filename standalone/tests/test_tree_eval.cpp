@@ -137,6 +137,20 @@ void test_square_value_and_gradient() {
     CHECK(close(dual_grad(tree, row, c, 0), finite_diff(tree, row, c, 0, h), 1e-5));
 }
 
+// y = a * inv(x): value, AD-vs-finite-difference, and the rendered string.
+void test_inv_value_and_gradient() {
+    const Tree tree = {constant_node(0, 3.0), variable_node(0),
+                       unary_node(UnaryOp::Inv), binary_node(BinaryOp::Mul)};
+    const std::vector<double> c = {3.0};
+    const std::vector<double> row = {2.0};  // 3 * (1/2) = 1.5
+    CHECK(close(evaluate<double>(tree, row.data(), c.data()), 1.5, 1e-12));
+
+    const double h = 1e-6;
+    CHECK(close(dual_grad(tree, row, c, 0), finite_diff(tree, row, c, 0, h), 1e-6));
+
+    CHECK(to_string(tree) == "(3 * inv(x0))");
+}
+
 void test_pow_value_and_gradient() {
     const Tree tree = pow_tree(3.0);
     const std::vector<double> c = {3.0};
@@ -187,6 +201,7 @@ int main() {
     test_gradient_matches_finite_difference();
     test_count_and_initial_constants();
     test_square_value_and_gradient();
+    test_inv_value_and_gradient();
     test_pow_value_and_gradient();
     test_safe_boundaries();
 

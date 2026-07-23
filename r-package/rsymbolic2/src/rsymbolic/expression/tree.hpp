@@ -40,6 +40,7 @@ T apply_unary(UnaryOp op, const T& a) {
         case UnaryOp::Tanh:   return tanh(a);
         case UnaryOp::Abs:    return abs(a);
         case UnaryOp::Square: return square(a); // rsymbolic::square via ADL
+        case UnaryOp::Inv:    return recip(a);  // rsymbolic::recip via ADL (1/x)
     }
     return a;  // unreachable
 }
@@ -67,6 +68,7 @@ inline const char* unary_name(UnaryOp op) {
         case UnaryOp::Tanh:   return "tanh";
         case UnaryOp::Abs:    return "abs";
         case UnaryOp::Square: return "square";
+        case UnaryOp::Inv:    return "inv";
     }
     return "?";
 }

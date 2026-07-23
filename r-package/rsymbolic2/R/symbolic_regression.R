@@ -68,11 +68,14 @@
 #'   (default 15, PySR \code{tournament_selection_n}).
 #' @param unary_ops Character vector of unary operators to allow.  Recognised
 #'   values: \code{"neg"}, \code{"exp"}, \code{"log"}, \code{"sin"},
-#'   \code{"cos"}, \code{"sqrt"}, \code{"tanh"}, \code{"abs"}, \code{"square"}.
-#'   Default uses the first five; \code{"sqrt"}, \code{"tanh"}, \code{"abs"},
-#'   and \code{"square"} must be added explicitly when needed.
+#'   \code{"cos"}, \code{"sqrt"}, \code{"tanh"}, \code{"abs"}, \code{"square"},
+#'   \code{"inv"}.  Default uses the first five; the rest must be added
+#'   explicitly when needed.
 #'   \code{"square"} computes \eqn{x^2} as a single node (cheaper than
-#'   \code{pow} for the common quadratic case).
+#'   \code{pow} for the common quadratic case), and \code{"inv"} computes
+#'   \eqn{1/x} as a single node (cheaper than \code{div} with a fitted
+#'   numerator).  \code{"inv"} is unguarded like \code{"div"}: a zero argument
+#'   yields a non-finite value and the candidate is rejected by the loss guard.
 #' @param binary_ops Character vector of binary operators.  Recognised values:
 #'   \code{"add"}, \code{"sub"}, \code{"mul"}, \code{"div"}, \code{"pow"}.
 #'   Default is \code{c("add","sub","mul")}.
@@ -149,6 +152,18 @@
 #'   as dimensionless during dimensional analysis instead of adopting whatever
 #'   dimension keeps the expression consistent (PySR
 #'   \code{dimensionless_constants_only}). Default \code{FALSE}.
+#' @param macro_ops Optional named character vector of \strong{macro operators}:
+#'   single-argument expression templates built from the primitive operators, e.g.
+#'   \code{c(gauss = "exp(neg(square(x)))")}. The body is written in infix over the
+#'   argument \code{x} and is \emph{expanded} into the expression whenever a growth
+#'   mutation creates a unary node, so the engine's node set stays closed
+#'   (\code{docs/57}). Consequences: complexity is counted after expansion (a
+#'   4-node macro costs 4 nodes), results print the expanded primitive form, and
+#'   numeric literals in a body become ordinary tunable constants seeded at that
+#'   value. Default \code{NULL} (off); with no macros the search is bit-identical
+#'   to the PySR-parity default. rsymbolic2 has no runtime language, so macro
+#'   bodies are the supported form of a user-defined operator; arbitrary functions
+#'   are not.
 #' @param eval_cache Enable an opt-in duplicate-evaluation cache (default
 #'   \code{FALSE}). Implementation-only memoisation: each island keeps a small
 #'   fixed-size table of recently evaluated expression trees and reuses the stored
@@ -374,6 +389,7 @@ symbolic_regression.default <- function(
     y_units               = NULL,
     dimensional_constraint_penalty = NULL,
     dimensionless_constants_only   = FALSE,
+    macro_ops             = NULL,
     timeout_seconds       = 0,
     verbosity             = 1L,
     ...
@@ -480,6 +496,20 @@ symbolic_regression.default <- function(
         stop("mutation_weights must be a named numeric vector")
     }
 
+    # Macro operators: a named character vector, split into two parallel vectors for the
+    # bridge. The C++ side parses and validates the bodies (one shared parser for every
+    # interface), so a bad body raises the same message here as in Python.
+    if (is.null(macro_ops) || length(macro_ops) == 0L) {
+        macro_names  <- character(0)
+        macro_bodies <- character(0)
+    } else {
+        if (is.null(names(macro_ops)) || any(names(macro_ops) == "")) {
+            stop("macro_ops must be a named character vector, e.g. c(gauss = \"exp(neg(square(x)))\")")
+        }
+        macro_names  <- as.character(names(macro_ops))
+        macro_bodies <- as.character(macro_ops)
+    }
+
     result <- symbolic_regression_cpp(
         X,
         y,
@@ -518,7 +548,9 @@ symbolic_regression.default <- function(
         as.logical(dimensionless_constants_only),
         as.logical(eval_cache),
         as.logical(linear_scaling),
-        as.logical(strong_simplify)
+        as.logical(strong_simplify),
+        macro_names,
+        macro_bodies
     )
     result$n_features <- ncol(X)
     # Display-only feature names: the column names of X, kept so print()/summary()

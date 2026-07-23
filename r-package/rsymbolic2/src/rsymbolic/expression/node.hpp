@@ -16,7 +16,10 @@ enum class NodeKind : std::uint8_t {
     Binary,    // a binary operator (`bop`)
 };
 
-enum class UnaryOp : std::uint8_t { Neg, Exp, Log, Sin, Cos, Sqrt, Tanh, Abs, Square };
+// New operators are appended, never inserted: the enumerator values are compared and
+// switched on all over the core, and the search space's operator vector (not this enum)
+// defines the RNG mapping, so appending keeps existing behaviour untouched.
+enum class UnaryOp : std::uint8_t { Neg, Exp, Log, Sin, Cos, Sqrt, Tanh, Abs, Square, Inv };
 
 enum class BinaryOp : std::uint8_t { Add, Sub, Mul, Div, Pow };
 

@@ -73,6 +73,27 @@ void test_square() {
     CHECK(close(yn.deriv, -4.0));
 }
 
+// d/dx (1/x) = -1/x^2 at x = 2 -> value=0.5, deriv=-0.25; verified against a central
+// finite difference (the standing rule for a newly added operator).
+void test_inv() {
+    Dual x(2.0, 1.0);
+    Dual y = rsymbolic::recip(x);
+    CHECK(close(y.value, 0.5));
+    CHECK(close(y.deriv, -0.25));
+
+    // negative input: 1/x is defined and smooth away from 0
+    Dual xn(-4.0, 1.0);
+    Dual yn = rsymbolic::recip(xn);
+    CHECK(close(yn.value, -0.25));
+    CHECK(close(yn.deriv, -1.0 / 16.0));
+
+    // AD vs central finite difference
+    const double x0 = 1.3;
+    const double h = 1e-6;
+    const double fd = (rsymbolic::recip(x0 + h) - rsymbolic::recip(x0 - h)) / (2.0 * h);
+    CHECK(std::fabs(rsymbolic::recip(Dual(x0, 1.0)).deriv - fd) < 1e-6);
+}
+
 // safe_pow(x, y): standard branch x>0
 // d/dx (x^3) = 3x^2 at x=2 -> 12; d/dy (2^y) = 2^y * ln2 at y=3 -> 8*ln2
 void test_pow_std_branch() {
@@ -118,6 +139,7 @@ int main() {
     test_exp_chain_rule();
     test_partial_wrt_one_variable();
     test_square();
+    test_inv();
     test_pow_std_branch();
     test_pow_guarded();
 

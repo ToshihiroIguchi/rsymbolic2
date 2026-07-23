@@ -11,10 +11,12 @@
 
 #include <cpp11.hpp>
 
+#include "rsymbolic/evolution/macro_op.hpp"
 #include "rsymbolic/evolution/mutation_weights.hpp"
 #include "rsymbolic/evolution/search_space.hpp"
 #include "rsymbolic/search/evolutionary_search.hpp"
 #include "rsymbolic/expression/latex.hpp"
+#include "rsymbolic/expression/op_names.hpp"
 #include "rsymbolic/expression/tree.hpp"
 #include "rsymbolic/simplification/display_simplify.hpp"
 #include "rsymbolic/units/unit_parser.hpp"
@@ -53,27 +55,17 @@ MutationWeights parse_mutation_weights(const cpp11::doubles& w) {
 }
 
 UnaryOp parse_unary(const std::string& s) {
-    if (s == "neg")  return UnaryOp::Neg;
-    if (s == "exp")  return UnaryOp::Exp;
-    if (s == "log")  return UnaryOp::Log;
-    if (s == "sin")  return UnaryOp::Sin;
-    if (s == "cos")  return UnaryOp::Cos;
-    if (s == "sqrt")   return UnaryOp::Sqrt;
-    if (s == "tanh")   return UnaryOp::Tanh;
-    if (s == "abs")    return UnaryOp::Abs;
-    if (s == "square") return UnaryOp::Square;
-    cpp11::stop(
-        "Unknown unary operator: '%s'. Use neg/exp/log/sin/cos/sqrt/tanh/abs/square.",
-        s.c_str());
+    UnaryOp op;
+    if (unary_from_name(s, op)) return op;
+    cpp11::stop("Unknown unary operator: '%s'. Use %s.", s.c_str(),
+                unary_op_name_list().c_str());
 }
 
 BinaryOp parse_binary(const std::string& s) {
-    if (s == "add") return BinaryOp::Add;
-    if (s == "sub") return BinaryOp::Sub;
-    if (s == "mul") return BinaryOp::Mul;
-    if (s == "div") return BinaryOp::Div;
-    if (s == "pow") return BinaryOp::Pow;
-    cpp11::stop("Unknown binary operator: '%s'. Use add/sub/mul/div/pow.", s.c_str());
+    BinaryOp op;
+    if (binary_from_name(s, op)) return op;
+    cpp11::stop("Unknown binary operator: '%s'. Use %s.", s.c_str(),
+                binary_op_name_list().c_str());
 }
 
 ModelSelection parse_model_selection(const std::string& s) {
@@ -124,7 +116,9 @@ cpp11::writable::list symbolic_regression_cpp(
     bool            dimensionless_constants_only,
     bool            eval_cache,
     bool            linear_scaling,
-    bool            strong_simplify
+    bool            strong_simplify,
+    cpp11::strings  macro_names,
+    cpp11::strings  macro_bodies
 ) {
     // Convert R matrix → vector<vector<double>> (row-major)
     const int n = X.nrow();
@@ -149,6 +143,21 @@ cpp11::writable::list symbolic_regression_cpp(
         space.binary_ops.push_back(parse_binary(static_cast<std::string>(s)));
     if (space.binary_ops.empty())
         cpp11::stop("binary_ops must contain at least one operator");
+
+    // Opt-in macro operators (docs/57): single-argument templates over the primitives,
+    // expanded at tree construction. Empty (the default) leaves the search bit-identical.
+    if (macro_names.size() != macro_bodies.size())
+        cpp11::stop("macro_ops names and bodies must have the same length");
+    for (int i = 0; i < static_cast<int>(macro_names.size()); ++i) {
+        MacroOp macro;
+        std::string error;
+        if (!make_macro_op(static_cast<std::string>(macro_names[i]),
+                           static_cast<std::string>(macro_bodies[i]), kMacroArgName,
+                           max_nodes, macro, error)) {
+            cpp11::stop("%s", error.c_str());
+        }
+        space.macro_ops.push_back(std::move(macro));
+    }
 
     // Opt-in dimensional analysis (PySR X_units / y_units / dimensionless_constants_only;
     // docs/46). Empty X_units leaves the feature off (default), so the search is unchanged.

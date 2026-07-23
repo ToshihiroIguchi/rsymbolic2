@@ -29,7 +29,7 @@ __all__ = ["symbolic_regression", "SymbolicRegressionResult"]
 __version__ = "0.1.0"
 
 # Recognised operator names (kept in sync with the C++ bridge parsers).
-_UNARY_OPS = {"neg", "exp", "log", "sin", "cos", "sqrt", "tanh", "abs", "square"}
+_UNARY_OPS = {"neg", "exp", "log", "sin", "cos", "sqrt", "tanh", "abs", "square", "inv"}
 _BINARY_OPS = {"add", "sub", "mul", "div", "pow"}
 
 ArrayLike = Union[np.ndarray, Sequence[float], Sequence[Sequence[float]]]
@@ -352,8 +352,8 @@ class SymbolicRegressionResult:
         return ax
 
 
-# Math namespace used by predict(). neg/square are not Python builtins; the rest map to
-# NumPy ufuncs so evaluation is vectorised over the input columns.
+# Math namespace used by predict(). neg/square/inv are not Python builtins; the rest map
+# to NumPy ufuncs so evaluation is vectorised over the input columns.
 def _eval_namespace(X: np.ndarray) -> dict:
     ns = {
         "__builtins__": {},
@@ -363,6 +363,7 @@ def _eval_namespace(X: np.ndarray) -> dict:
         "nan": float("nan"),
         "neg": lambda v: -v,
         "square": lambda v: v * v,
+        "inv": lambda v: 1.0 / v,
         "exp": np.exp,
         "log": np.log,
         "sin": np.sin,
@@ -422,6 +423,7 @@ def symbolic_regression(
     y_units: Optional[str] = None,
     dimensional_constraint_penalty: Optional[float] = None,
     dimensionless_constants_only: bool = False,
+    macro_ops: Optional[Mapping[str, str]] = None,
     timeout_seconds: float = 0.0,
     verbosity: int = 1,
 ) -> SymbolicRegressionResult:
@@ -467,8 +469,11 @@ def symbolic_regression(
         Tournament size for selection/replacement (PySR ``tournament_selection_n``).
     unary_ops : sequence of str, default ("neg","exp","log","sin","cos")
         Allowed unary operators. Recognised: neg, exp, log, sin, cos, sqrt, tanh,
-        abs, square. (PySR ships no default operator set; this is the shared problem
-        input, given identically to both tools.)
+        abs, square, inv. (PySR ships no default operator set; this is the shared
+        problem input, given identically to both tools.) ``square`` (x**2) and
+        ``inv`` (1/x) are single-node forms of structures that otherwise cost a
+        ``pow``/``div`` plus a fitted constant; ``inv`` is unguarded like ``div``,
+        so a zero argument yields a non-finite value that the loss guard rejects.
     binary_ops : sequence of str, default ("add","sub","mul")
         Allowed binary operators. Recognised: add, sub, mul, div, pow.
     max_depth : int, default 30
@@ -593,6 +598,17 @@ def symbolic_regression(
         If True, fitted constants are treated as dimensionless during dimensional analysis
         instead of adopting whatever dimension keeps the expression consistent (PySR
         ``dimensionless_constants_only``).
+    macro_ops : mapping of str to str, optional
+        User-defined **macro operators**: single-argument expression templates built from
+        the primitive operators, e.g. ``{"gauss": "exp(neg(square(x)))"}``. The body is
+        written in infix over the argument ``x`` and is *expanded* into the expression
+        whenever a growth mutation creates a unary node, so the engine's node set stays
+        closed (docs/57). Consequences: complexity is counted after expansion (a 4-node
+        macro costs 4 nodes), results print the expanded primitive form, and numeric
+        literals in a body become ordinary tunable constants seeded at that value.
+        Off by default (``None``), and with no macros the search is bit-identical to the
+        PySR-parity default. rsymbolic2 has no runtime language, so macro bodies are the
+        supported form of a user-defined operator: arbitrary functions are not.
     timeout_seconds : float, default 0.0
         Wall-clock limit; 0 = no limit. A timed-out run is not reproducible across
         machines (only runs that finish within budget are bit-reproducible).
@@ -699,6 +715,16 @@ def symbolic_regression(
             "linear scaling is not supported with dimensional analysis "
             "(X_units/y_units)."
         )
+    # Macro operators: split the mapping into two parallel lists for the bridge. The C++
+    # side parses and validates the bodies (one shared parser for every interface), so a
+    # bad body raises the same message here, in R and in the browser.
+    if macro_ops is None:
+        macro_names: list = []
+        macro_bodies: list = []
+    else:
+        macro_names = [str(k) for k in macro_ops.keys()]
+        macro_bodies = [str(v) for v in macro_ops.values()]
+
     # PySR's signature default None maps to an effective penalty of 1000.0.
     if dimensional_constraint_penalty is None:
         dcp = 1000.0
@@ -748,6 +774,8 @@ def symbolic_regression(
         bool(eval_cache),
         bool(linear_scaling),
         bool(strong_simplify),
+        macro_names,
+        macro_bodies,
     )
     if feature_names is not None and len(feature_names) != int(X_arr.shape[1]):
         feature_names = None  # shape changed (e.g. 1-D promoted); drop mismatched names

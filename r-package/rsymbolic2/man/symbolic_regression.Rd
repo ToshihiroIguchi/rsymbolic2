@@ -45,6 +45,7 @@ symbolic_regression(X, ...)
   y_units = NULL,
   dimensional_constraint_penalty = NULL,
   dimensionless_constants_only = FALSE,
+  macro_ops = NULL,
   timeout_seconds = 0,
   verbosity = 1L,
   ...
@@ -106,11 +107,14 @@ finish sooner than restricting to physical cores, so the default is intentionall
 
 \item{unary_ops}{Character vector of unary operators to allow.  Recognised
 values: \code{"neg"}, \code{"exp"}, \code{"log"}, \code{"sin"},
-\code{"cos"}, \code{"sqrt"}, \code{"tanh"}, \code{"abs"}, \code{"square"}.
-Default uses the first five; \code{"sqrt"}, \code{"tanh"}, \code{"abs"},
-and \code{"square"} must be added explicitly when needed.
+\code{"cos"}, \code{"sqrt"}, \code{"tanh"}, \code{"abs"}, \code{"square"},
+\code{"inv"}.  Default uses the first five; the rest must be added
+explicitly when needed.
 \code{"square"} computes \eqn{x^2} as a single node (cheaper than
-\code{pow} for the common quadratic case).}
+\code{pow} for the common quadratic case), and \code{"inv"} computes
+\eqn{1/x} as a single node (cheaper than \code{div} with a fitted
+numerator).  \code{"inv"} is unguarded like \code{"div"}: a zero argument
+yields a non-finite value and the candidate is rejected by the loss guard.}
 
 \item{binary_ops}{Character vector of binary operators.  Recognised values:
 \code{"add"}, \code{"sub"}, \code{"mul"}, \code{"div"}, \code{"pow"}.
@@ -314,6 +318,19 @@ unless \code{X_units}/\code{y_units} are set.}
 as dimensionless during dimensional analysis instead of adopting whatever
 dimension keeps the expression consistent (PySR
 \code{dimensionless_constants_only}). Default \code{FALSE}.}
+
+\item{macro_ops}{Optional named character vector of \strong{macro operators}:
+single-argument expression templates built from the primitive operators, e.g.
+\code{c(gauss = "exp(neg(square(x)))")}. The body is written in infix over the
+argument \code{x} and is \emph{expanded} into the expression whenever a growth
+mutation creates a unary node, so the engine's node set stays closed
+(\code{docs/57}). Consequences: complexity is counted after expansion (a
+4-node macro costs 4 nodes), results print the expanded primitive form, and
+numeric literals in a body become ordinary tunable constants seeded at that
+value. Default \code{NULL} (off); with no macros the search is bit-identical
+to the PySR-parity default. rsymbolic2 has no runtime language, so macro
+bodies are the supported form of a user-defined operator; arbitrary functions
+are not.}
 
 \item{timeout_seconds}{Wall-clock time limit in seconds (default 0 = no
 limit). When positive, the search stops after approximately this many

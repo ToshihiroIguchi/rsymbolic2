@@ -45,6 +45,7 @@ namespace rsymbolic {
 // faithful all-float value path. Must be declared before tree.hpp is included so the
 // template instantiation of apply_unary<float> sees it.
 inline float square(float a) { return a * a; }
+inline float recip(float a) { return 1.0f / a; }  // same reason, for UnaryOp::Inv
 }  // namespace rsymbolic
 
 #include "rsymbolic/expression/node.hpp"
@@ -109,6 +110,10 @@ template <typename T> GDual<T> abs(const GDual<T>& a) {
 }
 template <typename T> GDual<T> square(const GDual<T>& a) {
     return {a.value * a.value, T(2) * a.value * a.deriv};
+}
+template <typename T> GDual<T> recip(const GDual<T>& a) {
+    const T r = T(1) / a.value;
+    return {r, -a.deriv * r * r};
 }
 template <typename T> GDual<T> pow(const GDual<T>& base, const GDual<T>& e) {
     const T x = base.value, y = e.value;

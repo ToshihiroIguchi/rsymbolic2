@@ -31,6 +31,7 @@
 #include "rsymbolic/evolution/mutation_weights.hpp"
 #include "rsymbolic/evolution/search_space.hpp"
 #include "rsymbolic/expression/latex.hpp"
+#include "rsymbolic/expression/op_names.hpp"
 #include "rsymbolic/expression/tree.hpp"
 #include "rsymbolic/search/evolutionary_search.hpp"
 #include "rsymbolic/simplification/display_simplify.hpp"
@@ -78,28 +79,17 @@ val to_js_array(const std::vector<T>& v) {
 }
 
 UnaryOp parse_unary(const std::string& s) {
-    if (s == "neg")    return UnaryOp::Neg;
-    if (s == "exp")    return UnaryOp::Exp;
-    if (s == "log")    return UnaryOp::Log;
-    if (s == "sin")    return UnaryOp::Sin;
-    if (s == "cos")    return UnaryOp::Cos;
-    if (s == "sqrt")   return UnaryOp::Sqrt;
-    if (s == "tanh")   return UnaryOp::Tanh;
-    if (s == "abs")    return UnaryOp::Abs;
-    if (s == "square") return UnaryOp::Square;
-    throw std::invalid_argument(
-        "Unknown unary operator: '" + s +
-        "'. Use neg/exp/log/sin/cos/sqrt/tanh/abs/square.");
+    UnaryOp op;
+    if (unary_from_name(s, op)) return op;
+    throw std::invalid_argument("Unknown unary operator: '" + s + "'. Use " +
+                                unary_op_name_list() + ".");
 }
 
 BinaryOp parse_binary(const std::string& s) {
-    if (s == "add") return BinaryOp::Add;
-    if (s == "sub") return BinaryOp::Sub;
-    if (s == "mul") return BinaryOp::Mul;
-    if (s == "div") return BinaryOp::Div;
-    if (s == "pow") return BinaryOp::Pow;
-    throw std::invalid_argument("Unknown binary operator: '" + s +
-                                "'. Use add/sub/mul/div/pow.");
+    BinaryOp op;
+    if (binary_from_name(s, op)) return op;
+    throw std::invalid_argument("Unknown binary operator: '" + s + "'. Use " +
+                                binary_op_name_list() + ".");
 }
 
 ModelSelection parse_model_selection(const std::string& s) {
