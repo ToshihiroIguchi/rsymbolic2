@@ -109,32 +109,18 @@
             </div>
           </details>
 
-          <details class="disclosure">
-            <summary>Settings <span id="settings-summary" class="muted"></span></summary>
-            <div class="grid2">
-              <label>Generations<input id="generations" type="number" min="1" value="2800" /></label>
-              <label>Populations<input id="n_populations" type="number" min="1" value="31" /></label>
-              <label>Population size<input id="population_size" type="number" min="1" value="27" /></label>
-              <label>Max nodes<input id="max_nodes" type="number" min="1" value="30" /></label>
-              <label>Seed<input id="seed" type="number" min="0" value="1" /></label>
-              <label>Timeout (s, 0=off)<input id="timeout_seconds" type="number" min="0" value="0" /></label>
-            </div>
-            <div class="group-label">PySR parity constants</div>
-            <div class="grid2">
-              <label>Tournament size<input id="tournament_size" type="number" min="1" value="15" /></label>
-              <label>Tournament p<input id="tournament_selection_p" type="number" step="0.001" value="0.982" /></label>
-              <label>Parsimony<input id="parsimony" type="number" step="0.0001" value="0" /></label>
-              <label>Adaptive parsimony<input id="adaptive_parsimony_scaling" type="number" step="1" value="1040" /></label>
-              <label>Optimize prob.<input id="optimize_probability" type="number" step="0.01" value="0.14" /></label>
-              <label>Crossover prob.<input id="crossover_probability" type="number" step="0.0001" value="0.0259" /></label>
-              <label>HOF migration frac.<input id="fraction_replaced_hof" type="number" step="0.0001" value="0.0614" /></label>
-              <label>Max nodes depth<input id="max_depth" type="number" min="1" value="30" /></label>
-              <label>Target loss<input id="target_loss" type="number" step="1e-10" value="1e-10" /></label>
-              <label>Max evals (0=off)<input id="max_evals" type="number" min="0" value="0" /></label>
-              <label>Warmup maxsize by<input id="warmup_maxsize_by" type="number" step="0.05" min="0" value="0" /></label>
-            </div>
-            <button id="reset-defaults" class="btn small" type="button">Reset to PySR defaults</button>
-          </details>
+          <!-- The 17 numeric settings live in a modal, not a disclosure. Expanded inline they
+               are 544px of a ~700px rail — the block starts below the fold on a 768px-tall
+               screen — and a 163px field leaves no room to print what a constant means or
+               what PySR's default for it is. The rail keeps the one line users actually read
+               (budget + seed + a "modified" warning); "edit" opens the full panel. Same
+               summary-line-plus-button pattern as the Data card above. -->
+          <div class="group-label">Settings</div>
+          <div class="data-status">
+            <button id="settings-summary" class="link-summary muted small" type="button"
+                    title="Open search settings"></button>
+            <button id="open-settings" class="btn small" type="button">edit</button>
+          </div>
 
           <details class="disclosure">
             <summary>High-accuracy opt-ins (diverge from PySR)</summary>
@@ -244,6 +230,52 @@
             <tbody></tbody>
           </table>
         </div>
+      </div>
+    </dialog>
+
+    <!-- Search settings, opened from the Search card's summary line. Editing here is
+         transactional: the values are snapshotted on open, so Cancel/Esc/backdrop restore them
+         (the inline panel this replaces could only be undone by resetting every field at once).
+         The input ids are unchanged from that panel — readConfig() still reads them straight
+         from the DOM, so nothing about the search changes. Each field's PySR default and a
+         one-line description are injected by main.js from DEFAULTS, keeping the text next to
+         the value it describes; a field that no longer matches its default is marked, because
+         a silent divergence from PySR parity is exactly what the GUI must not allow. -->
+    <dialog id="settings-dialog" class="modal">
+      <div class="modal-head">
+        <h2>Search settings</h2>
+        <button id="settings-close" class="btn small" type="button" aria-label="Close">&#10005;</button>
+      </div>
+      <div class="modal-body">
+        <div class="group-label">Search budget</div>
+        <div class="field-grid">
+          <label>Generations<input id="generations" type="number" min="1" value="2800" /></label>
+          <label>Populations<input id="n_populations" type="number" min="1" value="31" /></label>
+          <label>Population size<input id="population_size" type="number" min="1" value="27" /></label>
+          <label>Max nodes<input id="max_nodes" type="number" min="1" value="30" /></label>
+          <label>Seed<input id="seed" type="number" min="0" value="1" /></label>
+          <label>Timeout (s, 0=off)<input id="timeout_seconds" type="number" min="0" value="0" /></label>
+        </div>
+        <div class="group-label">PySR parity constants</div>
+        <div class="field-grid">
+          <label>Tournament size<input id="tournament_size" type="number" min="1" value="15" /></label>
+          <label>Tournament p<input id="tournament_selection_p" type="number" step="0.001" value="0.982" /></label>
+          <label>Parsimony<input id="parsimony" type="number" step="0.0001" value="0" /></label>
+          <label>Adaptive parsimony<input id="adaptive_parsimony_scaling" type="number" step="1" value="1040" /></label>
+          <label>Optimize prob.<input id="optimize_probability" type="number" step="0.01" value="0.14" /></label>
+          <label>Crossover prob.<input id="crossover_probability" type="number" step="0.0001" value="0.0259" /></label>
+          <label>HOF migration frac.<input id="fraction_replaced_hof" type="number" step="0.0001" value="0.0614" /></label>
+          <label>Max nodes depth<input id="max_depth" type="number" min="1" value="30" /></label>
+          <label>Target loss<input id="target_loss" type="number" step="1e-10" value="1e-10" /></label>
+          <label>Max evals (0=off)<input id="max_evals" type="number" min="0" value="0" /></label>
+          <label>Warmup maxsize by<input id="warmup_maxsize_by" type="number" step="0.05" min="0" value="0" /></label>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button id="reset-defaults" class="btn small" type="button">Reset to PySR defaults</button>
+        <span class="foot-spacer"></span>
+        <button id="settings-cancel" class="btn small" type="button">Cancel</button>
+        <button id="settings-apply" class="btn small primary" type="button">Apply</button>
       </div>
     </dialog>
 

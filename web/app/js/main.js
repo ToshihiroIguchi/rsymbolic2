@@ -45,30 +45,39 @@ const MACRO_PRESETS = [
 
 const $ = (id) => document.getElementById(id);
 
-// The shipped search defaults, PySR-identical (docs/28). Single source for three consumers:
-// readConfig()'s fallback when a field is blank, resetDefaults(), and the "modified" marker
-// in the Settings summary — so those can never drift apart. Keys are the input element ids;
-// `int` marks the fields parsed with parseInt. model_selection is deliberately absent: it is
-// a results-side display control (score, the web GUI's sanctioned divergence — CLAUDE.md
-// "the web GUI is exempt"), not a search setting, and it lives outside this panel.
+// The shipped search defaults, PySR-identical (docs/28). Single source for four consumers:
+// readConfig()'s fallback when a field is blank, resetDefaults(), the "modified" marker in the
+// Settings summary, and the per-field hint printed in the settings dialog — so those can never
+// drift apart. Keys are the input element ids; `int` marks the fields parsed with parseInt;
+// `note` is the one-line description shown under the field, kept here rather than in the HTML
+// so a constant's meaning and its parity value live in the same place. model_selection is
+// deliberately absent: it is a results-side display control (score, the web GUI's sanctioned
+// divergence — CLAUDE.md "the web GUI is exempt"), not a search setting, and it lives outside
+// this panel.
 const DEFAULTS = {
-  generations: { value: 2800, int: true },
-  n_populations: { value: 31, int: true },
-  population_size: { value: 27, int: true },
-  max_nodes: { value: 30, int: true },
-  seed: { value: 1, int: true },
-  timeout_seconds: { value: 0 },
-  tournament_size: { value: 15, int: true },
-  tournament_selection_p: { value: 0.982 },
-  parsimony: { value: 0 },
-  adaptive_parsimony_scaling: { value: 1040 },
-  optimize_probability: { value: 0.14 },
-  crossover_probability: { value: 0.0259 },
-  fraction_replaced_hof: { value: 0.0614 },
-  max_depth: { value: 30, int: true },
-  target_loss: { value: 1e-10 },
-  max_evals: { value: 0 },
-  warmup_maxsize_by: { value: 0 },
+  generations: { value: 2800, int: true, note: "Evolution cycles per population." },
+  n_populations: { value: 31, int: true, note: "Independent populations evolved in parallel." },
+  population_size: { value: 27, int: true, note: "Expressions held in each population." },
+  max_nodes: { value: 30, int: true, note: "Largest expression the search may build." },
+  seed: { value: 1, int: true, note: "Fixed seed; the same seed reproduces the run exactly." },
+  timeout_seconds: { value: 0, note: "Wall-clock limit; 0 runs the full budget." },
+  tournament_size: { value: 15, int: true, note: "Candidates entering each selection tournament." },
+  tournament_selection_p: { value: 0.982, note: "Chance the tournament picks its best member." },
+  parsimony: { value: 0, note: "Fixed complexity penalty added to the loss." },
+  adaptive_parsimony_scaling: {
+    value: 1040,
+    note: "Strength of the frequency-adaptive penalty on crowded complexities.",
+  },
+  optimize_probability: { value: 0.14, note: "Chance a candidate gets its constants optimised." },
+  crossover_probability: { value: 0.0259, note: "Chance a mutation step is a crossover instead." },
+  fraction_replaced_hof: { value: 0.0614, note: "Population fraction reseeded from the hall of fame." },
+  max_depth: { value: 30, int: true, note: "Deepest expression tree allowed." },
+  target_loss: { value: 1e-10, note: "Stop early once the loss reaches this." },
+  max_evals: { value: 0, note: "Evaluation-count limit; 0 leaves it uncapped." },
+  warmup_maxsize_by: {
+    value: 0,
+    note: "Fraction of the run spent ramping the size limit up; 0 disables the ramp.",
+  },
 };
 
 const state = {
@@ -84,6 +93,7 @@ const state = {
   targetName: null,
   selectedIndex: null,
   worker: null,
+  settingsSnapshot: null, // field values captured when the settings dialog opened (Cancel restores them)
   timer: null,
   t0: 0,
   lastProgressDraw: 0, // performance.now() of the last live-Pareto redraw (throttling)
@@ -435,25 +445,70 @@ function readConfig() {
   };
 }
 
-// A collapsed disclosure that says nothing forces a click just to learn the budget, so the
-// summary carries the two values users actually change plus a warning when anything has
-// drifted off the PySR-parity defaults (CLAUDE.md's highest-priority configuration rule —
-// the GUI should never let that happen silently).
+// --- Settings dialog --------------------------------------------------------------
+// The settings themselves live in a modal (index.html #settings-dialog); the rail keeps only
+// the summary line, which must say enough that opening the dialog is a choice rather than the
+// only way to learn the budget. It therefore carries the two values users actually change plus
+// a warning when anything has drifted off the PySR-parity defaults (CLAUDE.md's
+// highest-priority configuration rule — the GUI should never let that happen silently).
+function fieldModified(id) {
+  const d = DEFAULTS[id];
+  const v = d.int ? parseInt($(id).value, 10) : parseFloat($(id).value);
+  return !Number.isFinite(v) || v !== d.value;
+}
 function settingsModified() {
-  return Object.keys(DEFAULTS).some((id) => {
-    const d = DEFAULTS[id];
-    const v = d.int ? parseInt($(id).value, 10) : parseFloat($(id).value);
-    return !Number.isFinite(v) || v !== d.value;
+  return Object.keys(DEFAULTS).some(fieldModified);
+}
+// Same warning, per field: the summary says *something* diverged, this says which one, so a
+// stray keystroke in a 17-field panel cannot hide.
+function markModifiedFields() {
+  Object.keys(DEFAULTS).forEach((id) => {
+    const label = $(id).closest("label");
+    if (label) label.classList.toggle("modified", fieldModified(id));
   });
 }
 function updateSettingsSummary() {
   $("settings-summary").textContent =
-    `— ${$("generations").value} generations · seed ${$("seed").value}` +
+    `${$("generations").value} generations · seed ${$("seed").value}` +
     (settingsModified() ? " · modified" : "");
+  markModifiedFields();
 }
 function resetDefaults() {
   Object.keys(DEFAULTS).forEach((id) => { $(id).value = String(DEFAULTS[id].value); });
   updateSettingsSummary();
+}
+
+// Print each field's shipped default and what it does, straight from DEFAULTS, so the dialog
+// can never disagree with the values the search actually falls back to.
+function annotateSettingsFields() {
+  Object.keys(DEFAULTS).forEach((id) => {
+    const label = $(id).closest("label");
+    if (!label) return;
+    const hint = document.createElement("span");
+    hint.className = "field-hint";
+    hint.textContent = `${DEFAULTS[id].note} Default ${DEFAULTS[id].value}.`;
+    label.appendChild(hint);
+  });
+}
+
+// Editing is transactional: values are snapshotted on open so every dismissal path restores
+// them, and only Apply keeps them. Without this a mistyped constant could only be undone by
+// resetting all 17 fields.
+function openSettings() {
+  const snapshot = {};
+  Object.keys(DEFAULTS).forEach((id) => { snapshot[id] = $(id).value; });
+  state.settingsSnapshot = snapshot;
+  updateSettingsSummary();
+  $("settings-dialog").showModal();
+}
+function closeSettings(keep) {
+  const snapshot = state.settingsSnapshot;
+  if (!keep && snapshot) {
+    Object.keys(snapshot).forEach((id) => { $(id).value = snapshot[id]; });
+  }
+  state.settingsSnapshot = null;
+  updateSettingsSummary();
+  $("settings-dialog").close();
 }
 
 // --- Run --------------------------------------------------------------------------
@@ -866,7 +921,24 @@ function init() {
   // marker), and offer the one-click way back to the shipped PySR-parity defaults.
   Object.keys(DEFAULTS).forEach((id) => $(id).addEventListener("input", updateSettingsSummary));
   $("reset-defaults").addEventListener("click", resetDefaults);
+  annotateSettingsFields();
   updateSettingsSummary();
+
+  // The summary line is the settings trigger, matching the data summary above it; "edit" is
+  // the same action spelled out. Every dismissal path (Cancel, ×, Esc, backdrop) discards.
+  $("settings-summary").addEventListener("click", openSettings);
+  $("open-settings").addEventListener("click", openSettings);
+  $("settings-apply").addEventListener("click", () => closeSettings(true));
+  $("settings-cancel").addEventListener("click", () => closeSettings(false));
+  $("settings-close").addEventListener("click", () => closeSettings(false));
+  // Esc: take over the native close so the snapshot is restored on the way out.
+  $("settings-dialog").addEventListener("cancel", (e) => {
+    e.preventDefault();
+    closeSettings(false);
+  });
+  $("settings-dialog").addEventListener("click", (e) => {
+    if (e.target === $("settings-dialog")) closeSettings(false);
+  });
 
   wireExport();
 }

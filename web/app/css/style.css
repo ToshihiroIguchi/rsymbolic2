@@ -286,7 +286,31 @@ dialog.modal::backdrop { background: rgba(0, 0, 0, 0.45); }
   padding: 0.7rem 1rem; border-bottom: 1px solid var(--border);
 }
 .modal-head h2 { margin: 0; font-size: 0.95rem; }
+/* Footer action row (settings dialog): Reset sits left, the dismiss/commit pair right, so
+   the destructive-ish action is never adjacent to the one users click by reflex. */
+.modal-foot {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.6rem 1rem; border-top: 1px solid var(--border);
+}
+.modal-foot .foot-spacer { flex: 1; }
+/* A dialog is wide enough to hold several settings per row and still print each field's
+   description, which the 384px config rail could not. The width is set explicitly: a <dialog>
+   sizes to fit-content, so an auto-fit grid inside one would otherwise collapse to a single
+   minimum-width column and give back the room this panel was moved here to get. */
+#settings-dialog { width: min(92vw, 44rem); }
+.field-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.5rem 1rem; margin-bottom: 0.4rem;
+}
+.field-hint { display: block; font-size: 0.72rem; color: var(--muted); margin-top: 0.15rem; }
+/* A field that no longer matches its shipped default is marked here as well as in the rail's
+   summary line: PySR default parity is the project's highest-priority configuration rule, so a
+   divergence has to be visible at the field, not just counted somewhere. */
+label.modified > input { border-color: var(--accent); }
+label.modified > .field-hint { color: var(--accent); }
+/* The dialog is 80vh tall at most; two head/foot rows share that budget with the body. */
 .modal-body { padding: 0.8rem 1rem; overflow: auto; max-height: calc(80vh - 3.2rem); }
+#settings-dialog .modal-body { max-height: calc(80vh - 6.2rem); }
 .preview-full { margin-top: 0.4rem; }
 .preview-full table { border-collapse: collapse; font-size: 0.8rem; width: 100%; }
 .preview-full thead th { position: sticky; top: 0; background: var(--panel); }

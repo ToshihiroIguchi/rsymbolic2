@@ -226,15 +226,40 @@ points (no new heavy features, no engine/default change):
   the run — so the checkboxes now sit directly in the Search card instead of behind a
   disclosure indistinguishable from the ones holding `tournament_selection_p`. The former
   "Settings" and "Advanced (PySR parity)" disclosures were one panel split by importance
-  rather than by kind, so they merged into a single `Settings` disclosure (budget fields
-  first, then a `PySR parity constants` group). Its summary carries live values —
-  `Settings — 2800 generations · seed 1` — because a collapsed disclosure that says nothing
+  rather than by kind, so they merged into a single `Settings` panel (budget fields first,
+  then a `PySR parity constants` group). The rail keeps only its summary line, which carries
+  live values — `2800 generations · seed 1` — because a collapsed panel that says nothing
   forces a click just to learn the budget, and appends `· modified` when **any** field
-  differs from its shipped default, next to a `Reset to PySR defaults` button: the GUI should
-  never let a user drift silently off the parity defaults with no way back. `main.js`
-  `DEFAULTS` is the single source for the reset, the modified marker, and `readConfig()`'s
-  blank-field fallback, so the three cannot drift apart. Operator preset chips were rejected
-  for the same reason the Quick/Balanced/Full budget pills were removed (above).
+  differs from its shipped default: the GUI should never let a user drift silently off the
+  parity defaults with no way back. `main.js` `DEFAULTS` is the single source for the reset,
+  the modified marker, the per-field hint in the dialog, and `readConfig()`'s blank-field
+  fallback, so the four cannot drift apart. Operator preset chips were rejected for the same
+  reason the Quick/Balanced/Full budget pills were removed (above).
+- **Search settings modal.** The 17 settings fields moved out of that disclosure into the
+  app's second native `<dialog>` (`#settings-dialog`), opened from the summary line or its
+  `edit` button — the same summary-line-plus-button pattern as the Data card. Measured on the
+  pre-change build at 1366×768 with an example loaded: the expanded panel is **544 px tall in
+  a 691 px rail**, starting at y≈834 — *entirely below the fold*, with `Reset to PySR
+  defaults` at the very bottom; the rail's content ran 1465 px against its 691 px pane
+  (+774 px of overflow, more than a full pane) with the macro disclosure open too. After the
+  move the rail fits its pane exactly (0 px overflow in the default state). The dialog also
+  buys what the 384 px rail could not afford: a **163 px field became 320 px in a 2-column
+  grid**, and each field now prints a one-line description plus its shipped default
+  (`Strength of the frequency-adaptive penalty on crowded complexities. Default 1040.`),
+  injected from `DEFAULTS` so the text cannot disagree with the value the search falls back
+  to. A field that no longer matches its default is marked at the field itself, not merely
+  counted in the summary line — PySR default parity is the project's highest-priority
+  configuration rule. Editing is **transactional**: values are snapshotted on open, `Apply`
+  keeps them, and every dismissal path (`Cancel`, `×`, Esc, backdrop) restores them, where the
+  inline panel could only be undone by resetting all 17 fields at once. The input ids are
+  unchanged, so `readConfig()` still reads them straight from the DOM and the search is
+  bit-identical (verified: the Quadratic example at seed 1 returns the same 14-row front and
+  the same 1,219,366 evaluations before and after). What deliberately stayed out of the
+  dialog: the **operator checkboxes** (problem input, see above), the results-side `recommend`
+  / `log loss` controls (they re-render the visible chart instantly — a modal would break that
+  loop), the macro editor (off by default, 261 px, and its real weakness is that body errors
+  surface at Run time, which a modal does not fix), and the two high-accuracy opt-in
+  checkboxes (a dialog costs more than the content).
 - **Chart cards fill their row.** `.charts-row` stretches both cards to the taller one (the
   Pareto card carries an extra control row and the legend), so the Fit card's fixed 240 px
   canvas left a ~95 px blank strip under it — the tallest unused region in the answer-first
