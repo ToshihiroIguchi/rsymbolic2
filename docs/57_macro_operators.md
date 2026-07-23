@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-23
 **Status:** implemented, **off by default** (`macro_ops` empty)
-**Interfaces:** R, Python (the WebAssembly/GUI surface is deferred; the core supports it)
+**Interfaces:** R, Python, WebAssembly (web GUI)
 
 ---
 
@@ -119,6 +119,30 @@ symbolic_regression(X, y,
 symbolic_regression(X, y, unary_ops=[], binary_ops=["add", "mul"],
                     macro_ops={"gauss": "exp(neg(square(x)))"})
 ```
+
+In the browser the WASM bridge takes the mapping as **two parallel arrays** — embind cannot
+enumerate the keys of an arbitrary JS object, and a macro's name is user-chosen, so the
+bridge takes the same `(names, bodies)` pair the R and Python bridges are given:
+
+```js
+Module.run({ X, y, nrow, ncol, binary_ops: ["add", "mul"], unary_ops: [],
+             macro_names: ["gauss"], macro_bodies: ["exp(-square(x))"] });
+```
+
+The web GUI (`web/app/`) exposes this as a **Custom operators (macros)** disclosure under the
+operator checkboxes — a name/body row per macro, plus a preset list, since a syntax nobody can
+guess is a feature nobody uses. Two things are worth stating about where errors come from:
+
+- **The body is validated by the engine, at Run.** `make_macro_op` is the only validator in
+  every interface (§5), so the browser rejects exactly what R and Python reject, with the same
+  message, and the GUI never carries a second copy of the grammar. A bad body surfaces through
+  the bridge's existing `{error}` path into the status bar.
+- **Name-level problems are caught in the page** (blank, duplicate, non-identifier, shadowing a
+  built-in), because those need no parser and it would be rude to spend a launched run on them.
+
+Operators used *inside* a body need not be checked in the operator panel: declaring the body is
+the statement that those operators may appear (the same reasoning as `ops_within_search_space`
+in §3).
 
 ## 7. What is NOT claimed
 

@@ -42,7 +42,8 @@ A new `web/` subtree that is a **fourth consumer** of the shared core, exactly p
   both recover the quadratic example to ~1e-10 loss with different expression forms. This is
   cross-toolchain FP sensitivity inherent to GP search, not a behavioural divergence: same
   engine, same defaults, same recovery quality. Opt-in high-accuracy options
-  (`linear_scaling`, `eval_cache`, dimensional analysis) are surfaced but off by default,
+  (`linear_scaling`, `eval_cache`, `strong_simplify`, dimensional analysis, and macro
+  operators — `macro_names`/`macro_bodies`, docs/57) are surfaced but off by default,
   mirroring the library's second layer.
 - **The shared C++ core is not modified in a behaviour-changing way.** The core does now
   carry an optional per-epoch progress-observer hook (`SearchOptions::progress_callback`,

@@ -39,6 +39,21 @@ web/
     examples/ (inline)      example datasets live in js/examples.js
 ```
 
+## Custom (macro) operators
+
+The sidebar's **Custom operators (macros)** disclosure (under the operator checkboxes) lets a
+user define one-argument templates over the primitives — `gauss = exp(-square(x))` — which the
+engine expands as it builds expressions (docs/57). A preset list seeds the common ones. The
+feature is **off by default**: with no macro rows the two option arrays sent to the bridge are
+empty and the search is bit-identical to the PySR-parity run.
+
+Bodies are validated by the engine's own parser when Run is pressed, so the browser rejects
+exactly what R and Python reject, with the same message — the page carries no second copy of
+the grammar. Only name-level problems (blank, duplicate, shadowing a built-in) are reported
+before the run starts. Results always print the expanded primitive form, so macros need no
+support in `js/predict.js` or in the copied R/Python snippets' round trip; the snippets do
+carry a `macro_ops` argument so they reproduce the run.
+
 ## Building the WebAssembly module
 
 Requires the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html).
@@ -64,9 +79,17 @@ This emits `web/app/vendor/rsymbolic2.js` + `rsymbolic2.wasm`.
 node web/wasm/test/parity_test.cjs
 ```
 
-It checks recovery of the quadratic example, run-to-run determinism, and — if the Python
-`rsymbolic2` package is importable — bit-parity of the best expression and Pareto losses
-between the WASM and Python builds.
+It checks recovery of the quadratic example, run-to-run determinism, the display-simplified
+result fields, the progress callback, and the opt-in options' default-off parity —
+`strong_simplify` and macro operators (docs/57) must leave the run bit-identical when unused,
+which is what proves the code added for them is inert. If the Python `rsymbolic2` package is
+importable it also cross-checks that both builds recover the example to comparably tiny loss
+(outcome equivalence, not string equality: the two toolchains' libm differ in the last bit).
+
+The macro block additionally pins the guarantees the GUI depends on: an invalid body is
+rejected by the engine's own parser with the same message R and Python print, and a macro
+never appears by name in a returned expression (results carry the expanded primitive form, so
+`js/predict.js` needs no macro knowledge).
 
 ## Serving the site locally
 

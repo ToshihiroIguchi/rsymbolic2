@@ -30,6 +30,19 @@ const UNARY_DEFAULT = new Set(["neg", "exp", "log", "sin", "cos"]);
 const BINARY = ["add", "sub", "mul", "div", "pow"];
 const BINARY_DEFAULT = new Set(["add", "sub", "mul"]);
 
+// Macro operators (docs/57): one-argument expression templates the engine expands as it
+// builds a tree. Ready-made bodies, offered because a feature nobody can guess the syntax of
+// is a feature nobody uses. Each body is written in the grammar the C++ parser accepts
+// (parse_expression.hpp): binary operators in infix, unary operators in call form, and the
+// argument `x` exactly once.
+const MACRO_PRESETS = [
+  { name: "gauss", body: "exp(-square(x))" },
+  { name: "sigmoid", body: "1 / (1 + exp(-x))" },
+  { name: "softplus", body: "log(1 + exp(x))" },
+  { name: "cube", body: "x^3" },
+  { name: "decay", body: "exp(-1.0 * x)" },
+];
+
 const $ = (id) => document.getElementById(id);
 
 // The shipped search defaults, PySR-identical (docs/28). Single source for three consumers:
@@ -137,6 +150,90 @@ function checkedOps(kind) {
   // not regrouped, so DOM order already matches their declared order.
   if (kind === "un") return UNARY.filter((op) => picked.has(op));
   return [...picked];
+}
+
+// --- Macro operators --------------------------------------------------------------
+// A row is one macro: its name and its body. Rows where BOTH fields are blank are ignored,
+// so a leftover empty row can never switch the feature on — with no macros the two option
+// arrays are empty and the search stays bit-identical to the PySR-parity run (docs/57 §4).
+function addMacroRow(name = "", body = "") {
+  const row = document.createElement("div");
+  row.className = "macro-row";
+  const nameInput = document.createElement("input");
+  nameInput.type = "text";
+  nameInput.placeholder = "name";
+  nameInput.value = name;
+  nameInput.dataset.macro = "name";
+  const bodyInput = document.createElement("input");
+  bodyInput.type = "text";
+  bodyInput.placeholder = "exp(-square(x))";
+  bodyInput.value = body;
+  bodyInput.dataset.macro = "body";
+  const del = document.createElement("button");
+  del.type = "button";
+  del.className = "btn small";
+  del.textContent = "×";
+  del.title = "Remove this macro";
+  del.addEventListener("click", () => {
+    row.remove();
+    updateMacroSummary();
+  });
+  [nameInput, bodyInput].forEach((el) => el.addEventListener("input", updateMacroSummary));
+  row.append(nameInput, bodyInput, del);
+  $("macro-list").appendChild(row);
+  updateMacroSummary();
+}
+
+function readMacros() {
+  const names = [];
+  const bodies = [];
+  document.querySelectorAll("#macro-list .macro-row").forEach((row) => {
+    const name = row.querySelector('[data-macro="name"]').value.trim();
+    const body = row.querySelector('[data-macro="body"]').value.trim();
+    if (!name && !body) return; // untouched row
+    names.push(name);
+    bodies.push(body);
+  });
+  return { names, bodies };
+}
+
+// The checks that need no expression parser, so they can be reported before a run starts.
+// Everything about the BODY is left to the engine's make_macro_op() (docs/57 §5): one parser
+// serves R, Python and the browser, and duplicating its grammar here would let the two drift.
+function macroError(names, bodies) {
+  const seen = new Set();
+  for (let i = 0; i < names.length; i++) {
+    const name = names[i];
+    if (!name) return `Macro ${i + 1}: give the macro a name (or clear its body).`;
+    if (!bodies[i]) return `Macro '${name}': the body is empty, e.g. exp(-square(x)).`;
+    if (!/^[A-Za-z_]\w*$/.test(name))
+      return `Macro '${name}': the name must be a letter or _ followed by letters/digits.`;
+    if (UNARY.includes(name) || BINARY.includes(name))
+      return `Macro '${name}' shadows a built-in operator; pick another name.`;
+    if (seen.has(name)) return `Macro '${name}' is defined twice.`;
+    seen.add(name);
+  }
+  return null;
+}
+
+function updateMacroSummary() {
+  const n = readMacros().names.length;
+  $("macro-summary").textContent = n ? `— ${n} defined` : "";
+}
+
+function buildMacroPresets() {
+  const sel = $("macro-preset");
+  MACRO_PRESETS.forEach((m, i) => {
+    const o = document.createElement("option");
+    o.value = String(i);
+    o.textContent = `${m.name} = ${m.body}`;
+    sel.appendChild(o);
+  });
+  sel.addEventListener("change", () => {
+    const m = MACRO_PRESETS[parseInt(sel.value, 10)];
+    if (m) addMacroRow(m.name, m.body);
+    sel.value = ""; // back to the placeholder, so the same preset can be picked again
+  });
 }
 
 function buildExamples() {
@@ -273,9 +370,14 @@ function readConfig() {
     const v = d.int ? parseInt($(id).value, 10) : parseFloat($(id).value);
     return Number.isFinite(v) ? v : d.value;
   };
+  const macros = readMacros();
   return {
     unary_ops: checkedOps("un"),
     binary_ops: checkedOps("bin"),
+    // Two parallel arrays, matching the R/Python bridge signatures (the WASM bridge cannot
+    // enumerate the keys of a JS object). Empty = the feature is off.
+    macro_names: macros.names,
+    macro_bodies: macros.bodies,
     generations: field("generations"),
     n_populations: field("n_populations"),
     population_size: field("population_size"),
@@ -337,6 +439,13 @@ function run() {
   // run, but the displayed result must keep the names it was fitted with.
   state.targetName = state.table.columns[state.targetIndex];
   const config = readConfig();
+  // Name-level macro problems are caught here rather than costing the user a launched run;
+  // a bad macro BODY is reported by the engine itself, through the normal error path.
+  const macroProblem = macroError(config.macro_names, config.macro_bodies);
+  if (macroProblem) {
+    setStatus(macroProblem);
+    return;
+  }
   state.config = config;
 
   setRunButton(true);
@@ -647,8 +756,11 @@ function init() {
   updateThemeToggleIcon();
   $("theme-toggle").addEventListener("click", toggleTheme);
   buildOperatorChecks();
+  buildMacroPresets();
   buildExamples();
   initSplitters();
+
+  $("add-macro").addEventListener("click", () => addMacroRow());
 
   $("run-btn").addEventListener("click", () => {
     if (document.body.classList.contains("running")) stop();

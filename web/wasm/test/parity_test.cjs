@@ -164,6 +164,51 @@ function assert(cond, msg) {
   assert(r5.eval_counts.strong_simplify_adopted <= r5.eval_counts.strong_simplify_attempts,
     "strong_simplify adopted count never exceeds the attempt count");
 
+  // 2e. Opt-in macro operators (docs/57): one-argument templates over the primitives,
+  // expanded when a growth mutation creates a unary node. Passed to this bridge as two
+  // parallel arrays, exactly like the R/Python bridges take them.
+  const runOpts = (extra) =>
+    Module.run(Object.assign({}, OPTIONS, { X: flat, y: Float64Array.from(y), nrow, ncol }, extra));
+
+  // Default parity: empty arrays must be indistinguishable from the fields being absent.
+  // This is the load-bearing assertion — it proves the macro code is inert when unused.
+  const rNoMacro = runOpts({ macro_names: [], macro_bodies: [] });
+  if (rNoMacro && rNoMacro.error) throw new Error("WASM run error (empty macros): " + rNoMacro.error);
+  assert(rNoMacro.expression === r1.expression,
+    "empty macro arrays are identical to the fields being unset (same seed)");
+  assert(rNoMacro.pareto_front.loss.join(",") === l1,
+    "empty macro arrays leave the Pareto losses identical");
+
+  // Validation: one parser (make_macro_op / parse_expression.hpp) serves every interface, so
+  // the browser rejects exactly what R and Python reject, with the same message.
+  const badBody = runOpts({ macro_names: ["gauss"], macro_bodies: ["exp(foo(x))"] });
+  assert(badBody && typeof badBody.error === "string" && badBody.error.includes("gauss")
+      && badBody.error.includes("foo"),
+    "an unknown function in a macro body is rejected, naming the macro and the function");
+  const twoArgs = runOpts({ macro_names: ["dbl"], macro_bodies: ["x * x"] });
+  assert(twoArgs && typeof twoArgs.error === "string" && twoArgs.error.includes("exactly once"),
+    "a macro body using the argument twice is rejected");
+  const mismatched = runOpts({ macro_names: ["gauss"], macro_bodies: [] });
+  assert(mismatched && typeof mismatched.error === "string"
+      && mismatched.error.includes("same length"),
+    "mismatched macro name/body array lengths are rejected");
+
+  // A working macro: the run completes, is deterministic, and the macro is INVISIBLE in the
+  // results — the front prints the expanded primitive form, which is what keeps the reported
+  // expression evaluatable by predict() with no macro knowledge (docs/57 §2).
+  const macroOpts = { macro_names: ["gauss"], macro_bodies: ["exp(-square(x))"] };
+  const rMacro = runOpts(macroOpts);
+  if (rMacro && rMacro.error) throw new Error("WASM run error (macro): " + rMacro.error);
+  assert(Number.isFinite(rMacro.loss), "a run with a macro operator completes with a finite loss");
+  assert(rMacro.pareto_front.complexity.length > 0, "the macro run returns a non-empty front");
+  assert(rMacro.pareto_front.expression.every((e) => !e.includes("gauss"))
+      && !rMacro.expression.includes("gauss"),
+    "the macro name never appears in a returned expression (expanded primitive form)");
+  const rMacro2 = runOpts(macroOpts);
+  assert(rMacro2.expression === rMacro.expression
+      && rMacro2.pareto_front.loss.join(",") === rMacro.pareto_front.loss.join(","),
+    "a macro run is deterministic across runs (same seed)");
+
   // 3. Cross-build equivalence vs Python (best-effort; outcome, not string equality).
   let py = null;
   try {

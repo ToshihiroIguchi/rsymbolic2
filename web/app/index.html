@@ -87,6 +87,28 @@
           <div class="group-label">Unary operators</div>
           <div id="unary-ops"></div>
 
+          <!-- Macro operators (docs/57): one-argument templates over the primitives, so they
+               belong with the operators above (they are an entry in the unary alphabet, i.e.
+               problem input) rather than with the parity constants below. Collapsed because
+               they are off by default and rarely used. -->
+          <details class="disclosure">
+            <summary>Custom operators (macros) <span id="macro-summary" class="muted"></span></summary>
+            <p class="muted small">
+              One-argument templates over <code>x</code>, e.g. <code>exp(-square(x))</code>,
+              expanded into the expression as the search builds it. Complexity counts the
+              expanded nodes, results print the primitive form, and numbers in a body become
+              tunable constants seeded at that value. A body may use operators that are not
+              checked above. Off by default — with no macros the search is unchanged.
+            </p>
+            <div id="macro-list"></div>
+            <div class="row">
+              <button id="add-macro" class="btn small" type="button">+ Add macro</button>
+              <select id="macro-preset">
+                <option value="" selected disabled>from preset…</option>
+              </select>
+            </div>
+          </details>
+
           <details class="disclosure">
             <summary>Settings <span id="settings-summary" class="muted"></span></summary>
             <div class="grid2">

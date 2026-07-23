@@ -23,6 +23,18 @@ function opsLiteral(list) {
   return "[" + list.map((s) => `"${s}"`).join(", ") + "]";
 }
 
+const q = (s) => `"${String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+
+// Macro operators (docs/57) are opt-in and change the search, so a snippet that omitted them
+// would not reproduce the run. Emitted only when the user defined some; `entry` renders one
+// line in the host language's mapping literal.
+function macroLines(cfg, open, entry, close) {
+  const names = cfg.macro_names || [];
+  if (!names.length) return [];
+  const items = names.map((n, i) => entry(n, cfg.macro_bodies[i])).join(", ");
+  return [`${open}${items}${close}`];
+}
+
 // A Python snippet reproducing the run (unary/binary ops + the non-default numeric knobs
 // most users touch; the rest stay at PySR-parity defaults).
 export function pythonCall(cfg) {
@@ -32,6 +44,7 @@ export function pythonCall(cfg) {
     "    X, y,",
     `    unary_ops=${opsLiteral(cfg.unary_ops)},`,
     `    binary_ops=${opsLiteral(cfg.binary_ops)},`,
+    ...macroLines(cfg, "    macro_ops={", (n, b) => `${q(n)}: ${q(b)}`, "},"),
     `    population_size=${cfg.population_size}, n_populations=${cfg.n_populations},`,
     `    generations=${cfg.generations}, max_nodes=${cfg.max_nodes}, seed=${cfg.seed},`,
     ")",
@@ -48,6 +61,7 @@ export function rCall(cfg) {
     "  X, y,",
     `  unary_ops = ${rvec(cfg.unary_ops)},`,
     `  binary_ops = ${rvec(cfg.binary_ops)},`,
+    ...macroLines(cfg, "  macro_ops = c(", (n, b) => `${n} = ${q(b)}`, "),"),
     `  population_size = ${cfg.population_size}, n_populations = ${cfg.n_populations},`,
     `  generations = ${cfg.generations}, max_nodes = ${cfg.max_nodes}, seed = ${cfg.seed}`,
     ")",

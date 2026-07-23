@@ -233,6 +233,11 @@ textarea { resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospa
 .check input { width: auto; }
 .check.small { font-size: 0.78rem; }
 
+/* One macro operator per row: fixed-width name, elastic body, remove button. */
+.macro-row { display: grid; grid-template-columns: 6rem 1fr auto; gap: 0.3rem; margin-bottom: 0.3rem; }
+.macro-row input { font-size: 0.8rem; min-width: 0; }
+#macro-preset { width: auto; flex: 1; min-width: 0; }
+
 /* Drop zone for CSV files: dashed border, centered muted prompt, accent highlight on hover
    or while a file is being dragged over it (JS toggles .dragover). */
 .drop-zone {

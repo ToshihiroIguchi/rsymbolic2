@@ -28,6 +28,7 @@
 #include <string>
 #include <vector>
 
+#include "rsymbolic/evolution/macro_op.hpp"
 #include "rsymbolic/evolution/mutation_weights.hpp"
 #include "rsymbolic/evolution/search_space.hpp"
 #include "rsymbolic/expression/latex.hpp"
@@ -162,6 +163,26 @@ val run(val opts) {
         for (const auto& s : binary_ops) space.binary_ops.push_back(parse_binary(s));
         if (space.binary_ops.empty())
             throw std::invalid_argument("binary_ops must contain at least one operator.");
+
+        // Opt-in macro operators (docs/57): single-argument templates over the primitives,
+        // expanded at tree construction. Passed as two parallel arrays (names, bodies) like
+        // the R and Python bridges — embind cannot enumerate the keys of an arbitrary JS
+        // object, and a macro's name is user-chosen. Empty (the default) leaves the search
+        // bit-identical to the PySR-parity run.
+        std::vector<std::string> macro_names  = get_str_vec(opts, "macro_names");
+        std::vector<std::string> macro_bodies = get_str_vec(opts, "macro_bodies");
+        if (macro_names.size() != macro_bodies.size())
+            throw std::invalid_argument("macro_ops names and bodies must have the same "
+                                        "length.");
+        for (std::size_t i = 0; i < macro_names.size(); ++i) {
+            MacroOp macro;
+            std::string error;
+            if (!make_macro_op(macro_names[i], macro_bodies[i], kMacroArgName,
+                               space.max_nodes, macro, error)) {
+                throw std::invalid_argument(error);
+            }
+            space.macro_ops.push_back(std::move(macro));
+        }
 
         // Opt-in dimensional analysis (X_units / y_units / dimensionless_constants_only).
         std::vector<std::string> X_units = get_str_vec(opts, "X_units");
