@@ -128,7 +128,16 @@ export function drawPareto(canvas, front, { bestIndex, logLoss, onSelect, select
 export function drawPrediction(canvas, X, y, yhat, { xLabel = "x0", yLabel = "y" } = {}) {
   if (predChart) predChart.destroy();
   const theme = themeColors();
-  const legend = { display: true, labels: { color: theme.text } };
+  // Legend keys mirror the marks they stand for: a dot for the scattered points, a short
+  // line (dashed where the dataset is dashed) for the curves. Chart.js's default legend box
+  // is a filled 40px rectangle, which misrepresents both; `usePointStyle` swaps in each
+  // dataset's own pointStyle instead. `boxHeight` is the only size knob usable here — it
+  // sets the dot radius and the line length together. Do NOT add `pointStyleWidth` to
+  // lengthen the line keys: a set width makes Chart.js draw the dot as an ellipse.
+  const legend = {
+    display: true,
+    labels: { color: theme.text, usePointStyle: true, boxHeight: 9 },
+  };
   const ncol = X.length ? X[0].length : 0;
 
   if (ncol === 1) {
@@ -143,6 +152,7 @@ export function drawPrediction(canvas, X, y, yhat, { xLabel = "x0", yLabel = "y"
             label: "model",
             data: curve,
             showLine: true,
+            pointStyle: "line",
             borderColor: theme.selected,
             backgroundColor: theme.selected,
             pointRadius: 0,
@@ -167,14 +177,18 @@ export function drawPrediction(canvas, X, y, yhat, { xLabel = "x0", yLabel = "y"
       type: "scatter",
       data: {
         datasets: [
-          { label: "predicted vs actual", data: pts, backgroundColor: theme.data, pointRadius: 3 },
+          // The legend names the two marks, not the chart: the card heading and the axis
+          // titles already say "predicted vs actual", and "y = x" would read as an equation
+          // between the dataset's own columns when the target column is itself named y.
+          { label: "predictions", data: pts, backgroundColor: theme.data, pointRadius: 3 },
           {
-            label: "y = x",
+            label: "ideal (predicted = actual)",
             data: [
               { x: lo, y: lo },
               { x: hi, y: hi },
             ],
             showLine: true,
+            pointStyle: "line",
             borderColor: theme.refline,
             borderDash: [6, 4],
             pointRadius: 0,
