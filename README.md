@@ -100,13 +100,21 @@ working C++17 compiler. To try it without any local setup, use
 
 | Platform | What to install | Notes |
 |----------|-----------------|-------|
-| **Windows** | [Rtools](https://cran.r-project.org/bin/windows/Rtools/) (45 or newer) | Provides GCC, CMake, and `make` under `C:\rtools45`. The R package *requires* Rtools anyway; the Python package reuses the same compiler. |
+| **Windows (Python)** | [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/) ("Desktop development with C++") **or** [Rtools](https://cran.r-project.org/bin/windows/Rtools/) 45+ | Either works; both are verified ([docs/58](docs/58_windows_python_toolchain.md)). MSVC is the usual Windows Python toolchain; pick Rtools instead if you also use the R package, so one install covers both. |
+| **Windows (R)** | [Rtools](https://cran.r-project.org/bin/windows/Rtools/) (45 or newer) | **Required** — R on Windows is built with Rtools (MinGW/GCC + UCRT), not MSVC. Provides GCC, CMake, and `make` under `C:\rtools45`. |
 | **Ubuntu / Debian** | `sudo apt install build-essential cmake` | GCC + CMake. |
 | **macOS** | `xcode-select --install` and `brew install cmake libomp` | OpenMP (`libomp`) is optional — the engine falls back to a correct serial path without it. |
 
-> **Windows tip.** Make sure the Rtools binaries are on your `PATH` so that `gcc` and
-> `cmake` are found, e.g. add `C:\rtools45\x86_64-w64-mingw32.static.posix\bin` and
-> `C:\rtools45\usr\bin`. You can verify with `gcc --version` and `cmake --version`.
+For **Python** a compiler is normally all you need: if no suitable CMake is on `PATH`,
+`pip` installs one into the isolated build environment by itself.
+
+> **Windows tip.** With **MSVC**, run `pip install` from a *Developer Command Prompt for
+> VS* (or any shell where `vcvars64.bat` has been sourced) so that `cl.exe` is found.
+> With **Rtools**, put its binaries on `PATH` so `gcc` and `cmake` are found, e.g. add
+> `C:\rtools45\x86_64-w64-mingw32.static.posix\bin` and `C:\rtools45\usr\bin`; verify with
+> `gcc --version` and `cmake --version`. If you have both installed, whichever `cmake` is
+> found first decides: Rtools' CMake builds with GCC, any other CMake selects the Visual
+> Studio generator and builds with MSVC.
 
 There is **no third-party C++ library to install for the engine** — it depends only on
 the C++ standard library (and OpenMP, if present, for island parallelism). The language
@@ -115,7 +123,9 @@ bindings pull in one build-time helper each, handled automatically by the instal
 
 ### Install: Python
 
-Requires Python ≥ 3.9 and NumPy, plus the C++ toolchain above.
+Requires Python ≥ 3.9 and NumPy, plus the C++ toolchain above. On Windows, Rtools is
+**not** required for Python — MSVC and Rtools are both verified
+([docs/58](docs/58_windows_python_toolchain.md)).
 
 **Directly from GitHub** (no manual clone). The package lives in the `python/`
 subdirectory, so the URL must point at it with `#subdirectory=python`:
@@ -160,8 +170,10 @@ python -c "import rsymbolic2; print(rsymbolic2.__version__)"
 - **"Shared C++ core not found"** means you are building outside a full repository
   checkout — the Python package references the shared core in
   `r-package/rsymbolic2/src/`. Build from a complete clone.
-- **Compiler not found on Windows**: confirm `gcc` and `cmake` are on `PATH` (see the
-  Windows tip above), then retry.
+- **Compiler not found on Windows**: with MSVC, install the "Desktop development with
+  C++" workload and run `pip install` from a Developer Command Prompt (`cl` must be
+  found); with Rtools, confirm `gcc` and `cmake` are on `PATH`. See the Windows tip
+  above.
 - Optional extras: `pip install "./python[pandas,plot]"` enables `result.to_pandas()`
   (pandas) and `result.plot()` (matplotlib). From GitHub, append the extras to the URL:
   `pip install "rsymbolic2[pandas,plot] @ git+https://github.com/ToshihiroIguchi/rsymbolic2.git#subdirectory=python"`.

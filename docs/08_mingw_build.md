@@ -51,8 +51,11 @@ Set-Location build-mingw
 
 ## Notes
 
-- `build-mingw/` is in `.gitignore`; it is separate from `build/` (MSVC) so
-  both configurations can coexist without interference.
+- `build-mingw/` is in `.gitignore`; it is a separate directory from the other
+  local `build*/` trees so several configurations can coexist without
+  interference. (All of them are in fact Rtools/MinGW configurations — the
+  standalone harness has never been built with MSVC. MSVC *is* verified for the
+  Python package; see `docs/58_windows_python_toolchain.md`.)
 - The toolchain file (`cmake/toolchain-rtools.cmake`) accepts a `RTOOLS_ROOT`
   cache variable for non-default installation paths.
 - The Rtools `usr\bin` directory must appear in PATH before configure so that

@@ -22,6 +22,10 @@ print(res)          # Pareto front with per-member score, training R-squared,
 print(res.latex())  # LaTeX of the recommended member (display-only)
 ```
 
+Building from source needs only a C++17 compiler (`pip` fetches CMake and Ninja itself).
+On Windows either MSVC (Visual Studio Build Tools) or Rtools works — Rtools is required
+for the *R* package, not for this one.
+
 Optional extras: `pip install "rsymbolic2[pandas]"` enables `res.to_pandas()`,
 `pip install "rsymbolic2[plot]"` enables `res.plot()` (matplotlib Pareto plot).
 

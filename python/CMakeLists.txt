@@ -51,6 +51,14 @@ pybind11_add_module(_core
 )
 target_include_directories(_core PRIVATE ${CORE_SRC})
 
+# MSVC only: the core sources are UTF-8 without a BOM (non-ASCII appears in comments),
+# which MSVC otherwise reads in the system code page and reports as C4819 on every file
+# on a non-UTF-8 locale (e.g. CP932). /utf-8 fixes the source charset and silences it.
+# GCC/Clang already assume UTF-8, so nothing changes for the R, Ubuntu or WASM builds.
+if(MSVC)
+    target_compile_options(_core PRIVATE /utf-8)
+endif()
+
 # OpenMP island-model parallelism. Optional: the core has a correct serial fallback
 # when OpenMP is unavailable (e.g. some macOS toolchains), matching the R build.
 find_package(OpenMP)
