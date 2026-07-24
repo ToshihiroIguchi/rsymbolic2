@@ -145,6 +145,10 @@ val run(val opts) {
         for (std::size_t i = 0; i < n; ++i)
             for (std::size_t j = 0; j < p; ++j)
                 X[i][j] = Xflat[i * p + j];
+        // Release the flat copy immediately: run_evolution() copies X again into its shared
+        // Dataset, so all three would otherwise be live at once on a heap that is fixed at
+        // 128 MB and aborts (never returns null) when it runs out. See docs/59.
+        std::vector<double>().swap(Xflat);
 
         // --- SearchSpace ------------------------------------------------------------
         SearchSpace space;
@@ -256,11 +260,22 @@ val run(val opts) {
         // synchronously inside this same run() call, never concurrently with it.
         if (has(opts, "on_progress")) {
             val cb = opts["on_progress"];
-            o.progress_callback = [cb](const ProgressSnapshot& s) {
+            // How many epochs the run would take if nothing stopped it early. run_evolution()
+            // advances `migration_interval` generations per epoch, so this is what turns the
+            // snapshot's `epoch` into a fraction of the budget — the only thing a caller needs
+            // to show real progress instead of an indeterminate spinner. Derived here from the
+            // options rather than added to ProgressSnapshot so the shared core, and with it the
+            // R and Python bridges, stay untouched. It is an UPPER bound: target_loss, the
+            // timeout and max_evals can all end the loop sooner.
+            const std::size_t interval = std::max<std::size_t>(1, o.migration_interval);
+            const double total_epochs =
+                static_cast<double>((o.generations + interval - 1) / interval);
+            o.progress_callback = [cb, total_epochs](const ProgressSnapshot& s) {
                 val obj = val::object();
-                obj.set("epoch",      static_cast<double>(s.epoch));
-                obj.set("complexity", to_js_array(s.complexity));
-                obj.set("loss",       to_js_array(s.loss));
+                obj.set("epoch",        static_cast<double>(s.epoch));
+                obj.set("total_epochs", total_epochs);
+                obj.set("complexity",   to_js_array(s.complexity));
+                obj.set("loss",         to_js_array(s.loss));
                 cb(obj);
             };
         }

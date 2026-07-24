@@ -5,7 +5,9 @@
 // (data.js), the WASM search run (worker.js), the result plots (plots.js), equation
 // rendering (latex.js) and export (export.js). No framework — plain DOM + ES modules.
 
-import { parseTable, numericColumns, toMatrix } from "./data.js";
+import {
+  parseTable, numericColumns, toMatrix, maxRowsForBrowser, sampleTable, strideIndices,
+} from "./data.js";
 import { EXAMPLES } from "./examples.js";
 import { drawPareto, drawPrediction, destroyPlots } from "./plots.js";
 import { renderInto } from "./latex.js";
@@ -29,6 +31,22 @@ const UNARY_GROUPS = [
 const UNARY_DEFAULT = new Set(["neg", "exp", "log", "sin", "cos"]);
 const BINARY = ["add", "sub", "mul", "div", "pow"];
 const BINARY_DEFAULT = new Set(["add", "sub", "mul"]);
+
+// --- Data-size policy (docs/59) ---------------------------------------------------
+// Three measured facts drive every constant here. (1) A default-budget run costs ~2.83M
+// evaluations, each O(rows): 200 rows take 18.5 s, 2,000 rows 154 s, and 100,000 rows
+// about two hours — single-threaded, with no way for the user to know that in advance.
+// (2) The WASM heap is fixed at 128 MB and aborts on over-allocation, so the row ceiling
+// must be predicted before the run (data.js maxRowsForBrowser). (3) Reading and parsing
+// happen synchronously on the main thread, so an enormous file freezes the UI before any
+// of our checks could run — hence the byte cap, tested before the file is read.
+const MAX_INPUT_BYTES = 64 * 1024 * 1024;
+const ROW_WARN_THRESHOLD = 5000;   // above this a default-budget run is minutes, not seconds
+const DEFAULT_SAMPLE_ROWS = 5000;  // what auto-sampling falls back to
+const SAMPLE_SEED = 1;             // fixed: the same table must always yield the same sample
+// Chart.js allocates an object per point and both charts are rebuilt on every equation
+// click and theme toggle, so plots draw a fixed-size stride subset of the data.
+const DISPLAY_POINT_CAP = 5000;
 
 // Macro operators (docs/57): one-argument expression templates the engine expands as it
 // builds a tree. Ready-made bodies, offered because a feature nobody can guess the syntax of
@@ -78,10 +96,14 @@ const DEFAULTS = {
     value: 0,
     note: "Fraction of the run spent ramping the size limit up; 0 disables the ramp.",
   },
+  batch_size: { value: 50, int: true, note: "Rows drawn per iteration when batching is on." },
 };
 
 const state = {
-  table: null, // { columns, rows }
+  sourceTable: null, // { columns, rows } exactly as parsed
+  table: null, // the table actually fitted — sourceTable, or a sample of it
+  rowLimit: 0, // rows the engine can hold for this shape (data.js maxRowsForBrowser)
+  policyPopulations: 0, // the n_populations the current rowLimit/sample was derived from
   numeric: [], // bool[] per column
   targetIndex: -1,
   featureIndices: [],
@@ -91,12 +113,16 @@ const state = {
   y: null,
   featureNames: null,
   targetName: null,
+  sampling: null, // {fitted, total, seed} when the run used a sample; snapshotted at run time
   selectedIndex: null,
   worker: null,
   settingsSnapshot: null, // field values captured when the settings dialog opened (Cancel restores them)
   timer: null,
   t0: 0,
   lastProgressDraw: 0, // performance.now() of the last live-Pareto redraw (throttling)
+  epoch: 0,            // epochs completed, from the engine's progress snapshots
+  totalEpochs: 0,      // epoch budget the engine reports (an upper bound: it can stop early)
+  epochMarks: [],      // performance.now() at each completed epoch, for the ETA's recent rate
 };
 
 // --- Theme ------------------------------------------------------------------------
@@ -285,9 +311,12 @@ function loadTable(table) {
     finishRun();
   }
   clearResults();
-  state.table = table;
-  state.numeric = numericColumns(table);
-  renderDataSummary();
+  state.sourceTable = table;
+  applyRowPolicy(true);
+  // Classify columns on the FULL table: a column holding text in a row that sampling happens
+  // to drop is still not a numeric column, and this way the target/feature lists do not
+  // reshuffle when the sample size changes.
+  state.numeric = numericColumns(state.sourceTable);
   buildTargetAndFeatures();
   // Progressive disclosure: the target/feature controls stay hidden until there is data to
   // model, and loading data collapses the intake block (drop zone + example picker) — the
@@ -314,6 +343,7 @@ function clearResults() {
   state.y = null;
   state.featureNames = null;
   state.targetName = null;
+  state.sampling = null;
   state.selectedIndex = null;
   $("results-area").classList.remove("has-result");
   $("pareto-card").classList.remove("live");
@@ -323,22 +353,145 @@ function clearResults() {
   $("eq-string").title = "";
   $("eq-metrics").innerHTML = "";
   $("eval-accounting").textContent = "";
+  $("fit-note").textContent = "";
 }
 
-// Shared by all three intake paths (file input, drag & drop, clipboard paste).
+// Shared by all three intake paths (file input, drag & drop, clipboard paste). Parsing is
+// synchronous on the main thread, so the byte/character cap has to be applied to the raw
+// input BEFORE parsing — by the time we could count rows the UI has already frozen (and a
+// file past the browser's maximum string length fails inside FileReader, where the only
+// signal is the error event).
+function tooLarge(bytes) {
+  if (bytes <= MAX_INPUT_BYTES) return null;
+  return `That input is ${(bytes / 1048576).toFixed(0)} MB; the browser build accepts up to ` +
+         `${MAX_INPUT_BYTES / 1048576} MB. Use fewer rows, or the R or Python package.`;
+}
 function loadTextAsTable(text) {
+  const problem = tooLarge(text.length);
+  if (problem) { setStatus(problem); return; }
   try { loadTable(parseTable(text)); }
   catch (err) { setStatus("parse error: " + err.message); }
 }
 function loadFile(file) {
+  const problem = tooLarge(file.size);
+  if (problem) { setStatus(problem); return; }
   const reader = new FileReader();
   reader.onload = () => loadTextAsTable(reader.result);
+  reader.onerror = () => setStatus(
+    `could not read ${file.name}: ${(reader.error && reader.error.message) || "read failed"}`);
   reader.readAsText(file);
 }
 
+// Decide what is actually fitted: the whole table, or a sample of it. Two independent
+// reasons to sample — the user asked, or the table cannot fit in the engine's fixed heap
+// at all (data.js maxRowsForBrowser). The second is not a preference, so the checkbox is
+// forced on and locked; only the sample size stays adjustable. The parsed source table is
+// kept so changing the size re-samples from the full data instead of a sample of a sample.
+// `fresh` = called for newly loaded data (initialise the controls); otherwise the user
+// changed a control and only the outcome is recomputed.
+function applyRowPolicy(fresh) {
+  const src = state.sourceTable;
+  const n = src.rows.length;
+  // The ceiling moves with the island count (per-island O(rows) optimiser scratch), so read
+  // the live setting rather than the shipped default: raising Populations lowers it.
+  state.rowLimit = maxRowsForBrowser(src.columns.length, configuredPopulations());
+  const over = n > state.rowLimit;
+
+  const box = $("sample-rows");
+  const sizeInput = $("sample-size");
+  $("sample-control").hidden = n <= ROW_WARN_THRESHOLD;
+  sizeInput.max = String(state.rowLimit);
+  if (fresh) {
+    box.checked = over;
+    sizeInput.value = String(Math.min(DEFAULT_SAMPLE_ROWS, state.rowLimit));
+  }
+  box.disabled = over;
+  if (over) box.checked = true;
+
+  let k = parseInt(sizeInput.value, 10);
+  if (!Number.isFinite(k) || k < 1) k = Math.min(DEFAULT_SAMPLE_ROWS, state.rowLimit);
+  k = Math.min(k, state.rowLimit);
+  sizeInput.value = String(k);
+
+  state.table = box.checked ? sampleTable(src, k, SAMPLE_SEED) : src;
+  state.policyPopulations = configuredPopulations();
+  renderDataSummary();
+  renderDataNotice(over);
+}
+
+// Populations moves the row ceiling, and it can change through paths that fire no `change`
+// event — the settings dialog restores every field by assignment on Cancel/Esc. Comparing
+// against the value the current policy was computed from covers all of them, and skips the
+// needless result-clearing when a field was retyped to the same number.
+function syncRowPolicyIfPopulationsChanged() {
+  if (state.sourceTable && configuredPopulations() !== state.policyPopulations) {
+    reapplyRowPolicy();
+  }
+}
+
+// A change to the sampling controls (or to Populations) changes which rows are fitted, so
+// it invalidates a displayed result and a search in flight exactly like loading a new file.
+function reapplyRowPolicy() {
+  if (document.body.classList.contains("running")) {
+    if (state.worker) { state.worker.terminate(); state.worker = null; }
+    finishRun();
+    setStatus("stopped — the data changed");
+  }
+  clearResults();
+  applyRowPolicy(false);
+}
+
+function syncBatchingDependants() {
+  const on = $("batching").checked;
+  $("eval_cache").disabled = on;
+  $("eval-cache-note").hidden = !on;
+}
+
+function configuredPopulations() {
+  const v = parseInt($("n_populations").value, 10);
+  return Number.isFinite(v) && v > 0 ? v : DEFAULTS.n_populations.value;
+}
+
+// Is the displayed result fitted on fewer rows than the file holds?
+function isSampled() {
+  return !!state.sourceTable && state.table.rows.length < state.sourceTable.rows.length;
+}
+
+function renderDataNotice(over) {
+  const el = $("data-notice");
+  const n = state.sourceTable.rows.length;
+  const fitted = state.table.rows.length;
+  el.classList.remove("warn", "acted");
+  if (over) {
+    el.classList.add("acted");
+    el.textContent =
+      `${fmtInt(n)} rows exceed what the in-browser engine can hold — about ` +
+      `${fmtInt(state.rowLimit)} rows for ${state.sourceTable.columns.length} columns at ` +
+      `${configuredPopulations()} populations (fixed 128 MB heap). Fitting a ` +
+      `${fmtInt(fitted)}-row sample instead; adjust the count below, or use the R or ` +
+      `Python package for the full table.`;
+    el.hidden = false;
+  } else if (n > ROW_WARN_THRESHOLD) {
+    el.classList.add("warn");
+    el.textContent =
+      `${fmtInt(n)} rows is a lot for the browser: the engine is single-threaded here and a ` +
+      `default-budget run evaluates every row ~2.8M times (10,000 rows takes on the order of ` +
+      `ten minutes). Sample the rows below, enable Batching in Search settings, or set a ` +
+      `Timeout — or run the R or Python package.`;
+    el.hidden = false;
+  } else {
+    el.hidden = true;
+    el.textContent = "";
+  }
+}
+
 function renderDataSummary() {
-  const { columns, rows } = state.table;
-  $("data-summary").textContent = `${rows.length} rows × ${columns.length} columns`;
+  const cols = state.table.columns.length;
+  const fitted = state.table.rows.length;
+  const total = state.sourceTable.rows.length;
+  $("data-summary").textContent = fitted === total
+    ? `${fmtInt(fitted)} rows × ${cols} columns`
+    : `${fmtInt(fitted)} of ${fmtInt(total)} rows × ${cols} columns (sampled)`;
 }
 
 // Full-data view in a modal <dialog>. Rendering is capped so a huge CSV cannot lock up the
@@ -356,8 +509,14 @@ function openPreviewDialog() {
     html += "<tr>" + rows[i].map((v) => `<td>${esc(v)}</td>`).join("") + "</tr>";
   }
   table.querySelector("tbody").innerHTML = html;
-  $("preview-note").textContent =
-    rows.length > cap ? `Showing first ${cap} of ${rows.length} rows.` : `${rows.length} rows.`;
+  // The preview shows the table that is FITTED, so when sampling is on it must say so —
+  // otherwise the rows on screen read as the file's first rows.
+  const shown = rows.length > cap ? `Showing first ${fmtInt(cap)} of ${fmtInt(rows.length)} rows.`
+                                  : `${fmtInt(rows.length)} rows.`;
+  $("preview-note").textContent = isSampled()
+    ? `${shown} These are the sampled rows the search is fitted on ` +
+      `(${fmtInt(state.sourceTable.rows.length)} in the file).`
+    : shown;
   $("preview-dialog").showModal();
 }
 
@@ -439,7 +598,9 @@ function readConfig() {
     target_loss: field("target_loss"),
     max_evals: field("max_evals"),
     warmup_maxsize_by: field("warmup_maxsize_by"),
+    batch_size: field("batch_size"),
     model_selection: $("model_selection").value,
+    batching: $("batching").checked,
     linear_scaling: $("linear_scaling").checked,
     eval_cache: $("eval_cache").checked,
   };
@@ -468,8 +629,12 @@ function markModifiedFields() {
   });
 }
 function updateSettingsSummary() {
+  // Batching is a checkbox, so it is outside DEFAULTS and invisible to the "modified"
+  // marker — but it does change which candidates the search sees, and a change of that
+  // size must never be silent in a rail that otherwise reports the budget faithfully.
   $("settings-summary").textContent =
     `${$("generations").value} generations · seed ${$("seed").value}` +
+    ($("batching").checked ? " · batching" : "") +
     (settingsModified() ? " · modified" : "");
   markModifiedFields();
 }
@@ -508,6 +673,7 @@ function closeSettings(keep) {
   }
   state.settingsSnapshot = null;
   updateSettingsSummary();
+  syncRowPolicyIfPopulationsChanged(); // Apply and every dismissal path can land on a new value
   $("settings-dialog").close();
 }
 
@@ -520,6 +686,18 @@ function run() {
     setStatus("Select at least one feature.");
     return;
   }
+  // The heap ceiling is re-checked here because it depends on settings the user can change
+  // after loading the data (Populations) and on how many feature columns are ticked. The
+  // fitted width is featureIndices + the target, not the whole file's column count.
+  const width = state.featureIndices.length + 1;
+  const limit = maxRowsForBrowser(width, configuredPopulations());
+  if (state.table.rows.length > limit) {
+    setStatus(
+      `${fmtInt(state.table.rows.length)} rows exceed the engine's heap at ` +
+      `${configuredPopulations()} populations (about ${fmtInt(limit)} rows fit). ` +
+      `Lower the sample size or the population count.`);
+    return;
+  }
   const { X, y } = toMatrix(state.table, state.targetIndex, state.featureIndices);
   state.X = X;
   state.y = y;
@@ -527,6 +705,11 @@ function run() {
   // Snapshot the target name with the matrices: the target <select> can change after the
   // run, but the displayed result must keep the names it was fitted with.
   state.targetName = state.table.columns[state.targetIndex];
+  // Snapshotted with the matrices for the same reason: the sampling controls can move after
+  // the run, but the exported snippet must describe the data this result was fitted on.
+  state.sampling = isSampled()
+    ? { fitted: state.table.rows.length, total: state.sourceTable.rows.length, seed: SAMPLE_SEED }
+    : null;
   const config = readConfig();
   // Name-level macro problems are caught here rather than costing the user a launched run;
   // a bad macro BODY is reported by the engine itself, through the normal error path.
@@ -541,6 +724,12 @@ function run() {
   document.body.classList.add("running"); // shows the header progress bar
   $("pareto-card").classList.remove("live"); // cleared again on the first snapshot's redraw
   state.lastProgressDraw = 0;
+  // Back to the indeterminate sweep until the first snapshot says how long the run is.
+  state.epoch = 0;
+  state.totalEpochs = 0;
+  state.epochMarks = [];
+  document.body.classList.remove("determinate");
+  $("progress-bar").style.setProperty("--progress", "0%");
   startTimer();
   setStatus("running…");
 
@@ -555,7 +744,23 @@ function run() {
     else if (msg.type === "progress") onProgress(msg);
   };
   state.worker.onerror = (e) => onError(e.message || "worker error");
-  state.worker.postMessage({ type: "run", X, y, options: config });
+
+  // Flatten here and TRANSFER the buffers: posting the array-of-row-arrays structure-clones
+  // the whole dataset into the worker (a second copy, ~0.3 s of main-thread time at 500k
+  // rows) only for the worker to flatten it anyway. state.X keeps the row arrays the charts
+  // and predict() need, so detaching these buffers costs us nothing.
+  const nrow = X.length;
+  const ncol = nrow > 0 ? X[0].length : 0;
+  const flat = new Float64Array(nrow * ncol);
+  for (let i = 0; i < nrow; i++) {
+    const row = X[i];
+    for (let j = 0; j < ncol; j++) flat[i * ncol + j] = row[j];
+  }
+  const yFlat = Float64Array.from(y);
+  state.worker.postMessage(
+    { type: "run", X: flat, y: yFlat, nrow, ncol, options: config },
+    [flat.buffer, yFlat.buffer],
+  );
 }
 
 function stop() {
@@ -575,13 +780,16 @@ function onResult(result, elapsed) {
 }
 
 function onError(message) {
+  // An OOM abort leaves the module dead but the worker alive, holding its 128 MB heap until
+  // the next run replaces it. Drop it now; run() creates a fresh worker anyway.
+  if (state.worker) { state.worker.terminate(); state.worker = null; }
   finishRun();
   setStatus("error: " + message);
 }
 
 function finishRun() {
   stopTimer();
-  document.body.classList.remove("running");
+  document.body.classList.remove("running", "determinate");
   $("pareto-card").classList.remove("live"); // Stop/error/result all end the live state
   setRunButton(false);
 }
@@ -595,6 +803,21 @@ function finishRun() {
 function onProgress(msg) {
   $("pareto-card").classList.add("live");
   const now = performance.now();
+  // Progress accounting is separate from the redraw throttle below: every epoch must be
+  // timed even when its chart redraw is skipped, or the ETA's rate is computed from a
+  // fraction of the epochs. The status line itself is written by the run timer (one owner,
+  // see startTimer) — this only records what it will read.
+  if (msg.epoch > state.epoch) {
+    state.epoch = msg.epoch;
+    state.totalEpochs = msg.total_epochs || state.totalEpochs;
+    state.epochMarks.push(now);
+    if (state.epochMarks.length > 6) state.epochMarks.shift();
+    if (state.totalEpochs > 0) {
+      document.body.classList.add("determinate");
+      const frac = Math.min(1, state.epoch / state.totalEpochs);
+      $("progress-bar").style.setProperty("--progress", `${(frac * 100).toFixed(1)}%`);
+    }
+  }
   if (now - state.lastProgressDraw < 250) return;
   state.lastProgressDraw = now;
   drawPareto($("pareto-canvas"), { complexity: msg.complexity, loss: msg.loss, score: null }, {
@@ -611,15 +834,43 @@ function setRunButton(running) {
   btn.disabled = !running && !state.table;
 }
 
+// One writer for the status line while a run is in flight. The epoch/ETA figures live in
+// `state` and are read from here rather than written by onProgress, because this interval
+// would overwrite anything onProgress printed within 200 ms of it.
 function startTimer() {
   state.t0 = performance.now();
   state.timer = setInterval(() => {
-    setStatus(`running… ${((performance.now() - state.t0) / 1000).toFixed(1)} s`);
+    const secs = (performance.now() - state.t0) / 1000;
+    let line = `running… ${secs.toFixed(1)} s`;
+    if (state.totalEpochs > 0) line += ` · epoch ${state.epoch}/${state.totalEpochs}`;
+    const eta = estimateRemaining();
+    if (eta != null) line += ` · ≤ ${formatDuration(eta)} left`;
+    setStatus(line);
   }, 200);
 }
 function stopTimer() {
   if (state.timer) clearInterval(state.timer);
   state.timer = null;
+}
+
+// Seconds still to run, or null when there is not enough evidence yet. Deliberately based
+// on the RECENT epoch rate, not the whole run: early epochs carry small trees and are much
+// cheaper than later ones, so an average over the whole run reads far too optimistic at the
+// start. Nothing is shown before three epochs for the same reason. It stays an upper bound —
+// target_loss, the timeout and max_evals can all end the run sooner.
+function estimateRemaining() {
+  if (state.totalEpochs <= 0 || state.epochMarks.length < 3) return null;
+  const marks = state.epochMarks;
+  const perEpoch = (marks[marks.length - 1] - marks[0]) / (marks.length - 1);
+  const remaining = Math.max(0, state.totalEpochs - state.epoch);
+  if (!(perEpoch > 0)) return null;
+  return (perEpoch * remaining) / 1000;
+}
+
+function formatDuration(seconds) {
+  if (seconds < 90) return `${Math.ceil(seconds)} s`;
+  if (seconds < 5400) return `${Math.round(seconds / 60)} min`;
+  return `${(seconds / 3600).toFixed(1)} h`;
 }
 
 // --- Results rendering ------------------------------------------------------------
@@ -736,14 +987,22 @@ function selectEquation(i) {
     metric("score", fmt(front.score[i])) +
     metric("R²", r2 == null ? "—" : fmt(r2));
 
-  // Prediction plot, labelled with the real column names captured at run time.
+  // Prediction plot, labelled with the real column names captured at run time. Only a
+  // bounded stride subset is evaluated and drawn: Chart.js rebuilds the whole dataset on
+  // every selection and theme toggle, and the metrics above come from the engine (loss, and
+  // R² from res.sst), so nothing displayed depends on predicting every row here.
   const oneVar = state.X[0].length === 1;
   $("fit-title").textContent = oneVar
     ? `Fit: ${state.targetName} vs ${state.featureNames[0]}`
     : "Predicted vs actual";
+  const idx = strideIndices(state.X.length, DISPLAY_POINT_CAP);
+  const Xd = idx ? idx.map((k) => state.X[k]) : state.X;
+  const yd = idx ? idx.map((k) => state.y[k]) : state.y;
+  $("fit-note").textContent = idx
+    ? `Showing ${fmtInt(idx.length)} of ${fmtInt(state.X.length)} points.` : "";
   try {
-    const yhat = predict(front.expression[i], state.X);
-    drawPrediction($("pred-canvas"), state.X, state.y, yhat, {
+    const yhat = predict(front.expression[i], Xd);
+    drawPrediction($("pred-canvas"), Xd, yd, yhat, {
       xLabel: state.featureNames[0],
       yLabel: state.targetName,
     });
@@ -780,10 +1039,10 @@ function wireExport() {
     }
   });
   $("copy-python").addEventListener("click", () => {
-    if (state.config) copyText(pythonCall(state.config));
+    if (state.config) copyText(pythonCall(state.config, state.sampling));
   });
   $("copy-r").addEventListener("click", () => {
-    if (state.config) copyText(rCall(state.config));
+    if (state.config) copyText(rCall(state.config, state.sampling));
   });
   $("download-csv").addEventListener("click", () => {
     if (state.result) downloadText("rsymbolic2_pareto.csv", paretoCsv(state.result.pareto_front), "text/csv");
@@ -917,9 +1176,22 @@ function init() {
     if (e.target === $("preview-dialog")) $("preview-dialog").close();
   });
 
+  // Sampling controls. Both re-derive the fitted table from the parsed source, so the size
+  // can be raised and lowered without reloading the file.
+  $("sample-rows").addEventListener("change", () => { if (state.sourceTable) reapplyRowPolicy(); });
+  $("sample-size").addEventListener("change", () => { if (state.sourceTable) reapplyRowPolicy(); });
+
   // Keep the Settings summary in step with the fields it reports (including the "modified"
   // marker), and offer the one-click way back to the shipped PySR-parity defaults.
   Object.keys(DEFAULTS).forEach((id) => $(id).addEventListener("input", updateSettingsSummary));
+  $("batching").addEventListener("change", () => {
+    updateSettingsSummary();
+    syncBatchingDependants();
+  });
+  syncBatchingDependants();
+  // An edit to Populations can turn a table that fitted into one that does not; re-evaluate
+  // the policy instead of waiting for Run to refuse.
+  $("n_populations").addEventListener("change", syncRowPolicyIfPopulationsChanged);
   $("reset-defaults").addEventListener("click", resetDefaults);
   annotateSettingsFields();
   updateSettingsSummary();

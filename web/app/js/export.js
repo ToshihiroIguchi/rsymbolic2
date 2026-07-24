@@ -35,10 +35,35 @@ function macroLines(cfg, open, entry, close) {
   return [`${open}${items}${close}`];
 }
 
+// Opt-in flags that change the search (or, for eval_cache, the work done to reach the same
+// answer) and are OFF by default. A snippet that dropped them would not reproduce the run,
+// so each is emitted only when it differs from the shipped default. The argument names are
+// identical in R, Python and the WASM bridge, so one table serves both snippets.
+function optInLines(cfg, fmtArg) {
+  const out = [];
+  if (cfg.batching) {
+    out.push(fmtArg("batching", true));
+    out.push(fmtArg("batch_size", cfg.batch_size));
+  }
+  if (cfg.linear_scaling) out.push(fmtArg("linear_scaling", true));
+  if (cfg.eval_cache && !cfg.batching) out.push(fmtArg("eval_cache", true));
+  return out;
+}
+
+// A note when the GUI fitted fewer rows than the file holds — without it the snippet reads
+// as "run this on your data" while the equation above it came from a sample.
+// `sampling` = { fitted, total, seed } or null.
+function samplingNote(sampling, comment) {
+  if (!sampling) return [];
+  return [`${comment} fitted on a ${sampling.fitted}-row sample of ${sampling.total} rows ` +
+          `(deterministic, seed ${sampling.seed}); X and y below are the full data.`];
+}
+
 // A Python snippet reproducing the run (unary/binary ops + the non-default numeric knobs
 // most users touch; the rest stay at PySR-parity defaults).
-export function pythonCall(cfg) {
+export function pythonCall(cfg, sampling = null) {
   return [
+    ...samplingNote(sampling, "#"),
     "from rsymbolic2 import symbolic_regression",
     "res = symbolic_regression(",
     "    X, y,",
@@ -47,15 +72,22 @@ export function pythonCall(cfg) {
     ...macroLines(cfg, "    macro_ops={", (n, b) => `${q(n)}: ${q(b)}`, "},"),
     `    population_size=${cfg.population_size}, n_populations=${cfg.n_populations},`,
     `    generations=${cfg.generations}, max_nodes=${cfg.max_nodes}, seed=${cfg.seed},`,
+    ...optInLines(cfg, (k, v) => `    ${k}=${v === true ? "True" : v},`),
     ")",
     "print(res)",
   ].join("\n");
 }
 
 // An R snippet reproducing the run.
-export function rCall(cfg) {
+export function rCall(cfg, sampling = null) {
   const rvec = (list) => "c(" + list.map((s) => `"${s}"`).join(", ") + ")";
+  // The last argument line must not carry a trailing comma, so the opt-ins (when present)
+  // take over that duty from the seed line.
+  const optIns = optInLines(cfg, (k, v) => `  ${k} = ${v === true ? "TRUE" : v}`);
+  const fixed = `  generations = ${cfg.generations}, max_nodes = ${cfg.max_nodes}, ` +
+                `seed = ${cfg.seed}`;
   return [
+    ...samplingNote(sampling, "#"),
     "library(rsymbolic2)",
     "res <- symbolic_regression(",
     "  X, y,",
@@ -63,7 +95,8 @@ export function rCall(cfg) {
     `  binary_ops = ${rvec(cfg.binary_ops)},`,
     ...macroLines(cfg, "  macro_ops = c(", (n, b) => `${n} = ${q(b)}`, "),"),
     `  population_size = ${cfg.population_size}, n_populations = ${cfg.n_populations},`,
-    `  generations = ${cfg.generations}, max_nodes = ${cfg.max_nodes}, seed = ${cfg.seed}`,
+    optIns.length ? `${fixed},` : fixed,
+    ...optIns.map((line, i) => (i === optIns.length - 1 ? line : `${line},`)),
     ")",
     "print(res)",
   ].join("\n");

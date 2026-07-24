@@ -15,7 +15,8 @@ The *specific* expression returned can differ from a native (R/Python) build: th
 evolutionary trajectory is sensitive to last-bit floating-point differences between
 Emscripten's libm and the native (MinGW) libm, so the two builds may converge to different
 but equally valid expressions — this is normal for FP-sensitive GP search, not a weaker
-search. For large or long searches, prefer the R or Python package.
+search. For large or long searches, prefer the R or Python package — see
+[How much data fits](#how-much-data-fits) for the measured numbers behind that sentence.
 
 This subtree does **not** touch the shared C++ core (`r-package/rsymbolic2/src/`): the
 WASM binding (`wasm/rsymbolic2_wasm.cpp`) is a third thin bridge over the same
@@ -38,6 +39,34 @@ web/
     vendor/                 KaTeX + Chart.js (vendored, MIT) + built rsymbolic2.{js,wasm}
     examples/ (inline)      example datasets live in js/examples.js
 ```
+
+## How much data fits
+
+The browser build is single-threaded and its WASM heap is fixed at 128 MB, so row count
+decides both how long a run takes and whether it can run at all. Measured on the
+development machine (full default budget, 2,800 generations x 31 populations ~ 2.83M
+evaluations, each one O(rows); full detail and the memory model in `docs/59`):
+
+| rows | full default-budget run | what the GUI does |
+|------:|------------------------|-------------------|
+| up to ~5,000 | seconds to ~5 min | nothing — this is the comfortable range |
+| ~20,000 | tens of minutes | warns, and offers row sampling / batching |
+| above ~80,000–110,000 (shape-dependent) | would abort: past the heap ceiling | samples the table down automatically and says so |
+
+Two levers, both visible in the UI:
+
+- **Batching** (Search settings -> Large data, off by default exactly as in PySR) evaluates
+  each iteration on a random `batch_size` rows while the hall of fame and the reported
+  result stay on the full data. Measured 18x faster at 10,000 rows and 22x at 100,000. It
+  speeds up a run; it does **not** raise the row ceiling.
+- **Row sampling** (Data card) fits a deterministic sample instead of the whole table. This
+  is the only thing that moves the memory ceiling, so it is applied automatically — and
+  reported in the summary, the preview and the copied R/Python snippet — when a table
+  cannot fit at all.
+
+Files above 64 MB are refused before they are read, since parsing happens on the main
+thread. For anything larger than the comfortable range, the R or Python package is the
+right tool: they are multi-threaded and not bounded by a 128 MB heap.
 
 ## Custom (macro) operators
 

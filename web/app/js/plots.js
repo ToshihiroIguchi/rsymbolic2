@@ -121,10 +121,36 @@ export function drawPareto(canvas, front, { bestIndex, logLoss, onSelect, select
   });
 }
 
+// Span of two series, ignoring non-finite entries. Written as a loop on purpose: the
+// obvious `Math.min(...y, ...yhat)` spreads every row onto the call stack and throws
+// RangeError once the dataset passes ~100k rows (measured), which used to make the fit
+// chart silently disappear for large multi-feature data. A prediction can also be
+// NaN/Inf (log of a negative, a division by zero on the plotted inputs), which would
+// otherwise poison the axis range for every other point.
+function finiteRange(a, b) {
+  let lo = Infinity;
+  let hi = -Infinity;
+  const scan = (arr) => {
+    for (let i = 0; i < arr.length; i++) {
+      const v = arr[i];
+      if (!Number.isFinite(v)) continue;
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+  };
+  scan(a);
+  scan(b);
+  if (lo > hi) return { lo: 0, hi: 1 }; // nothing finite to plot
+  return { lo, hi };
+}
+
 // Draw the selected equation's fit. For a single feature (ncol === 1) overlay the fitted
 // curve on the data scatter (sorted by x). For multiple features, show predicted-vs-actual.
 // `X` = array of row arrays, `y` = array, `yhat` = Float64Array/array of predictions.
 // `xLabel`/`yLabel` are the real dataset column names for the axis titles.
+// The caller passes an already down-sampled view (main.js: DISPLAY_POINT_CAP): Chart.js
+// allocates one object per point and redraws on every equation click and theme toggle, so
+// handing it a full 100k-row dataset would stall the UI each time.
 export function drawPrediction(canvas, X, y, yhat, { xLabel = "x0", yLabel = "y" } = {}) {
   if (predChart) predChart.destroy();
   const theme = themeColors();
@@ -171,8 +197,7 @@ export function drawPrediction(canvas, X, y, yhat, { xLabel = "x0", yLabel = "y"
     });
   } else {
     const pts = y.map((yi, i) => ({ x: yi, y: yhat[i] }));
-    const lo = Math.min(...y, ...yhat);
-    const hi = Math.max(...y, ...yhat);
+    const { lo, hi } = finiteRange(y, yhat);
     predChart = new Chart(canvas.getContext("2d"), {
       type: "scatter",
       data: {

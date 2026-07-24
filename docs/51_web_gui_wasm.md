@@ -95,6 +95,11 @@ the project's Simplicity priority and the anti-speculative-scope rule. If a Turi
 UI is ever wanted, it belongs on the **native / Python core** (where the compute can support
 it), not on WASM.
 
+The "single-threaded, 128 MB fixed memory" claim above is now measured rather than assumed:
+`docs/59` records what actually happens as the row count grows (the time wall arrives long
+before the memory wall), the peak-memory model behind the row limits the GUI enforces, and
+the guards, sampling and epoch-based progress that were added as a result.
+
 The web GUI therefore stays a **single page**, refined only to remove three structural pain
 points (no new heavy features, no engine/default change):
 

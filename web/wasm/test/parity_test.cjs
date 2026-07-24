@@ -121,14 +121,25 @@ function assert(cond, msg) {
   // change the result — and it fires at least once on this multi-iteration config
   // (generations=200 with the default migration_interval=28 gives multiple epochs).
   let fireCount = 0;
+  const snapshots = [];
   const { flat, nrow, ncol } = flatten(X);
   const optsWithProgress = Object.assign({}, OPTIONS, {
     X: flat, y: Float64Array.from(y), nrow, ncol,
-    on_progress: () => { fireCount++; },
+    on_progress: (s) => { fireCount++; snapshots.push(s); },
   });
   const r3 = Module.run(optsWithProgress);
   if (r3 && r3.error) throw new Error("WASM run error (with on_progress): " + r3.error);
   assert(fireCount >= 1, "on_progress fired at least once on a multi-iteration run");
+
+  // Each snapshot carries the epoch budget (docs/59) so a caller can show real progress
+  // instead of an indeterminate bar. It is derived from generations/migration_interval, so
+  // it is constant across the run and never smaller than the epoch it accompanies.
+  const expectedEpochs = Math.ceil(OPTIONS.generations / 28); // core default migration_interval
+  assert(snapshots.every((s) => s.total_epochs === expectedEpochs),
+    `every snapshot reports total_epochs === ${expectedEpochs}`);
+  assert(snapshots.every((s) => Number.isInteger(s.epoch) && s.epoch >= 1
+                                && s.epoch <= s.total_epochs),
+    "epoch is a positive integer within total_epochs");
   assert(r3.expression === r1.expression,
     "on_progress does not change the recovered expression (bit-identical, same seed)");
   assert(r3.pareto_front.loss.join(",") === l1,

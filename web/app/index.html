@@ -34,7 +34,9 @@
         <button id="theme-toggle" class="btn small theme-toggle" type="button"
                 aria-label="Toggle dark mode" title="Toggle dark mode">&#127769;</button>
       </div>
-      <div class="progress" aria-hidden="true"></div>
+      <!-- Indeterminate until the engine's first progress snapshot arrives; from then on the
+           bar tracks epoch/total_epochs through the --progress custom property (main.js). -->
+      <div id="progress-bar" class="progress" aria-hidden="true"></div>
     </header>
 
     <main class="layout">
@@ -65,6 +67,19 @@
             <button id="data-summary" class="link-summary muted small" type="button"
                     disabled title="Show the full data table">No data loaded.</button>
             <button id="change-data" class="btn small" type="button">change</button>
+          </div>
+
+          <!-- Large-data feedback. The engine is single-threaded here and its heap is fixed
+               at 128 MB, so row count decides both how long a run takes and whether it can
+               run at all (docs/59). #data-notice carries the warning (or the "we had to
+               sample" banner, which must stay visible: it says the fitted data is not the
+               whole file), and the control below lets the user cut the table down on
+               purpose. Sampling is off unless the file cannot fit at all. -->
+          <div id="data-notice" class="data-notice" hidden></div>
+          <div id="sample-control" class="sample-control" hidden>
+            <label class="check small"><input id="sample-rows" type="checkbox" /> Sample</label>
+            <input id="sample-size" type="number" min="100" step="500" value="5000" />
+            <span class="muted small">rows</span>
           </div>
 
           <div class="model-group">
@@ -126,6 +141,10 @@
             <summary>High-accuracy opt-ins (diverge from PySR)</summary>
             <label class="check"><input id="linear_scaling" type="checkbox" /> Linear scaling (Keijzer 2003)</label>
             <label class="check"><input id="eval_cache" type="checkbox" /> Duplicate-evaluation cache (speed only)</label>
+            <!-- The engine ignores the cache when batching is on (each iteration resamples
+                 its rows, so a stored loss is not reusable); say so rather than leave a
+                 checkbox that quietly does nothing. -->
+            <p id="eval-cache-note" class="muted small" hidden>Ignored while batching is on.</p>
           </details>
         </section>
 
@@ -195,6 +214,9 @@
           <section class="card">
             <h2 id="fit-title">Fit</h2>
             <div class="chart-box small"><canvas id="pred-canvas"></canvas></div>
+            <!-- Says so when the scatter is a subset of the fitted rows (main.js
+                 DISPLAY_POINT_CAP); empty otherwise. -->
+            <div id="fit-note" class="muted small"></div>
           </section>
         </div>
 
@@ -269,6 +291,23 @@
           <label>Target loss<input id="target_loss" type="number" step="1e-10" value="1e-10" /></label>
           <label>Max evals (0=off)<input id="max_evals" type="number" min="0" value="0" /></label>
           <label>Warmup maxsize by<input id="warmup_maxsize_by" type="number" step="0.05" min="0" value="0" /></label>
+        </div>
+        <!-- Batching is PySR's own large-row lever (default off there too), so it is not a
+             parity divergence — but it IS a speed/accuracy trade, which is why it lives here
+             and not under "High-accuracy opt-ins" in the sidebar. -->
+        <div class="group-label">Large data</div>
+        <p class="muted small">
+          Batching evaluates each iteration on a random <em>batch_size</em> rows instead of
+          the whole table, making a candidate evaluation cost O(batch_size) rather than
+          O(rows). The hall of fame, the early-stop test and the reported result are always
+          recomputed on the full data, so a returned model's loss still means what it says.
+          Measured here: about 18× faster at 10,000 rows and 22× at 100,000. It does not
+          reduce memory — every row still lives in the WASM heap — so it is a cure for slow
+          runs, not for the row limit.
+        </p>
+        <label class="check"><input id="batching" type="checkbox" /> Batching (default off, as in PySR)</label>
+        <div class="field-grid">
+          <label>Batch size<input id="batch_size" type="number" min="1" value="50" /></label>
         </div>
       </div>
       <div class="modal-foot">

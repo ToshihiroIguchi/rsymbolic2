@@ -124,6 +124,14 @@ body.running .app-header .progress { display: block; }
   0% { transform: translateX(-100%); }
   100% { transform: translateX(350%); }
 }
+/* Once the engine reports its epoch budget the same bar becomes determinate: the sweep stops
+   and the fill tracks epoch/total_epochs, written to --progress by main.js. The transition
+   keeps the steps from looking like a stutter on runs with few, long epochs. */
+body.running.determinate .app-header .progress::before {
+  animation: none; transform: none;
+  width: var(--progress, 0%);
+  transition: width 0.25s linear;
+}
 
 /* Body fills the remaining shell height; min-height:0 lets sidebar/results own their own
    scroll. The middle 6px track is the draggable gutter. The DEFAULT columns are a plain static
@@ -203,6 +211,21 @@ body:not(.has-data) #change-data { display: none; }
   cursor: pointer; text-decoration: underline dotted; text-underline-offset: 0.2em;
 }
 .link-summary:disabled { cursor: default; text-decoration: none; }
+
+/* Large-data notice under the data summary. Two severities: `warn` (the run will be slow)
+   and `acted` (rows were dropped to fit the engine — a statement about what was fitted, so
+   it is bordered and stays put rather than reading as advice). Both are quiet enough not to
+   compete with the Result card, which is still the page's answer. */
+.data-notice {
+  margin: 0.35rem 0 0; padding: 0.4rem 0.5rem; border-radius: 5px;
+  font-size: 0.78rem; line-height: 1.35;
+  background: var(--input-bg); color: var(--text);
+  border-left: 3px solid var(--muted);
+}
+.data-notice.warn { border-left-color: var(--accent); }
+.data-notice.acted { border-left-color: var(--danger); }
+.sample-control { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.35rem; }
+.sample-control input[type="number"] { width: 6rem; }
 
 .group-label {
   display: block; font-size: 0.72rem; color: var(--muted);
