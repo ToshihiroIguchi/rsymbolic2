@@ -27,7 +27,9 @@ On Windows either MSVC (Visual Studio Build Tools) or Rtools works — Rtools is
 for the *R* package, not for this one.
 
 Optional extras: `pip install "rsymbolic2[pandas]"` enables `res.to_pandas()`,
-`pip install "rsymbolic2[plot]"` enables `res.plot()` (matplotlib Pareto plot).
+`pip install "rsymbolic2[plot]"` enables `res.plot()` — the Pareto front, the
+equation against the data with `res.plot(X=X, y=y)`, or its structure as a syntax
+tree with `res.plot(kind="tree")` (matplotlib).
 
 Defaults are matched to PySR's documented defaults; only the implementation differs
 (a C++ engine with no Julia runtime, whose search core depends only on the C++

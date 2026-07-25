@@ -5,6 +5,9 @@
 // Pareto scatter (click a point to select an equation), and the per-equation
 // prediction-vs-data / residual views. Chart.js is vendored same-origin (no CDN) and
 // exposed as the global `Chart` by vendor/chart.umd.js.
+//
+// The fit and residual views share one canvas (and one `predChart` slot): they are two
+// readings of the same selected equation and the card shows one at a time.
 
 /* global Chart */
 
@@ -127,7 +130,7 @@ export function drawPareto(canvas, front, { bestIndex, logLoss, onSelect, select
 // chart silently disappear for large multi-feature data. A prediction can also be
 // NaN/Inf (log of a negative, a division by zero on the plotted inputs), which would
 // otherwise poison the axis range for every other point.
-function finiteRange(a, b) {
+function finiteRange(a, b = []) {
   let lo = Infinity;
   let hi = -Infinity;
   const scan = (arr) => {
@@ -144,6 +147,16 @@ function finiteRange(a, b) {
   return { lo, hi };
 }
 
+// Legend keys mirror the marks they stand for: a dot for the scattered points, a short
+// line (dashed where the dataset is dashed) for the curves. Chart.js's default legend box
+// is a filled 40px rectangle, which misrepresents both; `usePointStyle` swaps in each
+// dataset's own pointStyle instead. `boxHeight` is the only size knob usable here — it
+// sets the dot radius and the line length together. Do NOT add `pointStyleWidth` to
+// lengthen the line keys: a set width makes Chart.js draw the dot as an ellipse.
+function themedLegend(theme) {
+  return { display: true, labels: { color: theme.text, usePointStyle: true, boxHeight: 9 } };
+}
+
 // Draw the selected equation's fit. For a single feature (ncol === 1) overlay the fitted
 // curve on the data scatter (sorted by x). For multiple features, show predicted-vs-actual.
 // `X` = array of row arrays, `y` = array, `yhat` = Float64Array/array of predictions.
@@ -154,16 +167,7 @@ function finiteRange(a, b) {
 export function drawPrediction(canvas, X, y, yhat, { xLabel = "x0", yLabel = "y" } = {}) {
   if (predChart) predChart.destroy();
   const theme = themeColors();
-  // Legend keys mirror the marks they stand for: a dot for the scattered points, a short
-  // line (dashed where the dataset is dashed) for the curves. Chart.js's default legend box
-  // is a filled 40px rectangle, which misrepresents both; `usePointStyle` swaps in each
-  // dataset's own pointStyle instead. `boxHeight` is the only size knob usable here — it
-  // sets the dot radius and the line length together. Do NOT add `pointStyleWidth` to
-  // lengthen the line keys: a set width makes Chart.js draw the dot as an ellipse.
-  const legend = {
-    display: true,
-    labels: { color: theme.text, usePointStyle: true, boxHeight: 9 },
-  };
+  const legend = themedLegend(theme);
   const ncol = X.length ? X[0].length : 0;
 
   if (ncol === 1) {
@@ -230,6 +234,52 @@ export function drawPrediction(canvas, X, y, yhat, { xLabel = "x0", yLabel = "y"
       },
     });
   }
+}
+
+// Draw the selected equation's residuals (actual − predicted) against the predicted value.
+// This is what the fit view cannot show: once the points are dense, a curve overlay and a
+// high R² both hide systematic error. Residuals scattered evenly about the dashed zero line
+// mean the equation captured the structure; a visible shape (a bend, a fan, a step) means it
+// did not, however good the loss looks. Shares the canvas and down-sampling rules of
+// drawPrediction — same caller, same selected equation.
+export function drawResidual(canvas, y, yhat, { yLabel = "y" } = {}) {
+  if (predChart) predChart.destroy();
+  const theme = themeColors();
+  const pts = [];
+  for (let i = 0; i < y.length; i++) pts.push({ x: yhat[i], y: y[i] - yhat[i] });
+  const { lo, hi } = finiteRange(yhat);
+
+  predChart = new Chart(canvas.getContext("2d"), {
+    type: "scatter",
+    data: {
+      datasets: [
+        { label: "residuals", data: pts, backgroundColor: theme.data, pointRadius: 3 },
+        {
+          label: "zero (perfect fit)",
+          data: [
+            { x: lo, y: 0 },
+            { x: hi, y: 0 },
+          ],
+          showLine: true,
+          pointStyle: "line",
+          borderColor: theme.refline,
+          borderDash: [6, 4],
+          pointRadius: 0,
+        },
+      ],
+    },
+    options: {
+      ...BASE_OPTIONS,
+      scales: {
+        x: themedScale(theme, `predicted ${yLabel}`),
+        // Residuals of a good fit are tiny next to the data, so the axis routinely lands in
+        // the 1e-9 range where default ticks render as long decimals — same fmtTick the
+        // Pareto loss axis uses.
+        y: themedScale(theme, "residual (actual − predicted)", { ticks: { callback: fmtTick } }),
+      },
+      plugins: { legend: themedLegend(theme) },
+    },
+  });
 }
 
 export function destroyPlots() {

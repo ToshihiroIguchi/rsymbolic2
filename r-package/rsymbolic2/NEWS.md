@@ -18,6 +18,20 @@ Result-display additions (docs/48):
   mean); `summary()` reports a per-member training `r_squared` column and a
   headline `R-squared (recommended)` line (`NA` when the target is constant;
   weighted R-squared when `weights` were used).
+- `plot()` gains a second view: `plot(res, type = "fit", newdata = X, y = y)`
+  draws a fitted expression against the data — the fitted curve over the observed
+  scatter for a single feature, predicted vs. observed with a dashed reference
+  line otherwise. Result objects store no training data, so the data is passed
+  back in (held-out data works the same way); `expression` selects any Pareto
+  member, as in `predict()`. Supplying `newdata` and `y` without naming `type`
+  selects the fit view. The default is still `type = "pareto"`, unchanged.
+- `plot()` gains a third view: `plot(res, type = "tree")` draws one expression as a
+  syntax tree — operators as inner nodes, data columns and fitted constants as
+  leaves, distinguished by fill. It needs no data. `expression` selects any Pareto
+  member (the default is the recommended one, in its display-simplified form) and
+  `variable_names` (default: the fit's `feature_names`) labels the leaves. The node
+  count is that of the expression as printed, which can be smaller than the
+  `complexity` column — that counts the raw tree the search archived.
 
 # rsymbolic2 0.1.0
 

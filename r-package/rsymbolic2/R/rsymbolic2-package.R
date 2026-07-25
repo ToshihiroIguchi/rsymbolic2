@@ -5,7 +5,13 @@
 #' @useDynLib rsymbolic2, .registration = TRUE
 "_PACKAGE"
 
-# Column names of the Pareto-front data frame, referenced by non-standard
-# evaluation inside ggplot2::aes() in plot.rsymbolic2(). Declared here so
-# R CMD check does not flag them as undefined global variables.
-utils::globalVariables(c("complexity", "loss", "expression"))
+# Data-frame column names referenced by non-standard evaluation inside
+# ggplot2::aes() in the plot.rsymbolic2() helpers -- the Pareto front's own
+# columns (pareto_plot), the frame fit_plot assembles, and the node/edge table
+# tree_plot builds. Declared here so R CMD check does not flag them as undefined
+# global variables.
+utils::globalVariables(c(
+    "complexity", "loss", "expression",
+    "feature", "observed", "predicted",
+    "x", "y", "xend", "yend", "drawn", "kind"
+))

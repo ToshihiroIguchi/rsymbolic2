@@ -307,6 +307,155 @@ def test_plot_zero_loss_falls_back_to_linear():
     plt.close("all")
 
 
+def _fit_result(expression, n_features, feature_names=None):
+    """Result whose recommended expression is really evaluatable, so the fit plot can
+    be drawn without running a search."""
+    from rsymbolic2 import SymbolicRegressionResult
+
+    raw = {
+        "expression": expression, "loss": 0.0, "complexity": 3,
+        "recommended": expression, "best_index": 0,
+        "pareto_front": {
+            "complexity": [3], "loss": [0.0], "score": [0.0],
+            "expression": [expression], "latex": ["x_{0}"],
+        },
+    }
+    return SymbolicRegressionResult(
+        raw, n_features=n_features, feature_names=feature_names
+    )
+
+
+def test_plot_fit_single_feature_overlays_curve():
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    res = _fit_result("2.0 * x0", 1, feature_names=["t"])
+    X = np.linspace(0.0, 1.0, 20).reshape(-1, 1)
+    y = 2.0 * X[:, 0]
+    ax = res.plot(kind="fit", X=X, y=y)
+    assert ax.get_xlabel() == "t"  # feature name, not x0
+    assert ax.get_ylabel() == "observed"
+    assert len(ax.collections) == 1  # the observed scatter
+    assert len(ax.lines) == 1  # the fitted curve
+    # A 1-D X is one column, matching the single-feature case this view is for.
+    assert res.plot(kind="fit", X=X[:, 0], y=y) is not None
+    plt.close("all")
+
+
+def test_plot_fit_multi_feature_is_predicted_vs_observed():
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    res = _fit_result("x0 + x1", 2)
+    X = np.array([[0.0, 1.0], [1.0, 1.0], [2.0, 3.0]])
+    y = X[:, 0] + X[:, 1]
+    ax = res.plot(kind="fit", X=X, y=y)
+    assert ax.get_xlabel() == "observed"
+    assert ax.get_ylabel() == "predicted"
+    assert len(ax.lines) == 1  # the dashed y = x reference
+    plt.close("all")
+
+
+def test_plot_kind_defaults_to_fit_when_data_given():
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    res = _fit_result("2.0 * x0", 1)
+    X = np.linspace(0.0, 1.0, 5).reshape(-1, 1)
+    ax = res.plot(X=X, y=2.0 * X[:, 0])
+    assert ax.get_title() == "rsymbolic2 fit"
+    # ...and stays on the Pareto view without data, or when asked for explicitly.
+    assert res.plot().get_title() == "rsymbolic2 Pareto front"
+    assert res.plot(kind="pareto", X=X, y=2.0 * X[:, 0]).get_title() == (
+        "rsymbolic2 Pareto front"
+    )
+    plt.close("all")
+
+
+def test_plot_fit_rejects_missing_or_mismatched_data():
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    res = _fit_result("2.0 * x0", 1)
+    X = np.linspace(0.0, 1.0, 5).reshape(-1, 1)
+    with pytest.raises(ValueError, match="needs the data"):
+        res.plot(kind="fit", X=X)
+    with pytest.raises(ValueError, match="value"):
+        res.plot(kind="fit", X=X, y=np.zeros(4))
+    with pytest.raises(ValueError, match="kind"):
+        res.plot(kind="residual")
+    plt.close("all")
+
+
+# --- Equation tree (docs/48 D6) --------------------------------------------------------
+# The layout is a pure function, so it is asserted directly; the same expression must lay
+# out identically here, in the R package and in the web GUI.
+REFERENCE_TREE = "(2.2 - (x0 / 11)) + (7 * cos(x1))"
+
+
+def test_tree_layout_of_the_reference_expression():
+    from rsymbolic2 import _tree_layout
+
+    nodes = _tree_layout(REFERENCE_TREE)
+    assert len(nodes) == 10
+    assert max(n["depth"] for n in nodes) == 3
+    assert nodes[0]["label"] == "+" and nodes[0]["parent"] is None
+    assert [n["label"] for n in nodes] == [
+        "+", "-", "2.2", "÷", "x0", "11", "×", "7", "cos", "x1"
+    ]
+    # Kinds drive the node fills: operators, data columns, fitted constants.
+    assert [n["kind"] for n in nodes if n["kind"] != "operator"] == [
+        "constant", "variable", "constant", "constant", "variable"
+    ]
+    # A unary node sits directly above its only child; sibling subtrees never overlap.
+    cos_node = next(n for n in nodes if n["label"] == "cos")
+    assert cos_node["x"] == nodes[cos_node["id"] + 1]["x"]
+
+
+def test_tree_layout_folds_a_negated_literal_and_names_variables():
+    from rsymbolic2 import _tree_layout
+
+    # "%.6g" prints "-1.3"; Python reads unary minus over 1.3, which must not be two nodes.
+    assert [n["label"] for n in _tree_layout("(x0 + -1.3)")] == ["+", "x0", "-1.3"]
+    assert [n["label"] for n in _tree_layout("(x0 * x1)", ["t", "flow rate"])] == [
+        "×", "t", "flow rate"
+    ]
+    # inf / nan parse as names but are values, not data columns.
+    assert [n["kind"] for n in _tree_layout("(x0 + inf)")] == [
+        "operator", "variable", "constant"
+    ]
+
+
+def test_tree_layout_rejects_what_it_cannot_draw():
+    from rsymbolic2 import _tree_layout
+
+    with pytest.raises(ValueError, match="could not parse"):
+        _tree_layout("nope(")
+    with pytest.raises(ValueError, match="unsupported element"):
+        _tree_layout("foo(x0)")
+
+
+def test_plot_tree_draws_one_node_per_element():
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    res = _fit_result("2.0 * x0", 1, feature_names=["t"])
+    ax = res.plot(kind="tree", expression=REFERENCE_TREE)
+    assert ax.get_title() == "rsymbolic2 equation tree"
+    assert len(ax.texts) == 10  # one capsule per node
+    assert len(ax.lines) == 9  # one edge per non-root node
+    assert not ax.axison  # a tree has no axes to read
+    # The fitted feature name labels the leaf; the tree needs no data to draw.
+    ax2 = res.plot(kind="tree")
+    assert [t.get_text().strip() for t in ax2.texts] == ["×", "2", "t"]
+    plt.close("all")
+
+
 def test_feature_names_from_dataframe_are_display_only():
     """A pandas DataFrame's columns become a display-only legend, not part of the
     fitted expression strings, and predict() is unaffected."""

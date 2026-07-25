@@ -284,8 +284,14 @@ print(result.predict(X_new))             # ≈ [-1.3, 1.2, 8.7]
 df = result.to_pandas()      # requires pandas: pip install "./python[pandas]"
 print(df)                    # columns: complexity, loss, score, expression
 
-ax = result.plot()           # requires matplotlib: pip install "./python[plot]"
+ax = result.plot()             # requires matplotlib: pip install "./python[plot]"
+ax = result.plot(X=X, y=y)     # the equation against the data, not the front
+ax = result.plot(kind="tree")  # the equation's structure as a syntax tree (no data needed)
 ```
+
+The result stores no training data (only `n_obs`/`sst`, which give R²), so the fit
+view takes `X` and `y` back — pass the training data to inspect the fit, or held-out
+data to inspect generalisation.
 
 ### R tutorial
 
@@ -351,11 +357,18 @@ Only bare variables are allowed on the right-hand side: transformations
 because discovering that structure is the search's job. An intercept term has no
 effect — the constant offset, if any, is found by the search.
 
-**Step 5 (optional) — plot the Pareto front** (requires ggplot2):
+**Step 5 (optional) — plot the front, or the equation against the data**
+(requires ggplot2):
 
 ```r
-plot(result)                   # complexity vs. loss, best point highlighted
+plot(result)                                     # complexity vs. loss, best point highlighted
+plot(result, type = "fit", newdata = X, y = y)   # fitted curve over the observed scatter
+plot(result, type = "tree")                      # the equation's structure as a syntax tree
 ```
+
+The result stores no training data (only `n_obs`/`sst`, which give R²), so the fit
+view takes `newdata` and `y` back — pass the training data to inspect the fit, or
+held-out data to inspect generalisation.
 
 ---
 

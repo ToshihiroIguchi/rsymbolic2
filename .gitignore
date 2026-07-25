@@ -45,6 +45,10 @@ python/_skbuild/
 *.pyd
 .venv/
 
+# Browser-automation scratch output (page snapshots/screenshots from in-browser checks
+# of web/app; regenerated on every run, never an input to the build)
+.playwright-mcp/
+
 # OS
 .DS_Store
 Thumbs.db

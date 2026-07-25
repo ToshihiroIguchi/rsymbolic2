@@ -19,6 +19,7 @@ Example
 
 from __future__ import annotations
 
+import ast
 from typing import Mapping, Optional, Sequence, Union
 
 import numpy as np
@@ -299,20 +300,68 @@ class SymbolicRegressionResult:
             self.pareto_front, columns=["complexity", "loss", "score", "expression"]
         )
 
-    def plot(self, *, log_loss: bool = True, label_exprs: bool = True, ax=None):
-        """Plot the Pareto front as a complexity vs. loss scatter (requires matplotlib).
+    def plot(
+        self,
+        *,
+        kind: Optional[str] = None,
+        X: Optional[ArrayLike] = None,
+        y: Optional[ArrayLike] = None,
+        expression: Optional[str] = None,
+        log_loss: bool = True,
+        label_exprs: bool = True,
+        variable_names: Optional[Sequence[str]] = None,
+        ax=None,
+    ):
+        """Plot the fit (requires matplotlib).
 
-        The Python counterpart of the R package's ``plot.rsymbolic2()``: a line
-        through the non-dominated members with the lowest-loss point highlighted.
+        The Python counterpart of the R package's ``plot.rsymbolic2()``, with the
+        same three views:
+
+        ``"pareto"``
+            Complexity vs. loss over the non-dominated members, with the
+            lowest-loss point highlighted.
+        ``"fit"``
+            One expression against the data. With a single feature the fitted
+            curve is overlaid on the observed scatter; with several features,
+            predicted values are plotted against observed ones with a dashed
+            ``y = x`` reference line.
+        ``"tree"``
+            The structure of one expression as a syntax tree: operators as inner
+            nodes, data columns and fitted constants as leaves (distinguished by
+            fill). Needs no data. Its node count is that of the expression as
+            printed, which can be smaller than the ``complexity`` field — that
+            counts the raw tree the search archived, before the display-only
+            simplification (docs/52).
+
+        The result object stores no training data (only :attr:`n_obs` and
+        :attr:`sst`, which give ``r_squared``), so ``kind="fit"`` needs the data
+        passed back in via ``X`` and ``y``.
 
         Parameters
         ----------
+        kind : {"pareto", "fit", "tree"}, optional
+            Which view to draw. Defaults to ``"fit"`` when both ``X`` and ``y``
+            are given (nothing else uses them), otherwise ``"pareto"``.
+        X, y : array-like, optional
+            Inputs and observed target for ``kind="fit"``; ``X`` in the form
+            :meth:`predict` accepts. Pass the training data to inspect the fit,
+            or held-out data to inspect generalisation.
+        expression : str, optional
+            Which expression to draw for ``kind="fit"`` or ``kind="tree"``.
+            Defaults to :attr:`recommended` (for ``"tree"``, its
+            display-simplified form when the fit carries one); for ``"fit"`` it is
+            passed straight to :meth:`predict`.
+        variable_names : sequence of str, optional
+            Names to label the leaves with for ``kind="tree"``. Defaults to
+            :attr:`feature_names` when set, else the 0-based ``x0, x1, ...`` the
+            expression strings use. Ignored by the other views.
         log_loss : bool
             Use a log scale for the loss axis (skipped automatically when any
-            loss is zero). Default ``True``.
+            loss is zero). Default ``True``. ``kind="pareto"`` only.
         label_exprs : bool
             Annotate each point with its expression string. Set to ``False``
             for large fronts where labels overlap. Default ``True``.
+            ``kind="pareto"`` only.
         ax : matplotlib.axes.Axes, optional
             Axes to draw into. A new figure is created when omitted.
 
@@ -329,8 +378,20 @@ class SymbolicRegressionResult:
                 "pip install rsymbolic2[plot]"
             ) from e
 
+        if kind is None:
+            kind = "fit" if X is not None and y is not None else "pareto"
+        if kind not in ("pareto", "fit", "tree"):
+            raise ValueError(f"kind must be 'pareto', 'fit' or 'tree', got {kind!r}.")
+
         if ax is None:
             _, ax = plt.subplots()
+        if kind == "fit":
+            return self._plot_fit(ax, X, y, expression)
+        if kind == "tree":
+            return self._plot_tree(ax, expression, variable_names)
+        return self._plot_pareto(ax, log_loss, label_exprs)
+
+    def _plot_pareto(self, ax, log_loss: bool, label_exprs: bool):
         complexity = [m["complexity"] for m in self.pareto_front]
         loss = [m["loss"] for m in self.pareto_front]
         ax.plot(complexity, loss, color="0.6", zorder=1)
@@ -350,6 +411,217 @@ class SymbolicRegressionResult:
         ax.set_ylabel("Loss (SSE)")
         ax.set_title("rsymbolic2 Pareto front")
         return ax
+
+    # One expression against the data it was fitted to (or held-out data). The
+    # single-feature overlay is the more direct reading, but it only exists when there
+    # is one x-axis to draw; predicted-vs-observed is the general fallback.
+    def _plot_fit(self, ax, X, y, expression: Optional[str]):
+        if X is None or y is None:
+            raise ValueError(
+                "plot(kind='fit') needs the data to compare against: pass both "
+                "X=<features> and y=<observed target>. The result object stores no "
+                "training data."
+            )
+        # A 1-D X is one column here (the single-feature case this view exists for),
+        # never one row: y pairs with the rows, so a row vector could not be plotted.
+        Xa = np.asarray(X, dtype=float)
+        if Xa.ndim == 1:
+            Xa = Xa.reshape(-1, 1)
+        ya = np.asarray(y, dtype=float).ravel()
+        yhat = self.predict(Xa, expression=expression)
+        if ya.shape[0] != yhat.shape[0]:
+            raise ValueError(
+                f"y has {ya.shape[0]} value(s) but X has {Xa.shape[0]} row(s)."
+            )
+
+        if Xa.shape[1] == 1:
+            xs = Xa[:, 0]
+            order = np.argsort(xs)
+            ax.scatter(xs, ya, s=20, color="0.3", label="observed")
+            ax.plot(xs[order], yhat[order], color="firebrick", label="model")
+            names = self.feature_names
+            ax.set_xlabel(names[0] if names else "x0")
+            ax.set_ylabel("observed")
+            ax.set_title("rsymbolic2 fit")
+        else:
+            # Non-finite predictions (log of a negative, a division by zero on these
+            # inputs) would otherwise stretch the reference line across an empty axis.
+            finite = np.isfinite(ya) & np.isfinite(yhat)
+            lo, hi = (
+                (float(np.min([ya[finite], yhat[finite]])), float(np.max([ya[finite], yhat[finite]])))
+                if finite.any()
+                else (0.0, 1.0)
+            )
+            ax.plot([lo, hi], [lo, hi], linestyle="--", color="0.5", label="predicted = observed")
+            ax.scatter(ya, yhat, s=20, color="0.3", label="predictions")
+            ax.set_xlabel("observed")
+            ax.set_ylabel("predicted")
+            ax.set_title("rsymbolic2 fit: predicted vs observed")
+        ax.legend(fontsize=8)
+        return ax
+
+    # One expression as a syntax tree (docs/48 D6). Needs no data: the structure comes
+    # from the printed string, which Python's own `ast` parses — the same route the R
+    # package and the web GUI take in their languages, so no tree is exported from the
+    # C++ core.
+    def _plot_tree(self, ax, expression: Optional[str], variable_names):
+        expr = expression
+        if expr is None:
+            # Display surfaces prefer the display-simplified companion (docs/52), which is
+            # what repr() and the LaTeX rendering already show; `recommended` stays the
+            # frozen evaluatable string and the fallback for older result dicts.
+            best = (
+                self.pareto_front[self.best_index]
+                if self.best_index is not None and self.pareto_front
+                else None
+            )
+            expr = (best or {}).get("expression_simplified") or self.recommended
+        names = variable_names if variable_names is not None else self.feature_names
+        if names is not None and len(names) != self.n_features:
+            raise ValueError(
+                f"variable_names has {len(names)} name(s) but the model was fitted on "
+                f"{self.n_features} feature(s)."
+            )
+        nodes = _tree_layout(expr, names)
+
+        for n in nodes:
+            if n["parent"] is None:
+                continue
+            p = nodes[n["parent"]]
+            ax.plot([p["x"], n["x"]], [-p["depth"], -n["depth"]],
+                    color="0.6", linewidth=1.0, zorder=1)
+        for n in nodes:
+            fc, tc = _TREE_COLORS[n["kind"]]
+            # A capsule, matching the R package and the web GUI: `rounding_size` is half
+            # the box height (1 font unit + 2 * pad), and the space on each side of the
+            # label buys the width a one-character node would otherwise lack — without it
+            # the corner arcs overlap and the text spills out of the shape.
+            ax.text(
+                n["x"], -n["depth"], f" {n['label']} ",
+                ha="center", va="center", fontsize=9, color=tc, zorder=2,
+                bbox=dict(boxstyle="round,pad=0.25,rounding_size=0.75",
+                          facecolor=fc, edgecolor="#cbd2db", linewidth=0.8),
+            )
+
+        xs = [n["x"] for n in nodes]
+        depth = max(n["depth"] for n in nodes)
+        ax.set_xlim(min(xs) - 0.75, max(xs) + 0.75)
+        ax.set_ylim(-depth - 0.5, 0.5)
+        ax.set_axis_off()
+        ax.set_title("rsymbolic2 equation tree")
+        return ax
+
+
+# --- Equation tree (docs/48 D6) --------------------------------------------------------
+# Unary operators the core prints in call form, and the binary glyphs. "/" and "*" are
+# rewritten: "/" reads as part of a fraction that is not there, and "*" is a raised
+# asterisk that sits off-centre inside a node. The R package and the web GUI use the same
+# substitutions, so one equation draws identically on all three surfaces.
+_UNARY_OPS = ("neg", "exp", "log", "sin", "cos", "sqrt", "tanh", "abs", "square", "inv")
+_BINARY_LABEL = {
+    ast.Add: "+", ast.Sub: "-", ast.Mult: "×", ast.Div: "÷",
+    # The core renders power as `^`, which Python's parser reads as a bitwise xor. It is
+    # never anything else in an engine-generated string.
+    ast.BitXor: "^", ast.Pow: "^",
+}
+# Node fills by kind: operator, variable (a data column), constant (a fitted number).
+# Uniform shape, three fills — the distinction a symbolic-regression reader wants.
+_TREE_COLORS = {
+    "operator": ("#eaeef4", "#1c2430"),
+    "variable": ("#e8f0ff", "#1d4ed8"),
+    "constant": ("#f4f5f7", "#5b6472"),
+}
+
+
+def _tree_const_label(v: float) -> str:
+    # The same "%.6g" the core's to_string() uses, so a node reads exactly as it does
+    # inside the expression string.
+    return "%.6g" % v
+
+
+def _tree_draw_node(node, variable_names) -> dict:
+    """One `ast` node -> {"kind", "label", "children"}, the shape all three surfaces draw.
+
+    A negated literal folds into a single constant: "%.6g" emits "-1.3", every parser
+    reads that as unary minus over 1.3, and two nodes there are noise (the C++ macro
+    parser folds the same case).
+    """
+    if isinstance(node, ast.Expression):
+        return _tree_draw_node(node.body, variable_names)
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        return {"kind": "constant", "label": _tree_const_label(node.value), "children": []}
+    if isinstance(node, ast.Name):
+        # `inf` / `nan` parse as names, not numbers; they are values, not data columns.
+        if node.id in ("inf", "nan"):
+            return {"kind": "constant", "label": node.id, "children": []}
+        label = node.id
+        if variable_names:
+            try:
+                idx = int(node.id[1:]) if node.id.startswith("x") else -1
+            except ValueError:
+                idx = -1
+            if 0 <= idx < len(variable_names):
+                label = str(variable_names[idx])
+        return {"kind": "variable", "label": label, "children": []}
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        inner = node.operand
+        if isinstance(inner, ast.Constant) and isinstance(inner.value, (int, float)):
+            return {"kind": "constant", "label": _tree_const_label(-inner.value),
+                    "children": []}
+        return {"kind": "operator", "label": "neg",
+                "children": [_tree_draw_node(inner, variable_names)]}
+    if isinstance(node, ast.BinOp) and type(node.op) in _BINARY_LABEL:
+        return {
+            "kind": "operator",
+            "label": _BINARY_LABEL[type(node.op)],
+            "children": [_tree_draw_node(node.left, variable_names),
+                         _tree_draw_node(node.right, variable_names)],
+        }
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in _UNARY_OPS
+        and len(node.args) == 1
+    ):
+        return {"kind": "operator", "label": node.func.id,
+                "children": [_tree_draw_node(node.args[0], variable_names)]}
+    raise ValueError(
+        f"cannot draw this expression: unsupported element {ast.dump(node)[:60]}"
+    )
+
+
+def _tree_layout(expr: str, variable_names=None) -> list:
+    """Flat node table for one expression string: [{id, parent, depth, x, label, kind}].
+
+    Leaves take consecutive integer columns and an inner node sits at the mean of its
+    children, so sibling subtrees own disjoint leaf ranges and same-depth nodes can never
+    collide; a unary node lands directly above its only child. Reingold-Tilford would pack
+    wide trees tighter, but at the default max_nodes = 30 this draws the same picture for a
+    fraction of the code.
+    """
+    try:
+        tree = ast.parse(str(expr), mode="eval")
+    except SyntaxError as e:
+        raise ValueError(f"could not parse the expression {expr!r}: {e}") from e
+    root = _tree_draw_node(tree, variable_names)
+
+    nodes: list = []
+    next_leaf = [0]
+
+    def walk(node, depth, parent):
+        rec = {"id": len(nodes), "parent": parent, "depth": depth, "x": 0.0,
+               "label": node["label"], "kind": node["kind"]}
+        nodes.append(rec)
+        if not node["children"]:
+            rec["x"] = float(next_leaf[0])
+            next_leaf[0] += 1
+        else:
+            xs = [walk(c, depth + 1, rec["id"]) for c in node["children"]]
+            rec["x"] = sum(xs) / len(xs)
+        return rec["x"]
+
+    walk(root, 0, None)
+    return nodes
 
 
 # Math namespace used by predict(). neg/square/inv are not Python builtins; the rest map

@@ -230,6 +230,27 @@
           </div>
         </section>
 
+        <!-- Structure of the headline equation: the same reading as the formula above, but
+             showing what is nested where. Node count is the printed (display-simplified)
+             form, which can be smaller than the `complexity` column - see the title. -->
+        <section class="card" id="tree-card">
+          <div class="results-head">
+            <h2>Equation tree</h2>
+            <div class="results-head-controls">
+              <span id="tree-nodes" class="muted small"
+                    title="Nodes in the equation as printed above. The complexity column counts the raw tree the search archived, which can be larger."></span>
+              <button id="download-tree" class="btn small icon-btn" type="button"
+                      aria-label="Download tree as SVG" title="Download tree as SVG">
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none"
+                     stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M8 2v8" /><path d="M4.5 7.5 8 11l3.5-3.5" /><path d="M3 13h10" />
+                </svg><span class="icon-tag">SVG</span>
+              </button>
+            </div>
+          </div>
+          <div id="tree-box" class="tree-box"></div>
+        </section>
+
         <div class="charts-row">
           <section class="card" id="pareto-card">
             <div class="results-head">
@@ -256,7 +277,19 @@
           </section>
 
           <section class="card">
-            <h2 id="fit-title">Predicted vs actual</h2>
+            <div class="results-head">
+              <h2 id="fit-title">Predicted vs actual</h2>
+              <div class="results-head-controls">
+                <label class="inline-select"
+                       title="Which view of the selected equation to draw. Applies instantly, no re-run.&#10;fit = the model against the data&#10;residual = actual − predicted vs predicted; structure around the zero line means the equation is missing something a high R² can hide">
+                  view
+                  <select id="fit-view">
+                    <option value="fit" selected>fit</option>
+                    <option value="residual">residual</option>
+                  </select>
+                </label>
+              </div>
+            </div>
             <div class="chart-box small"><canvas id="pred-canvas"></canvas></div>
             <!-- Says so when the scatter is a subset of the fitted rows (main.js
                  DISPLAY_POINT_CAP); empty otherwise. -->

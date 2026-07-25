@@ -50,25 +50,8 @@
 #'
 #' @export
 predict.rsymbolic2 <- function(object, newdata, expression = NULL, ...) {
-    # A formula-fitted model carries `terms`: use them to pull the predictor
-    # columns out of a data.frame newdata by name, in the fitted order (so the
-    # caller's column order is irrelevant). Otherwise treat newdata as a matrix in
-    # column order, preserving the matrix-interface behaviour.
-    if (is.data.frame(newdata) && !is.null(object$terms)) {
-        X <- as.matrix(stats::model.frame(object$terms, newdata))
-    } else {
-        X <- as.matrix(newdata)
-    }
-    p <- object$n_features
-    if (is.null(p)) {
-        stop("object$n_features is missing. Re-fit using the current version of symbolic_regression().")
-    }
-    if (ncol(X) != p) {
-        stop(sprintf(
-            "newdata has %d column(s) but the model was fitted on %d feature(s).",
-            ncol(X), p
-        ))
-    }
+    X <- design_matrix(object, newdata)
+    p <- ncol(X)
 
     # NULL evaluates the recommended (Pareto "best") model, matching PySR / the
     # Python interface; any other value is a literal expression string, so callers
@@ -90,4 +73,31 @@ predict.rsymbolic2 <- function(object, newdata, expression = NULL, ...) {
     env$inv    <- function(x) 1 / x
 
     as.numeric(eval(parse(text = expr), envir = env))
+}
+
+# Turn user-supplied `newdata` into the numeric design matrix a fitted expression
+# expects, checked against the fitted feature count. Shared by predict() and
+# plot(type = "fit") so the formula/matrix rule is stated once.
+#
+# A formula-fitted model carries `terms`: use them to pull the predictor columns
+# out of a data.frame newdata by name, in the fitted order (so the caller's column
+# order is irrelevant). Otherwise treat newdata as a matrix in column order,
+# preserving the matrix-interface behaviour.
+design_matrix <- function(object, newdata) {
+    if (is.data.frame(newdata) && !is.null(object$terms)) {
+        X <- as.matrix(stats::model.frame(object$terms, newdata))
+    } else {
+        X <- as.matrix(newdata)
+    }
+    p <- object$n_features
+    if (is.null(p)) {
+        stop("object$n_features is missing. Re-fit using the current version of symbolic_regression().")
+    }
+    if (ncol(X) != p) {
+        stop(sprintf(
+            "newdata has %d column(s) but the model was fitted on %d feature(s).",
+            ncol(X), p
+        ))
+    }
+    X
 }

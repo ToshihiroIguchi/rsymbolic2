@@ -2,20 +2,54 @@
 % Please edit documentation in R/plot_rsymbolic2.R
 \name{plot.rsymbolic2}
 \alias{plot.rsymbolic2}
-\title{Plot the Pareto front of an rsymbolic2 fit}
+\title{Plot an rsymbolic2 fit}
 \usage{
-\method{plot}{rsymbolic2}(x, log_loss = TRUE, label_exprs = TRUE, ...)
+\method{plot}{rsymbolic2}(
+  x,
+  y = NULL,
+  type = c("pareto", "fit", "tree"),
+  newdata = NULL,
+  expression = NULL,
+  log_loss = TRUE,
+  label_exprs = TRUE,
+  variable_names = NULL,
+  ...
+)
 }
 \arguments{
 \item{x}{An object of class \code{"rsymbolic2"} returned by
 \code{\link{symbolic_regression}}.}
 
-\item{log_loss}{Logical; if \code{TRUE} (default) the loss axis uses a
-log10 scale.}
+\item{y}{Observed target values for \code{type = "fit"}, one per row of
+\code{newdata}.  Ignored by \code{type = "pareto"}.}
 
-\item{label_exprs}{Logical; if \code{TRUE} (default) annotates each point
-with its expression string.  Set to \code{FALSE} for large Pareto fronts
-where labels overlap.}
+\item{type}{Which plot to draw: \code{"pareto"} (default), \code{"fit"} or
+\code{"tree"}.}
+
+\item{newdata}{Input features for \code{type = "fit"}, in the form
+\code{\link{predict.rsymbolic2}} accepts: a numeric matrix for a
+matrix-fitted model, or a \code{data.frame} holding the formula's predictor
+columns for a formula-fitted one.  Pass the training data to inspect the
+fit, or held-out data to inspect generalisation.}
+
+\item{expression}{Which fitted expression to draw for \code{type = "fit"} or
+\code{type = "tree"}.  \code{NULL} (default) uses \code{x$recommended} (for
+\code{"tree"}, its display-simplified form when the fit carries one);
+otherwise an expression string, e.g.\ any row of
+\code{x$pareto_front$expression}.  For \code{type = "fit"} it is passed
+straight to \code{\link{predict.rsymbolic2}}.}
+
+\item{log_loss}{Logical; if \code{TRUE} (default) the loss axis of the Pareto
+plot uses a log10 scale.  Ignored by \code{type = "fit"}.}
+
+\item{label_exprs}{Logical; if \code{TRUE} (default) annotates each Pareto
+point with its expression string.  Set to \code{FALSE} for large Pareto
+fronts where labels overlap.  Ignored by \code{type = "fit"}.}
+
+\item{variable_names}{Character vector of names to label the leaves with for
+\code{type = "tree"}.  Defaults to \code{x$feature_names} when set, else the
+0-based \code{x0, x1, ...} the expression strings use.  Ignored by the other
+plots (the fit plot labels its axes from \code{newdata}).}
 
 \item{...}{Ignored (present for S3 compatibility).}
 }
@@ -24,9 +58,32 @@ A \code{ggplot2} plot object, returned invisibly.
   The plot is also printed as a side effect.
 }
 \description{
-Draws a complexity vs.\ loss scatter plot of the non-dominated expressions
-found by \code{\link{symbolic_regression}}.  The expression with the
-lowest loss is highlighted in red.  Requires the \pkg{ggplot2} package.
+Three views of a fit returned by \code{\link{symbolic_regression}}, selected
+with \code{type}:
+}
+\details{
+\describe{
+  \item{\code{"pareto"} (default)}{Complexity vs.\ loss scatter plot of the
+    non-dominated expressions found by the search.  The expression with the
+    lowest loss is highlighted in red.}
+  \item{\code{"fit"}}{The fitted expression against the data.  With a single
+    feature, the fitted curve is overlaid on the observed scatter; with
+    several features, predicted values are plotted against observed ones with
+    a dashed \eqn{y = x} reference line.}
+  \item{\code{"tree"}}{The structure of one expression as a syntax tree:
+    operators as inner nodes, data columns and fitted constants as leaves
+    (distinguished by fill).  Needs no data.  The node count is that of the
+    expression as printed, which can be smaller than the \code{complexity}
+    column of \code{x$pareto_front} -- that counts the raw tree the search
+    archived, before the display-only simplification.}
+}
+
+The result object stores no training data (only \code{n_obs} and \code{sst},
+from which \code{summary()} derives R-squared), so \code{type = "fit"}
+requires the data to be passed back in via \code{newdata} and \code{y}.
+Supplying both without naming \code{type} selects \code{"fit"}.
+
+Requires the \pkg{ggplot2} package.
 }
 \examples{
 \donttest{
@@ -34,7 +91,9 @@ X <- matrix(seq(-3, 3, length.out = 20), ncol = 1)
 y <- sin(X[, 1]) + X[, 1]^2
 res <- symbolic_regression(X, y, population_size = 200L,
                            generations = 40L, seed = 1L)
-plot(res)
+plot(res)                                  # Pareto front
+plot(res, type = "fit", newdata = X, y = y)  # fitted curve over the data
+plot(res, type = "tree")                     # structure of the recommended expression
 }
 
 }

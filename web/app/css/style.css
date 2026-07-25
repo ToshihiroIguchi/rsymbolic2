@@ -37,6 +37,17 @@
   --chart-data: #1f77b4;
   --chart-line: rgba(120, 120, 120, 0.6);
   --chart-refline: #888888;
+  /* Equation tree (tree.js). Unlike the Chart.js colors above these are consumed by CSS
+     rules, not read from JS, so the theme toggle recolors the tree with no redraw. The three
+     node fills encode the node's kind: operator, variable (a data column), constant. */
+  --tree-op-bg: #eaeef4;
+  --tree-op-fg: #1c2430;
+  --tree-var-bg: #e8f0ff;
+  --tree-var-fg: #1d4ed8;
+  --tree-const-bg: #f4f5f7;
+  --tree-const-fg: #5b6472;
+  --tree-stroke: #cbd2db;
+  --tree-edge: #9aa4b2;
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
@@ -69,6 +80,14 @@
   --chart-data: #6fa8ff;
   --chart-line: rgba(150, 160, 180, 0.5);
   --chart-refline: #6b7688;
+  --tree-op-bg: #1c2941;
+  --tree-op-fg: #e5e9f0;
+  --tree-var-bg: #1a2b47;
+  --tree-var-fg: #8fb6ff;
+  --tree-const-bg: #16233a;
+  --tree-const-fg: #9aa7bc;
+  --tree-stroke: #33445f;
+  --tree-edge: #55657f;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
@@ -461,6 +480,20 @@ label.modified > .field-hint { color: var(--accent); }
 .eq-latex .katex { font-size: 1.7em; }
 .eq-string { display: flex; gap: 0.4rem; align-items: center; margin: 0.5rem 0; }
 .eq-string code { flex: 1; overflow-x: auto; white-space: nowrap; background: var(--code-bg); padding: 0.3rem 0.4rem; border-radius: 5px; font-size: 0.8rem; }
+/* Equation tree card (tree.js). The SVG is sized in px by the renderer and can be wider
+   than the card, so the box scrolls sideways rather than shrinking the diagram. Colors come
+   from the theme variables here, not from JS, so a theme toggle needs no redraw. */
+.tree-box { overflow-x: auto; padding-top: 0.2rem; }
+.tree-svg { display: block; margin: 0 auto; font-family: inherit; }
+.tree-edges line { stroke: var(--tree-edge); stroke-width: 1.4; }
+.tree-node rect { stroke: var(--tree-stroke); stroke-width: 1; }
+.tree-node.operator rect { fill: var(--tree-op-bg); }
+.tree-node.operator text { fill: var(--tree-op-fg); }
+.tree-node.variable rect { fill: var(--tree-var-bg); }
+.tree-node.variable text { fill: var(--tree-var-fg); font-weight: 600; }
+.tree-node.constant rect { fill: var(--tree-const-bg); }
+.tree-node.constant text { fill: var(--tree-const-fg); }
+
 /* Metric chips: JS emits flat k/value span pairs; a wrapping flex row reads them as
    "loss 1.2e-8   complexity 7   ...". */
 .metrics.chips { display: flex; flex-wrap: wrap; column-gap: 1.1rem; row-gap: 0.3rem; font-size: 0.82rem; }

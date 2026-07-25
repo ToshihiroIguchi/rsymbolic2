@@ -35,7 +35,7 @@ web/
   app/                      the static site (this is what gets deployed)
     index.html
     css/style.css
-    js/*.js                 UI (main, worker, predict, data, plots, latex, export)
+    js/*.js                 UI (main, worker, predict, data, plots, latex, tree, export)
     vendor/                 KaTeX + Chart.js (vendored, MIT) + built rsymbolic2.{js,wasm}
     examples/ (inline)      example datasets live in js/examples.js
 ```
@@ -56,6 +56,38 @@ live control in the Pareto card (switching it re-picks instantly, with no re-run
 `best (PySR default)` is right there in the dropdown. The copied Python/R snippets emit
 `model_selection` whenever it differs from those packages' default, so a pasted snippet
 recommends the same equation the screen does.
+
+## Result views
+
+Three charts, all live (switching a control re-draws instantly, nothing re-runs):
+
+- **Pareto front** — complexity vs. loss over the archived equations; click a point (or a
+  table row) to select an equation, and the whole result column follows it. Also drawn
+  while the search runs, from progress snapshots.
+- **fit** — the selected equation against the data: the fitted curve over the observed
+  scatter for a single feature, predicted-vs-actual with a dashed reference line otherwise.
+- **residual** — actual − predicted against predicted, from the `view` dropdown on the same
+  card. This is the diagnostic the other two cannot give: once the points are dense, both a
+  curve overlay and a high R² hide systematic error, while a bend or a fan in the residuals
+  shows immediately that the equation is missing a term.
+
+The charts share the answer-first layout rather than opening in a modal: they are primary
+evidence for the headline equation, and the Pareto → equation → fit loop needs them visible
+next to the table. The two modals (`<dialog>`) stay reserved for secondary things — the
+full-data preview and the numeric search settings.
+
+Both per-equation views draw a bounded stride subset of the rows (`DISPLAY_POINT_CAP`,
+5,000) and say so under the chart; the reported metrics come from the engine, not from the
+plotted subset.
+
+Under the headline formula sits the **equation tree** (`js/tree.js`, docs/48 D6): the same
+equation as a syntax tree, operators as inner nodes, data columns and fitted constants as
+leaves, told apart by fill. It follows the selected equation like the charts do, and
+downloads as a standalone `.svg`. It is drawn from the *printed* (display-simplified)
+expression, so its node count can be smaller than the `complexity` column, which counts the
+raw tree the search archived. Unlike the Chart.js plots it takes its colours from the theme's
+CSS variables, so the light/dark toggle recolours it without a redraw. No plotting library is
+involved — Chart.js cannot draw trees, and nothing new was vendored.
 
 ## How much data fits
 

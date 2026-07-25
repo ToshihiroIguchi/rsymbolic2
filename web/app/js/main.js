@@ -9,8 +9,9 @@ import {
   parseTable, numericColumns, toMatrix, maxRowsForBrowser, sampleTable, strideIndices,
 } from "./data.js";
 import { EXAMPLES } from "./examples.js";
-import { drawPareto, drawPrediction, destroyPlots, destroyPrediction } from "./plots.js";
+import { drawPareto, drawPrediction, drawResidual, destroyPlots, destroyPrediction } from "./plots.js";
 import { renderInto } from "./latex.js";
+import { renderTree, treeSvgStandalone } from "./tree.js";
 import { predict } from "./predict.js";
 import {
   copyText, pythonCall, rCall, paretoCsv, downloadText,
@@ -123,6 +124,7 @@ const state = {
   targetName: null,
   sampling: null, // {fitted, total, seed} when the run used a sample; snapshotted at run time
   selectedIndex: null,
+  treeSvg: null, // the rendered <svg> of the selected equation's tree, for the SVG download
   worker: null,
   settingsSnapshot: null, // field values captured when the settings dialog opened (Cancel restores them)
   timer: null,
@@ -357,6 +359,7 @@ function clearResults() {
   state.targetName = null;
   state.sampling = null;
   state.selectedIndex = null;
+  state.treeSvg = null;
   $("results-area").classList.remove("has-result");
   $("pareto-card").classList.remove("live");
   $("pareto-table").querySelector("tbody").innerHTML = "";
@@ -366,6 +369,8 @@ function clearResults() {
   $("eq-metrics").innerHTML = "";
   $("eval-accounting").textContent = "";
   $("fit-note").textContent = "";
+  $("tree-box").textContent = "";
+  $("tree-nodes").textContent = "";
 }
 
 // Shared by all three intake paths (file input, drag & drop, clipboard paste). Parsing is
@@ -1073,8 +1078,16 @@ function selectEquation(i) {
   const latex = front.latex_simplified ? front.latex_simplified[i] : front.latex[i];
   renderInto($("eq-latex"), latex, state.featureNames);
   const eqEl = $("eq-string");
-  eqEl.textContent = front.expression_simplified ? front.expression_simplified[i] : front.expression[i];
+  const shown = front.expression_simplified ? front.expression_simplified[i] : front.expression[i];
+  eqEl.textContent = shown;
   eqEl.title = front.expression[i];
+
+  // Tree of the same string the hero card shows (docs/48 D6). Its node count is the printed
+  // form's, not the `complexity` column's — see the caption's title attribute.
+  state.treeSvg = renderTree($("tree-box"), shown, state.featureNames);
+  const treeNodes = state.treeSvg ? state.treeSvg.querySelectorAll(".tree-node").length : 0;
+  $("tree-nodes").textContent =
+    treeNodes ? `${treeNodes} node${treeNodes === 1 ? "" : "s"}` : "";
   const r2 = front.r2 ? front.r2[i] : null;
   $("eq-metrics").innerHTML =
     metric("loss", fmt(front.loss[i])) +
@@ -1086,9 +1099,11 @@ function selectEquation(i) {
   // bounded stride subset is evaluated and drawn: Chart.js rebuilds the whole dataset on
   // every selection and theme toggle, and the metrics above come from the engine (loss, and
   // R² from res.sst), so nothing displayed depends on predicting every row here.
-  // One heading for both fit modes. The column identity is not lost: the single-feature
-  // scatter still labels its axes with the real target/feature names (drawPrediction).
-  $("fit-title").textContent = "Predicted vs actual";
+  // The fit view keeps one heading for both its modes (curve overlay / predicted-vs-actual);
+  // the column identity is not lost, since the single-feature scatter still labels its axes
+  // with the real target/feature names (drawPrediction). The residual view renames it.
+  const residual = $("fit-view").value === "residual";
+  $("fit-title").textContent = residual ? "Residuals" : "Predicted vs actual";
   const idx = strideIndices(state.X.length, DISPLAY_POINT_CAP);
   const Xd = idx ? idx.map((k) => state.X[k]) : state.X;
   const yd = idx ? idx.map((k) => state.y[k]) : state.y;
@@ -1096,10 +1111,14 @@ function selectEquation(i) {
     ? `Showing ${fmtInt(idx.length)} of ${fmtInt(state.X.length)} points.` : "";
   try {
     const yhat = predict(front.expression[i], Xd);
-    drawPrediction($("pred-canvas"), Xd, yd, yhat, {
-      xLabel: state.featureNames[0],
-      yLabel: state.targetName,
-    });
+    if (residual) {
+      drawResidual($("pred-canvas"), yd, yhat, { yLabel: state.targetName });
+    } else {
+      drawPrediction($("pred-canvas"), Xd, yd, yhat, {
+        xLabel: state.featureNames[0],
+        yLabel: state.targetName,
+      });
+    }
   } catch (e) {
     // The expression could not be evaluated on these inputs; drop the chart rather than leave
     // the previous equation's fit under this one's heading.
@@ -1135,6 +1154,10 @@ function wireExport() {
   });
   $("download-csv").addEventListener("click", () => {
     if (state.result) downloadText("rsymbolic2_pareto.csv", paretoCsv(state.result.pareto_front), "text/csv");
+  });
+  $("download-tree").addEventListener("click", () => {
+    if (state.treeSvg)
+      downloadText("rsymbolic2_tree.svg", treeSvgStandalone(state.treeSvg), "image/svg+xml");
   });
 }
 
@@ -1229,6 +1252,11 @@ function init() {
   $("feature-list").addEventListener("change", syncRowPolicyIfShapeChanged);
   $("logloss").addEventListener("change", () => { if (state.result) drawParetoChart(); });
   $("model_selection").addEventListener("change", applyModelSelection);
+  // Redraw the currently selected equation in the other view; selectEquation() reads the
+  // toggle, so this needs no state of its own.
+  $("fit-view").addEventListener("change", () => {
+    if (state.result) selectEquation(state.selectedIndex);
+  });
 
   $("file-input").addEventListener("change", (e) => {
     const file = e.target.files[0];
