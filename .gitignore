@@ -48,3 +48,7 @@ python/_skbuild/
 # OS
 .DS_Store
 Thumbs.db
+
+# Favicon master image is a regenerable build source (scripts/generate_favicon.py),
+# not a runtime asset -- keep it out of the deployed web/app.
+web/app/icon-1024.png
