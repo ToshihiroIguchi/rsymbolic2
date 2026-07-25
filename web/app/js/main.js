@@ -775,7 +775,14 @@ function stop() {
 function onResult(result, elapsed) {
   finishRun();
   state.result = result;
-  setStatus(`done in ${elapsed.toFixed(2)} s`);
+  // Compact completion chip: elapsed time and the configured generation budget, e.g.
+  // "0.57s | generations: 2800". Use config.generations (what the Settings summary shows), not
+  // the engine's epoch count — those are different units, and showing the epoch count here
+  // would contradict the "2800 generations" line in the sidebar.
+  const gens = state.config ? state.config.generations : null;
+  setStatus(gens != null
+    ? `${elapsed.toFixed(2)}s | generations: ${fmtInt(gens)}`
+    : `done in ${elapsed.toFixed(2)} s`);
   renderResult();
 }
 
@@ -841,8 +848,8 @@ function startTimer() {
   state.t0 = performance.now();
   state.timer = setInterval(() => {
     const secs = (performance.now() - state.t0) / 1000;
-    let line = `running… ${secs.toFixed(1)} s`;
-    if (state.totalEpochs > 0) line += ` · epoch ${state.epoch}/${state.totalEpochs}`;
+    let line = `${secs.toFixed(1)}s`;
+    if (state.totalEpochs > 0) line += ` | epoch ${state.epoch}/${state.totalEpochs}`;
     const eta = estimateRemaining();
     if (eta != null) line += ` · ≤ ${formatDuration(eta)} left`;
     setStatus(line);
@@ -991,10 +998,9 @@ function selectEquation(i) {
   // bounded stride subset is evaluated and drawn: Chart.js rebuilds the whole dataset on
   // every selection and theme toggle, and the metrics above come from the engine (loss, and
   // R² from res.sst), so nothing displayed depends on predicting every row here.
-  const oneVar = state.X[0].length === 1;
-  $("fit-title").textContent = oneVar
-    ? `Fit: ${state.targetName} vs ${state.featureNames[0]}`
-    : "Predicted vs actual";
+  // One heading for both fit modes. The column identity is not lost: the single-feature
+  // scatter still labels its axes with the real target/feature names (drawPrediction).
+  $("fit-title").textContent = "Predicted vs actual";
   const idx = strideIndices(state.X.length, DISPLAY_POINT_CAP);
   const Xd = idx ? idx.map((k) => state.X[k]) : state.X;
   const yd = idx ? idx.map((k) => state.y[k]) : state.y;

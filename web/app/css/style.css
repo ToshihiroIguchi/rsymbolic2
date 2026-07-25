@@ -107,7 +107,13 @@ body {
    themes instead of the panel button colors. */
 .theme-toggle { background: transparent; color: var(--header-fg); border-color: rgba(255, 255, 255, 0.25); }
 .theme-toggle:hover { background: rgba(255, 255, 255, 0.12); }
-.status { color: var(--status-fg); font-size: 0.82rem; }
+/* Status/timer as a compact chip on the dark header bar (e.g. "0.57s | generations: 2800").
+   Hidden until it has text so an empty pill never shows before the first run. */
+.status {
+  color: var(--status-fg); font-size: 0.82rem; white-space: nowrap;
+  padding: 0.2rem 0.55rem; border-radius: 999px; background: rgba(255, 255, 255, 0.07);
+}
+.status:empty { display: none; }
 
 /* Indeterminate progress bar, shown only while a search is running (body.running). A single
    bar sweeps left-to-right on loop via CSS keyframes; no JS animation involved. */
@@ -237,6 +243,15 @@ body:not(.has-data) #change-data { display: none; }
   text-transform: uppercase; letter-spacing: 0.03em; margin: 0.25rem 0 0.15rem;
 }
 
+/* Card sub-heading (e.g. "Operator library"): a level above the fine group-labels
+   (Binary/Unary/Trigonometric…) it groups, a level below the card's own h2. A divider marks
+   it as the section header the sketch calls for without splitting the Search card in two. */
+.subhead {
+  font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text); margin: 0.7rem 0 0.4rem; padding-bottom: 0.2rem;
+  border-bottom: 1px solid var(--border);
+}
+
 /* <details> disclosures: no nested boxes/borders, just an accent summary label. */
 details.disclosure { margin: 0.5rem 0; }
 details.disclosure summary { cursor: pointer; color: var(--accent); font-size: 0.82rem; }
@@ -255,6 +270,31 @@ textarea { resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospa
 .check { display: flex; align-items: center; gap: 0.35rem; color: var(--text); }
 .check input { width: auto; }
 .check.small { font-size: 0.78rem; }
+
+/* Operator pills. The operator checkboxes in the Search card are rendered as toggle chips:
+   the raw checkbox is visually hidden and its label becomes a clickable pill that lights up
+   when checked. Scoped to the two operator containers (#binary-ops and each .op-group) so the
+   Features checkgrid keeps its plain checkbox layout. Purely presentational — checkedOps()
+   still reads the underlying input[data-kind]:checked, and loading an example (which toggles
+   input.checked) flips the pill automatically, so the search is unchanged. */
+#binary-ops.checkgrid, .op-group .checkgrid { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+#binary-ops .check, .op-group .check {
+  position: relative; gap: 0; padding: 0.22rem 0.65rem;
+  border: 1px solid var(--border); border-radius: 999px;
+  font-size: 0.8rem; cursor: pointer; user-select: none;
+  background: var(--input-bg); transition: background 0.12s, border-color 0.12s;
+}
+#binary-ops .check:hover, .op-group .check:hover { background: var(--hover); }
+#binary-ops .check input, .op-group .check input {
+  position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none;
+}
+#binary-ops .check:has(input:checked), .op-group .check:has(input:checked) {
+  background: var(--mark); border-color: var(--accent);
+}
+/* The hidden checkbox's keyboard focus ring lands on the visible pill instead. */
+#binary-ops .check:has(input:focus-visible), .op-group .check:has(input:focus-visible) {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
 
 /* One macro operator per row: fixed-width name, elastic body, remove button. */
 .macro-row { display: grid; grid-template-columns: 6rem 1fr auto; gap: 0.3rem; margin-bottom: 0.3rem; }
@@ -292,6 +332,13 @@ textarea { resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospa
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .btn.small { padding: 0.2rem 0.5rem; font-size: 0.8rem; }
 .btn input { display: none; }
+
+/* Export icon buttons: a monochrome glyph (SVG stroke=currentColor, so it follows the button
+   text colour in both themes) plus a short tag (TeX/Py/R/CSV) where a bare glyph would be
+   ambiguous. The full action lives in each button's aria-label/title. */
+.icon-btn { gap: 0.3rem; padding: 0.26rem 0.5rem; }
+.icon-btn svg { display: block; flex: none; }
+.icon-btn .icon-tag { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.02em; }
 
 .muted { color: var(--muted); }
 .small { font-size: 0.8rem; }
@@ -390,12 +437,14 @@ label.modified > .field-hint { color: var(--accent); }
 #pareto-table tbody tr.selected { background: var(--mark); }
 #pareto-table tbody tr.recommended td:first-child::before { content: "★ "; color: var(--good); }
 
-/* Hero "Result" card: the selected equation rendered large via KaTeX. */
+/* Hero "Best formula" card: the selected equation as the page's answer, rendered large via
+   KaTeX in a centred showcase box (answer-first). */
 .eq-latex {
-  min-height: 2.6rem; padding: 0.7rem 0.8rem; background: var(--eq-bg);
-  border: 1px solid var(--border); border-radius: 6px; overflow-x: auto;
+  min-height: 3.4rem; padding: 1.1rem 1rem; background: var(--eq-bg);
+  border: 1px solid var(--border); border-radius: 8px; overflow-x: auto;
+  display: flex; align-items: center; justify-content: center; text-align: center;
 }
-.eq-latex .katex { font-size: 1.35em; }
+.eq-latex .katex { font-size: 1.7em; }
 .eq-string { display: flex; gap: 0.4rem; align-items: center; margin: 0.5rem 0; }
 .eq-string code { flex: 1; overflow-x: auto; white-space: nowrap; background: var(--code-bg); padding: 0.3rem 0.4rem; border-radius: 5px; font-size: 0.8rem; }
 /* Metric chips: JS emits flat k/value span pairs; a wrapping flex row reads them as

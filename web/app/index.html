@@ -16,6 +16,9 @@
         document.documentElement.dataset.theme = theme;
       })();
     </script>
+    <link rel="icon" href="favicon.ico" sizes="any" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
     <link rel="stylesheet" href="vendor/katex.min.css" />
     <link rel="stylesheet" href="css/style.css" />
   </head>
@@ -97,9 +100,10 @@
                Requirements), and an unchecked box makes whole expressions unreachable no
                matter how long the search runs. The numeric settings below are the opposite —
                PySR-parity defaults that should rarely be touched — so they stay collapsed. -->
-          <div class="group-label">Binary operators</div>
+          <div class="subhead">Operator library</div>
+          <div class="group-label">Binary</div>
           <div id="binary-ops" class="checkgrid"></div>
-          <div class="group-label">Unary operators</div>
+          <div class="group-label">Unary</div>
           <div id="unary-ops"></div>
 
           <!-- Macro operators (docs/57): one-argument templates over the primitives, so they
@@ -171,18 +175,52 @@
         </div>
 
         <section class="card hero">
-          <h2>Result</h2>
+          <h2>Best formula</h2>
           <div id="eq-latex" class="eq-latex"></div>
           <div class="eq-string">
             <code id="eq-string"></code>
-            <button id="copy-expr" class="btn small">copy</button>
+            <button id="copy-expr" class="btn small icon-btn" type="button"
+                    aria-label="Copy expression string" title="Copy expression string">
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none"
+                   stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="4" y="3" width="8" height="11" rx="1.5" /><path d="M6 3v-.5A1.5 1.5 0 0 1 7.5 1h1A1.5 1.5 0 0 1 10 2.5V3" />
+              </svg>
+            </button>
           </div>
           <div id="eq-metrics" class="metrics chips"></div>
-          <div class="row wrap">
-            <button id="copy-latex" class="btn small">Copy LaTeX</button>
-            <button id="copy-python" class="btn small">Copy Python</button>
-            <button id="copy-r" class="btn small">Copy R</button>
-            <button id="download-csv" class="btn small">Download CSV</button>
+          <!-- Export as icon buttons. Icon-only would be ambiguous, so each copy button pairs a
+               clipboard glyph with a short tag (TeX/Py/R) and the download uses a download glyph
+               with "CSV"; the full action is in aria-label/title. Ids are unchanged, so the
+               wireExport() handlers bind exactly as before. -->
+          <div class="row wrap eq-export">
+            <button id="copy-latex" class="btn small icon-btn" type="button"
+                    aria-label="Copy LaTeX" title="Copy LaTeX">
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none"
+                   stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="4" y="3" width="8" height="11" rx="1.5" /><path d="M6 3v-.5A1.5 1.5 0 0 1 7.5 1h1A1.5 1.5 0 0 1 10 2.5V3" />
+              </svg><span class="icon-tag">TeX</span>
+            </button>
+            <button id="copy-python" class="btn small icon-btn" type="button"
+                    aria-label="Copy Python call" title="Copy Python call">
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none"
+                   stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="4" y="3" width="8" height="11" rx="1.5" /><path d="M6 3v-.5A1.5 1.5 0 0 1 7.5 1h1A1.5 1.5 0 0 1 10 2.5V3" />
+              </svg><span class="icon-tag">Py</span>
+            </button>
+            <button id="copy-r" class="btn small icon-btn" type="button"
+                    aria-label="Copy R call" title="Copy R call">
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none"
+                   stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="4" y="3" width="8" height="11" rx="1.5" /><path d="M6 3v-.5A1.5 1.5 0 0 1 7.5 1h1A1.5 1.5 0 0 1 10 2.5V3" />
+              </svg><span class="icon-tag">R</span>
+            </button>
+            <button id="download-csv" class="btn small icon-btn" type="button"
+                    aria-label="Download Pareto CSV" title="Download Pareto CSV">
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none"
+                   stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M8 2v8" /><path d="M4.5 7.5 8 11l3.5-3.5" /><path d="M3 13h10" />
+              </svg><span class="icon-tag">CSV</span>
+            </button>
           </div>
         </section>
 
@@ -212,7 +250,7 @@
           </section>
 
           <section class="card">
-            <h2 id="fit-title">Fit</h2>
+            <h2 id="fit-title">Predicted vs actual</h2>
             <div class="chart-box small"><canvas id="pred-canvas"></canvas></div>
             <!-- Says so when the scatter is a subset of the fitted rows (main.js
                  DISPLAY_POINT_CAP); empty otherwise. -->
