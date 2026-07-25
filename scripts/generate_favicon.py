@@ -1,6 +1,33 @@
+# SPDX-License-Identifier: Apache-2.0
+# Part of rsymbolic2, Copyright 2026 Toshihiro Iguchi.
+"""Regenerate the web GUI's icon set (web/app/).
+
+A development tool, not part of any build or test: the outputs are committed, so this
+only runs when the icon artwork changes.
+
+    pip install pillow
+    python scripts/generate_favicon.py
+
+Output paths are resolved from this file's location, so the working directory does not
+matter. Writes favicon.svg, favicon.ico (multi-resolution), favicon-16x16.png,
+favicon-32x32.png and apple-touch-icon.png, plus the 1024px master icon-1024.png — a
+regenerable intermediate that .gitignore keeps out of the deployed site.
+"""
+
 import math
-import os
+import struct
+from pathlib import Path
+
 from PIL import Image, ImageDraw, ImageFilter
+
+# Repository root -> web/app; independent of the working directory.
+OUT_DIR = Path(__file__).resolve().parents[1] / "web" / "app"
+
+# Sizes packed into favicon.ico. See save_ico() for why the base image must be the largest.
+ICO_SIZES = [16, 32, 48, 64, 128, 256]
+# The icon badge is a white squircle (see generate_master_image), which is also the
+# background the opaque apple-touch-icon is flattened onto.
+BADGE_BG = (255, 255, 255)
 
 def catmull_rom_spline(pts, num_samples=300):
     if len(pts) < 2:
@@ -38,9 +65,9 @@ def generate_master_image(size=1024):
     s = size / 1024.0
 
     # Palette
-    bg_border_col  = (215, 225, 235, 255)
-    grid_outer_col = (135, 155, 175, 255) # #879BF7
-    grid_inner_col = (195, 210, 225, 255) # #CBD5E1
+    bg_border_col  = (215, 225, 235, 255) # #D7E1EB
+    grid_outer_col = (135, 155, 175, 255) # #879BAF
+    grid_inner_col = (195, 210, 225, 255) # #C3D2E1
     pin_col        = (145, 165, 185, 255)
     pin_base_shadow= (175, 192, 208, 200)
     
@@ -227,31 +254,72 @@ def generate_svg():
   <circle cx="237.5" cy="237.5" r="13" fill="#E11E37" stroke="#FFFFFF" stroke-width="2.5"/>
   <circle cx="332.5" cy="295" r="13" fill="#E11E37" stroke="#FFFFFF" stroke-width="2.5"/>
 </svg>'''
-    with open("web/app/favicon.svg", "w", encoding="utf-8") as f:
-        f.write(svg_content)
+    (OUT_DIR / "favicon.svg").write_text(svg_content, encoding="utf-8")
 
-if __name__ == "__main__":
-    os.makedirs("web/app", exist_ok=True)
+
+def save_ico(master_img, path):
+    """Write a multi-resolution .ico.
+
+    Pillow's ICO writer silently DROPS any requested size larger than the image it is
+    called on (IcoImagePlugin skips `size > im.size`), so saving from the 16px frame
+    produced a one-frame 16x16 file however many sizes were listed — a blurry upscale
+    wherever Windows wants a large icon. The base must therefore be the largest size,
+    with the smaller frames supplied through append_images.
+    """
+    frames = {sz: master_img.resize((sz, sz), Image.Resampling.LANCZOS) for sz in ICO_SIZES}
+    base = frames[max(ICO_SIZES)]
+    base.save(
+        path,
+        format="ICO",
+        sizes=[(sz, sz) for sz in ICO_SIZES],
+        append_images=[frames[sz] for sz in ICO_SIZES if sz != max(ICO_SIZES)],
+    )
+    assert_ico_frames(path, len(ICO_SIZES))
+    return frames
+
+
+def assert_ico_frames(path, expected):
+    """Fail loudly if the .ico did not get every frame (the trap save_ico() documents)."""
+    with open(path, "rb") as f:
+        reserved, kind, count = struct.unpack("<HHH", f.read(6))
+    if (reserved, kind) != (0, 1) or count != expected:
+        raise RuntimeError(
+            f"{path.name}: expected {expected} icon frames, got {count} "
+            f"(reserved={reserved}, type={kind})"
+        )
+
+
+def save_apple_touch_icon(master_img, path, size=180):
+    """Write the iOS home-screen icon, flattened onto the badge background.
+
+    iOS does not honour alpha here: a transparent icon is composited onto black, which
+    turns the badge's rounded corners into dark wedges. It applies its own corner mask,
+    so the correct asset is a full-bleed opaque square.
+    """
+    icon = master_img.resize((size, size), Image.Resampling.LANCZOS)
+    flat = Image.new("RGB", icon.size, BADGE_BG)
+    flat.paste(icon, mask=icon.split()[3])
+    flat.save(path, "PNG")
+
+
+def main():
+    if not OUT_DIR.is_dir():
+        raise SystemExit(f"expected the web GUI directory at {OUT_DIR}")
     generate_svg()
 
     master_img = generate_master_image(1024)
-    master_img.save("web/app/icon-1024.png", "PNG")
+    master_img.save(OUT_DIR / "icon-1024.png", "PNG")
 
-    sizes = [16, 32, 48, 64, 128, 256]
-    icon_images = []
-    for sz in sizes:
-        resized = master_img.resize((sz, sz), Image.Resampling.LANCZOS)
-        icon_images.append(resized)
-        if sz in [16, 32]:
-            resized.save(f"web/app/favicon-{sz}x{sz}.png", "PNG")
+    frames = save_ico(master_img, OUT_DIR / "favicon.ico")
+    for sz in (16, 32):
+        frames[sz].save(OUT_DIR / f"favicon-{sz}x{sz}.png", "PNG")
+    save_apple_touch_icon(master_img, OUT_DIR / "apple-touch-icon.png")
 
-    apple_icon = master_img.resize((180, 180), Image.Resampling.LANCZOS)
-    apple_icon.save("web/app/apple-touch-icon.png", "PNG")
+    print(f"Regenerated icon assets in {OUT_DIR}:")
+    for name in ("favicon.svg", "favicon.ico", "favicon-16x16.png",
+                 "favicon-32x32.png", "apple-touch-icon.png", "icon-1024.png"):
+        print(f"  {name}")
 
-    icon_images[0].save(
-        "web/app/favicon.ico",
-        format="ICO",
-        sizes=[(sz, sz) for sz in sizes],
-        append_images=icon_images[1:]
-    )
-    print("Regenerated clean favicon.ico and PNG/SVG assets.")
+
+if __name__ == "__main__":
+    main()
