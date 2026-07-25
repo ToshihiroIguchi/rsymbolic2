@@ -128,7 +128,7 @@ and fitted constants as leaves — on all three surfaces.
 
 | Surface | Addition |
 |---|---|
-| Web GUI | `Equation tree` card under the hero, inline SVG (`js/tree.js`), follows every equation selection, downloads as a standalone `.svg` |
+| Web GUI | `Equation tree` card at the foot of the result column, inline SVG (`js/tree.js`), follows every equation selection, downloads as a standalone `.svg` |
 | R | `plot(type = "tree", expression =, variable_names =)` (`R/tree_plot.R`) |
 | Python | `plot(kind="tree", expression=, variable_names=)` |
 
@@ -183,6 +183,28 @@ and fitted constants as leaves — on all three surfaces.
   toggle recolours the tree with no redraw — unlike the Chart.js plots, which must be
   rebuilt. The SVG download re-resolves them into presentation attributes, since CSS
   variables do not exist outside the document.
+- **The web card sits last in the result column, not under the hero** (moved 2026-07-25
+  after measuring the position it shipped in). Proximity to the headline formula was the
+  original argument, and it is a real one — the tree is a second reading of the same
+  equation — but it lost to two measured costs, both caused by a full-width card of
+  *variable* height sitting above the surfaces the user clicks. Measured on a 1440×900
+  viewport (result pane 823px), one run of the damped-oscillation example:
+  - **Fold.** Hero 243px + tree 378px left the Pareto/fit pair 46% visible and the
+    equation table entirely off screen. With the tree removed from that slot, the Pareto
+    pair is 100% visible and the table 46%. The card that pushed them down is the only
+    result card that carries no new information; the demo's own loop
+    (Pareto → equation → fit) is what it hid.
+  - **Layout shift.** Tree height is `56 + 64 × depth`, so it follows the selection:
+    122px → 442px across the ten front members of that run, and ~890px for a deep tree
+    at the default `max_nodes = 30`. Selecting a different equation therefore moved
+    *both* selection surfaces — the Pareto chart and the table row being clicked — down
+    by 319px, i.e. out from under the pointer and, for the clicked row, off screen.
+
+  Placed after the table, a height change moves nothing the user is aiming at, and the
+  card is still one page-down from the formula it redraws. A `max-height` cap was the
+  alternative fix for the second cost alone; it is not needed at this position and would
+  have left the first cost untouched. The R and Python `plot()` surfaces are unaffected —
+  there the tree is its own figure.
 
 Display-only, like the rest of this document: no search behaviour, no default, and no
 change to the frozen `expression` strings. Nothing under `src/rsymbolic/` and none of the

@@ -80,10 +80,15 @@ Both per-equation views draw a bounded stride subset of the rows (`DISPLAY_POINT
 5,000) and say so under the chart; the reported metrics come from the engine, not from the
 plotted subset.
 
-Under the headline formula sits the **equation tree** (`js/tree.js`, docs/48 D6): the same
-equation as a syntax tree, operators as inner nodes, data columns and fitted constants as
-leaves, told apart by fill. It follows the selected equation like the charts do, and
-downloads as a standalone `.svg`. It is drawn from the *printed* (display-simplified)
+At the foot of the result column sits the **equation tree** (`js/tree.js`, docs/48 D6): the
+same equation as a syntax tree, operators as inner nodes, data columns and fitted constants
+as leaves, told apart by fill. It follows the selected equation like the charts do, and
+downloads as a standalone `.svg`. It is last rather than under the hero on measured grounds
+(docs/48 D6): it is the one result card that adds no new information, and its height follows
+the selected equation (122–442px across one run's front, ~890px for a deep tree), so above
+the charts it pushed the Pareto → equation → fit loop off the first screen and moved both
+selection surfaces 319px out from under the pointer on every selection change. It is drawn
+from the *printed* (display-simplified)
 expression, so its node count can be smaller than the `complexity` column, which counts the
 raw tree the search archived. Unlike the Chart.js plots it takes its colours from the theme's
 CSS variables, so the light/dark toggle recolours it without a redraw. No plotting library is
