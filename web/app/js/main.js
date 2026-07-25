@@ -33,6 +33,40 @@ const UNARY_DEFAULT = new Set(["neg", "exp", "log", "sin", "cos"]);
 const BINARY = ["add", "sub", "mul", "div", "pow"];
 const BINARY_DEFAULT = new Set(["add", "sub", "mul"]);
 
+// --- Operator display labels ------------------------------------------------------
+// The engine identifiers above are what the search and the export snippets speak, but they
+// are not how the operators are written: "mul"/"div" are a memory task where "×"/"÷" are not.
+// Each pill therefore shows the NOTATION as its primary label and keeps the identifier as a
+// dimmer second token (opCheck) -- the identifier still has to be readable on screen, because
+// it is the exact string binary_ops=[...] emits and the string a macro body must use.
+//
+// BINARY_GLYPH must stay character-identical to tree.js's BINARY_LABEL, which maps the same
+// glyphs from the parsed SYMBOL ("*") instead of the engine id ("mul"): showing one operator
+// under two names on one screen is the defect this fixes. Two five-entry tables are cheaper
+// than bridging the two key spaces; change them together.
+const BINARY_GLYPH = { add: "+", sub: "-", mul: "×", div: "÷", pow: "^" };
+// Only the unary ops whose identifier is NOT the mathematical name. sin/cos/tanh/exp are
+// absent on purpose -- there the id already IS the notation and a gloss would be noise. `log`
+// is present because the core computes the NATURAL log (dual.hpp), which many readers take
+// for base 10; that one is a misreading to prevent, not decoration.
+const UNARY_GLYPH = {
+  log: "ln", sqrt: "√x", square: "x²", inv: "1/x", abs: "|x|", neg: "-x",
+};
+// Plain-language meaning, shown as the pill's tooltip. Guard behaviour is stated only where
+// it was read off the core: sqrt clamps a negative argument to 0 and pow is safe_pow
+// (dual.hpp), while div/inv/log are unguarded (multi_dual.hpp recip, "Unguarded, like
+// operator/"). Absence of a guard clause here means the operator has no guard.
+const OP_HINT = {
+  add: "a + b", sub: "a - b", mul: "a × b",
+  div: "a ÷ b (no divide-by-zero guard)",
+  pow: "a raised to b (safe_pow: a negative base with a fractional exponent gives 0)",
+  neg: "-x", exp: "e to the power x", log: "natural logarithm, base e - not base 10",
+  sin: "sine of x, in radians", cos: "cosine of x, in radians", tanh: "hyperbolic tangent",
+  sqrt: "square root (guarded: a negative argument gives 0)",
+  square: "x × x", inv: "1/x, the reciprocal (no divide-by-zero guard)",
+  abs: "absolute value |x|",
+};
+
 // --- Data-size policy (docs/59) ---------------------------------------------------
 // Three measured facts drive every constant here. (1) A default-budget run costs ~2.83M
 // evaluations, each O(rows): 200 rows take 18.5 s, 2,000 rows 154 s, and 100,000 rows
@@ -159,7 +193,8 @@ function redrawCharts() {
 // --- Setup static controls --------------------------------------------------------
 function buildOperatorChecks() {
   const bwrap = $("binary-ops");
-  BINARY.forEach((op) => bwrap.appendChild(opCheck("bin", op, BINARY_DEFAULT.has(op))));
+  BINARY.forEach((op) =>
+    bwrap.appendChild(opCheck("bin", op, BINARY_DEFAULT.has(op), BINARY_GLYPH[op] || op)));
   const uwrap = $("unary-ops");
   UNARY_GROUPS.forEach((g) => {
     const group = document.createElement("div");
@@ -170,21 +205,37 @@ function buildOperatorChecks() {
     group.appendChild(label);
     const grid = document.createElement("div");
     grid.className = "checkgrid";
-    g.ops.forEach((op) => grid.appendChild(opCheck("un", op, UNARY_DEFAULT.has(op))));
+    g.ops.forEach((op) =>
+      grid.appendChild(opCheck("un", op, UNARY_DEFAULT.has(op), UNARY_GLYPH[op] || op)));
     group.appendChild(grid);
     uwrap.appendChild(group);
   });
 }
-function opCheck(kind, op, checked) {
+// One operator pill. `primary` is the form the reader recognises (a glyph for the binary ops,
+// "1/x" for inv); `op` is the engine identifier, appended as a dimmer second token whenever it
+// differs. The identifier is on screen rather than in the tooltip on purpose: touch devices
+// have no hover, and it is the string the user must reproduce in an export snippet or a macro
+// body. Only the checkbox's `value` reaches the engine, so labelling is purely presentational.
+function opCheck(kind, op, checked, primary) {
   const l = document.createElement("label");
   l.className = "check";
+  if (OP_HINT[op]) l.title = OP_HINT[op];
   const cb = document.createElement("input");
   cb.type = "checkbox";
   cb.checked = checked;
   cb.dataset.kind = kind;
   cb.value = op;
   l.appendChild(cb);
-  l.appendChild(document.createTextNode(op));
+  const main = document.createElement("span");
+  main.className = "op-primary";
+  main.textContent = primary;
+  l.appendChild(main);
+  if (primary !== op) {
+    const id = document.createElement("span");
+    id.className = "op-id";
+    id.textContent = op;
+    l.appendChild(id);
+  }
   return l;
 }
 function checkedOps(kind) {

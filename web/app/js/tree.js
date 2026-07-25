@@ -20,6 +20,11 @@ import { parseExpression } from "./predict.js";
 // fraction that is not there, and "*" is a raised asterisk in most fonts, which sits visibly
 // off-centre inside a capsule. "÷" and "×" are centred glyphs and are what a tree diagram
 // conventionally shows.
+//
+// Must stay character-identical to main.js's BINARY_GLYPH, which labels the operator pills
+// with the same glyphs but keys them by engine id ("mul") rather than by the parsed symbol
+// used here ("*"). Showing one operator under two names on one screen is exactly what that
+// pair of tables exists to prevent, so change them together.
 const BINARY_LABEL = { "+": "+", "-": "-", "*": "×", "/": "÷", "^": "^" };
 
 // Geometry, in SVG user units (= CSS px at scale 1).

@@ -194,38 +194,34 @@
             </button>
           </div>
           <div id="eq-metrics" class="metrics chips"></div>
-          <!-- Export as icon buttons. Icon-only would be ambiguous, so each copy button pairs a
-               clipboard glyph with a short tag (TeX/Py/R) and the download uses a download glyph
-               with "CSV"; the full action is in aria-label/title. Ids are unchanged, so the
+          <!-- Export row. Three of these four actions are copies, so the verb is said once as a
+               leading label and each button spends its width on WHAT it copies. (It used to
+               repeat the same clipboard glyph three times, which left the only discriminating
+               information - a 3-character tag - as the smallest thing in the row, and "Py" did
+               not say whether it copied the equation or the call that reproduces the run.) The
+               CSV button keeps a glyph because it is the one action that is NOT a copy: there
+               the icon earns its place by contrast rather than repetition. aria-label stays
+               because the leading "Copy" is a visual grouping only; each accessible name
+               contains its button's visible text (WCAG 2.5.3). Ids are unchanged, so the
                wireExport() handlers bind exactly as before. -->
           <div class="row wrap eq-export">
-            <button id="copy-latex" class="btn small icon-btn" type="button"
-                    aria-label="Copy LaTeX" title="Copy LaTeX">
-              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none"
-                   stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="4" y="3" width="8" height="11" rx="1.5" /><path d="M6 3v-.5A1.5 1.5 0 0 1 7.5 1h1A1.5 1.5 0 0 1 10 2.5V3" />
-              </svg><span class="icon-tag">TeX</span>
-            </button>
-            <button id="copy-python" class="btn small icon-btn" type="button"
-                    aria-label="Copy Python call" title="Copy Python call">
-              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none"
-                   stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="4" y="3" width="8" height="11" rx="1.5" /><path d="M6 3v-.5A1.5 1.5 0 0 1 7.5 1h1A1.5 1.5 0 0 1 10 2.5V3" />
-              </svg><span class="icon-tag">Py</span>
-            </button>
-            <button id="copy-r" class="btn small icon-btn" type="button"
-                    aria-label="Copy R call" title="Copy R call">
-              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none"
-                   stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="4" y="3" width="8" height="11" rx="1.5" /><path d="M6 3v-.5A1.5 1.5 0 0 1 7.5 1h1A1.5 1.5 0 0 1 10 2.5V3" />
-              </svg><span class="icon-tag">R</span>
-            </button>
-            <button id="download-csv" class="btn small icon-btn" type="button"
-                    aria-label="Download Pareto CSV" title="Download Pareto CSV">
+            <span class="export-label">Copy</span>
+            <button id="copy-latex" class="btn small" type="button"
+                    aria-label="Copy LaTeX"
+                    title="Copy the displayed equation as LaTeX">LaTeX</button>
+            <button id="copy-python" class="btn small" type="button"
+                    aria-label="Copy Python code"
+                    title="Copy a Python snippet that reproduces this run">Python code</button>
+            <button id="copy-r" class="btn small" type="button"
+                    aria-label="Copy R code"
+                    title="Copy an R snippet that reproduces this run">R code</button>
+            <button id="download-csv" class="btn small icon-btn export-download" type="button"
+                    aria-label="Download Pareto front (.csv)"
+                    title="Download the whole Pareto front as CSV">
               <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none"
                    stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M8 2v8" /><path d="M4.5 7.5 8 11l3.5-3.5" /><path d="M3 13h10" />
-              </svg><span class="icon-tag">CSV</span>
+              </svg><span>Pareto front (.csv)</span>
             </button>
           </div>
         </section>
