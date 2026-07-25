@@ -34,24 +34,29 @@ const BINARY = ["add", "sub", "mul", "div", "pow"];
 const BINARY_DEFAULT = new Set(["add", "sub", "mul"]);
 
 // --- Operator display labels ------------------------------------------------------
-// The engine identifiers above are what the search and the export snippets speak, but they
-// are not how the operators are written: "mul"/"div" are a memory task where "×"/"÷" are not.
-// Each pill therefore shows the NOTATION as its primary label and keeps the identifier as a
-// dimmer second token (opCheck) -- the identifier still has to be readable on screen, because
-// it is the exact string binary_ops=[...] emits and the string a macro body must use.
+// A pill shows the operator in the form it appears in a result expression, because that is the
+// form the user reads back and writes:
+//
+//   ((x0 * 1.65425) - 0.551418) / (x0 + 3)     binary operators are infix SYMBOLS
+//   exp(neg(sin(x0)))   square(x0)             unary operators are NAMES
+//
+// So the binary pills carry a glyph alone and never the engine id: "mul" is the machine
+// spelling of "×", and there is nowhere the user types it - a macro body writes `a * b`, and
+// binary_ops=[...] in an export snippet is generated code, not something to reproduce by hand.
+// The unary pills are the mirror image: the id IS the name a macro body calls (`square(x)`),
+// so it is the label, and a gloss is added only where that name misleads (UNARY_GLYPH).
 //
 // BINARY_GLYPH must stay character-identical to tree.js's BINARY_LABEL, which maps the same
 // glyphs from the parsed SYMBOL ("*") instead of the engine id ("mul"): showing one operator
 // under two names on one screen is the defect this fixes. Two five-entry tables are cheaper
 // than bridging the two key spaces; change them together.
 const BINARY_GLYPH = { add: "+", sub: "-", mul: "×", div: "÷", pow: "^" };
-// Only the unary ops whose identifier is NOT the mathematical name. sin/cos/tanh/exp are
-// absent on purpose -- there the id already IS the notation and a gloss would be noise. `log`
-// is present because the core computes the NATURAL log (dual.hpp), which many readers take
-// for base 10; that one is a misreading to prevent, not decoration.
-const UNARY_GLYPH = {
-  log: "ln", sqrt: "√x", square: "x²", inv: "1/x", abs: "|x|", neg: "-x",
-};
+// Unary ops whose NAME misleads, and only those - a gloss on sqrt/square/abs/neg would just
+// restate the word beside it. `log` is the natural log in the core (dual.hpp) where many
+// readers take "log" for base 10, and `inv` reads as either "inverse function" or "reciprocal"
+// (it is the latter). Both are misreadings that change what the user believes the fit says, so
+// they are corrected on screen rather than in a tooltip, which touch devices never show.
+const UNARY_GLYPH = { log: "ln", inv: "1/x" };
 // Plain-language meaning, shown as the pill's tooltip. Guard behaviour is stated only where
 // it was read off the core: sqrt clamps a negative argument to 0 and pow is safe_pow
 // (dual.hpp), while div/inv/log are unguarded (multi_dual.hpp recip, "Unguarded, like
@@ -211,11 +216,11 @@ function buildOperatorChecks() {
     uwrap.appendChild(group);
   });
 }
-// One operator pill. `primary` is the form the reader recognises (a glyph for the binary ops,
-// "1/x" for inv); `op` is the engine identifier, appended as a dimmer second token whenever it
-// differs. The identifier is on screen rather than in the tooltip on purpose: touch devices
-// have no hover, and it is the string the user must reproduce in an export snippet or a macro
-// body. Only the checkbox's `value` reaches the engine, so labelling is purely presentational.
+// One operator pill. `primary` is the label; the engine id follows as a dimmer second token
+// only for a UNARY op whose name misleads ("ln log", "1/x inv") -- there the id is the name a
+// macro body calls, so both have to be legible. A binary pill is the glyph alone: its id is
+// the machine spelling of a symbol the user never types. Only the checkbox's `value` reaches
+// the engine, so all of this is presentation.
 function opCheck(kind, op, checked, primary) {
   const l = document.createElement("label");
   l.className = "check";
@@ -230,7 +235,7 @@ function opCheck(kind, op, checked, primary) {
   main.className = "op-primary";
   main.textContent = primary;
   l.appendChild(main);
-  if (primary !== op) {
+  if (kind === "un" && primary !== op) {
     const id = document.createElement("span");
     id.className = "op-id";
     id.textContent = op;

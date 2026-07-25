@@ -328,21 +328,20 @@ textarea { resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospa
 #binary-ops .check:has(input:focus-visible), .op-group .check:has(input:focus-visible) {
   outline: 2px solid var(--accent); outline-offset: 1px;
 }
-/* The engine identifier rides along as a dimmer monospaced second token after the notation
-   ("× mul"). It stays on screen rather than in the tooltip because it is the exact string the
-   export snippets emit and the string a macro body must use - and a tooltip does not exist on
-   touch. The pill deliberately sets gap:0 (its ::before tick owns the spacing), so this token
-   carries its own left margin. */
+/* Second token on the two unary pills whose name misleads: "ln log", "1/x inv". The corrected
+   reading leads, the engine id follows dimmer and monospaced - the id has to stay legible
+   because it is the name a macro body calls. Every other pill is a single token. The pill
+   deliberately sets gap:0 (its ::before tick owns the spacing), so this one carries its own
+   left margin. */
 .op-id {
   margin-left: 0.3rem; font-family: ui-monospace, Menlo, Consolas, monospace;
   font-size: 0.85em; color: var(--muted);
 }
 /* On a CHECKED pill the identifier is promoted to full text colour: that operator is in the
-   search, so its id is what the user will meet again in the copied Python/R snippet. It also
-   fixes contrast - --muted on the --mark pill background falls below 4.5:1 in the light theme,
-   where it clears it on the plain --input-bg of an unchecked pill. Smaller monospace keeps it
-   visibly secondary to the notation without leaning on colour. */
-#binary-ops .check:has(input:checked) .op-id,
+   search, so its name is the one the user will meet again in a macro body or a copied snippet.
+   It also fixes contrast - --muted on the --mark pill background falls below 4.5:1 in the
+   light theme, where it clears it on the plain --input-bg of an unchecked pill. Smaller
+   monospace keeps it visibly secondary without leaning on colour. */
 .op-group .check:has(input:checked) .op-id { color: var(--text); }
 
 /* One macro operator per row: fixed-width name, elastic body, remove button. */
