@@ -90,6 +90,15 @@ peak bytes ~= n * (24*p + 80 + 16*n_populations)
 success ~82 MB), giving ~112,000 rows at 1 column, ~96,000 at 5, ~82,000 at 10 — all with
 the default 31 populations, all recomputed when the user changes the population count.
 
+**`p` is the fitted width, not the file's.** The columns the engine holds are the ticked
+features plus the target, so a 50-column file modelled on 2 features costs `p = 3`, not 50 —
+a ~2.7x difference in the ceiling. Deriving it from the file's width force-sampled (and locked
+the sampling checkbox on for) tables that fit comfortably, so `main.js: fittedWidth()` reads
+the feature selection, and the policy is re-run when that selection or `n_populations`
+changes. Re-running the policy only invalidates a displayed result (or a search in flight)
+when the fitted **rows** actually move — ticking a feature box recomputes the ceiling, it does
+not throw the last result away.
+
 The bridge now releases `Xflat` as soon as `X` is built, which removes one of the three
 copies. At the default 31 populations that is only ~6% of the peak (the island term
 dominates); it matters more at low population counts. Behaviour is unchanged either way.
@@ -115,9 +124,13 @@ dominates); it matters more at low population counts. Behaviour is unchanged eit
   because the alternative is a certain abort. The sample is deterministic (seeded
   selection sampling, `data.js: sampleRowIndices`), the checkbox is locked on while the
   full table cannot fit, and the fact is stated in the data summary, the preview dialog and
-  the copied Python/R snippets.
+  the copied Python/R snippets. The sample-size control is shown whenever sampling was
+  forced, not only above the 5,000-row warning threshold — a small ceiling (many columns, or
+  a raised population count) can force sampling below that threshold, and the notice tells
+  the user to adjust a count that must therefore be on screen.
 - **The limit is rechecked at Run**, since `n_populations` and the tick-box feature count
-  both move it after loading.
+  both move it after loading. That check is now a backstop rather than the first line of
+  defence: both inputs re-run the policy as they change (§3).
 - **Real progress**: the WASM bridge now reports `total_epochs` alongside each progress
   snapshot (derived from `generations / migration_interval` in the bridge — the core and
   the R/Python bridges are untouched), so the header bar becomes determinate and the status

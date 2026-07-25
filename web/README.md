@@ -40,6 +40,23 @@ web/
     examples/ (inline)      example datasets live in js/examples.js
 ```
 
+## Defaults that differ from PySR
+
+The **search** here is at PySR parity, exactly like the R and Python packages: same
+defaults, same mechanisms, same trajectory for a given seed. The GUI is exempt from the
+default-parity rule only for *presentation* choices (`CLAUDE.md`, "the web GUI is exempt"),
+and it uses that exemption in exactly one place:
+
+| setting | web GUI | R / Python / PySR | why |
+|---|---|---|---|
+| `model_selection` | `score` | `best` | Which Pareto member is highlighted (★). When several equations are all effectively perfect fits — loss down at floating-point noise — PySR's `best` rule can recommend the most complex of them, which is a poor answer for an answer-first demo. `score` picks the parsimony elbow. |
+
+This changes nothing about the search: it selects a member of the *finished* front, it is a
+live control in the Pareto card (switching it re-picks instantly, with no re-run), and
+`best (PySR default)` is right there in the dropdown. The copied Python/R snippets emit
+`model_selection` whenever it differs from those packages' default, so a pasted snippet
+recommends the same equation the screen does.
+
 ## How much data fits
 
 The browser build is single-threaded and its WASM heap is fixed at 128 MB, so row count
@@ -63,6 +80,11 @@ Two levers, both visible in the UI:
   is the only thing that moves the memory ceiling, so it is applied automatically — and
   reported in the summary, the preview and the copied R/Python snippet — when a table
   cannot fit at all.
+
+The ceiling is computed from the columns actually being **fitted** (the ticked features plus
+the target), not from the file's width, so untick the columns you do not need and a wide file
+gets correspondingly more rows. It also moves with `n_populations` (each island holds O(rows)
+optimiser scratch), and is re-checked whenever either of those changes.
 
 Files above 64 MB are refused before they are read, since parsing happens on the main
 thread. For anything larger than the comfortable range, the R or Python package is the

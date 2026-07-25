@@ -7,14 +7,38 @@
 
 /* global katex */
 
-// Replace x_{i} tokens with display feature names (underscores escaped for LaTeX),
+// Column names are user data: a CSV header may contain any of LaTeX's special characters, and
+// pasting one unescaped produces a broken fragment (KaTeX renders it as red error text) or, for
+// braces, a name that swallows the rest of the expression. Escaping every special is also what
+// keeps the substitution loop order-independent — a column literally named "x_{2}" can no
+// longer be re-substituted by a later iteration.
+//
+// The names go into \text{} rather than \mathrm{}: the escapes for \, ^ and ~ are text-mode
+// macros, and text mode additionally preserves spaces, so "flow rate" keeps its space (math
+// mode dropped it). Both render upright, so nothing else about the output changes.
+const LATEX_ESCAPES = {
+  "\\": "\\textbackslash{}",
+  "^": "\\textasciicircum{}",
+  "~": "\\textasciitilde{}",
+  "{": "\\{",
+  "}": "\\}",
+  $: "\\$",
+  "&": "\\&",
+  "#": "\\#",
+  "%": "\\%",
+  _: "\\_",
+};
+function escapeLatexText(s) {
+  return String(s).replace(/[\\^~{}$&#%_]/g, (c) => LATEX_ESCAPES[c]);
+}
+
+// Replace x_{i} tokens with display feature names (LaTeX specials escaped),
 // mirroring the R/Python `latex(variable_names=...)` behaviour.
 export function substituteNames(latexStr, featureNames) {
   if (!featureNames || !featureNames.length) return latexStr;
   let out = latexStr;
   featureNames.forEach((name, i) => {
-    const safe = String(name).replace(/_/g, "\\_");
-    out = out.split(`x_{${i}}`).join(`\\mathrm{${safe}}`);
+    out = out.split(`x_{${i}}`).join(`\\text{${escapeLatexText(name)}}`);
   });
   return out;
 }

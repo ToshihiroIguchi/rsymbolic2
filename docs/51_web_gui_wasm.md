@@ -132,8 +132,13 @@ points (no new heavy features, no engine/default change):
   instantly, with no re-run, because the returned front already carries the
   `loss/complexity/score` the rule needs. `main.js` `selectBestIndex()` is a faithful port of
   the core `select_best()` (`hall_of_fame.cpp`) — the C++ stays authoritative and computes
-  `best_index` on each run; the JS port only re-applies the same rule (verified: default
-  "best" agrees with the run's `best_index`). This resolves the common confusion that PySR's
+  `best_index` on each run from the `model_selection` the GUI sends; the JS port only
+  re-applies the same rule when the dropdown moves afterwards (verified: for a given mode the
+  port agrees with the run's `best_index`). The GUI's *default* is `score`, not PySR's
+  `best` — the single presentation divergence the web GUI's parity exemption covers,
+  documented in `web/README.md`; the copied Python/R snippets emit `model_selection` whenever
+  it differs from the R/Python default, so a pasted snippet recommends the equation the screen
+  shows. This resolves the common confusion that PySR's
   default "best" (highest score *within 1.5× of the lowest loss*) can, in a near-recovery
   regime, highlight a bloated near-zero-loss equation rather than the clean high-score one —
   switching to "score" now needs one click, not a re-run.

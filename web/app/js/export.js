@@ -47,6 +47,13 @@ function optInLines(cfg, fmtArg) {
   }
   if (cfg.linear_scaling) out.push(fmtArg("linear_scaling", true));
   if (cfg.eval_cache && !cfg.batching) out.push(fmtArg("eval_cache", true));
+  // The web GUI defaults model_selection to "score" (the parsimony elbow) while the R and
+  // Python packages keep PySR's "best" — the GUI's one sanctioned divergence (CLAUDE.md). It
+  // selects a member of the finished front, so omitting it still reproduces the SEARCH, but the
+  // snippet would then recommend a different equation than the one on screen. The quoted form
+  // is identical in both languages. Emitted only when it differs from the packages' default.
+  if (cfg.model_selection && cfg.model_selection !== "best")
+    out.push(fmtArg("model_selection", q(cfg.model_selection)));
   return out;
 }
 

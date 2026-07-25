@@ -237,6 +237,14 @@ export function destroyPlots() {
     paretoChart.destroy();
     paretoChart = null;
   }
+  destroyPrediction();
+}
+
+// Drop the prediction chart alone (the Pareto chart stays). Callers that only want to blank
+// the canvas must still come through here: Chart.js keeps its own copy of the data and is
+// `responsive`, so a chart merely cleared with clearRect() repaints itself — with the stale
+// series — on the next container resize.
+export function destroyPrediction() {
   if (predChart) {
     predChart.destroy();
     predChart = null;

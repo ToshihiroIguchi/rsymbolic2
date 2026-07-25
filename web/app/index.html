@@ -36,6 +36,10 @@
       <div class="header-actions">
         <button id="run-btn" class="btn primary" disabled title="Ctrl+Enter">&#9654; Run</button>
         <span id="status" class="status"></span>
+        <!-- Announcement channel for the status chip. The chip itself cannot be a live region:
+             the run timer rewrites it every 200 ms. main.js writes here only for the discrete
+             messages (errors, data loaded, run finished, stopped). -->
+        <span id="status-live" class="visually-hidden" role="status" aria-live="polite"></span>
         <button id="theme-toggle" class="btn small theme-toggle" type="button"
                 aria-label="Toggle dark mode" title="Toggle dark mode">&#127769;</button>
       </div>
@@ -130,7 +134,7 @@
             </div>
           </details>
 
-          <!-- The 17 numeric settings live in a modal, not a disclosure. Expanded inline they
+          <!-- The numeric settings live in a modal, not a disclosure. Expanded inline they
                are 544px of a ~700px rail — the block starts below the fold on a 768px-tall
                screen — and a 163px field leaves no room to print what a constant means or
                what PySR's default for it is. The rail keeps the one line users actually read

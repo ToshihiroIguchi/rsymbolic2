@@ -9,7 +9,7 @@ import {
   parseTable, numericColumns, toMatrix, maxRowsForBrowser, sampleTable, strideIndices,
 } from "./data.js";
 import { EXAMPLES } from "./examples.js";
-import { drawPareto, drawPrediction, destroyPlots } from "./plots.js";
+import { drawPareto, drawPrediction, destroyPlots, destroyPrediction } from "./plots.js";
 import { renderInto } from "./latex.js";
 import { predict } from "./predict.js";
 import {
@@ -99,11 +99,19 @@ const DEFAULTS = {
   batch_size: { value: 50, int: true, note: "Rows drawn per iteration when batching is on." },
 };
 
+// The dialog's non-numeric fields, kept beside DEFAULTS for the same reason: the settings
+// snapshot (Cancel/Esc restore) and "Reset to PySR defaults" must see every field the dialog
+// owns. Batching is off in PySR too, so the default here is still the parity value.
+// Deliberately excludes the sidebar's high-accuracy opt-ins (linear_scaling, eval_cache):
+// they live outside this dialog, and a button inside it must not rewrite state the user
+// cannot see from where they clicked.
+const CHECKBOX_DEFAULTS = { batching: false };
+
 const state = {
   sourceTable: null, // { columns, rows } exactly as parsed
   table: null, // the table actually fitted — sourceTable, or a sample of it
   rowLimit: 0, // rows the engine can hold for this shape (data.js maxRowsForBrowser)
-  policyPopulations: 0, // the n_populations the current rowLimit/sample was derived from
+  policyShape: "", // the "fitted width|populations" the current rowLimit/sample was derived from
   numeric: [], // bool[] per column
   targetIndex: -1,
   featureIndices: [],
@@ -312,12 +320,16 @@ function loadTable(table) {
   }
   clearResults();
   state.sourceTable = table;
-  applyRowPolicy(true);
+  state.table = table; // provisional; applyRowPolicy() below may replace it with a sample
   // Classify columns on the FULL table: a column holding text in a row that sampling happens
   // to drop is still not a numeric column, and this way the target/feature lists do not
   // reshuffle when the sample size changes.
   state.numeric = numericColumns(state.sourceTable);
+  // The feature list must exist before the row policy runs: the ceiling is computed from the
+  // fitted width, which is read off the ticked feature boxes (fittedWidth()). Both work on the
+  // same column set, so the provisional table above is enough to build the lists from.
   buildTargetAndFeatures();
+  applyRowPolicy(true);
   // Progressive disclosure: the target/feature controls stay hidden until there is data to
   // model, and loading data collapses the intake block (drop zone + example picker) — the
   // "change" button re-opens it.
@@ -393,13 +405,13 @@ function applyRowPolicy(fresh) {
   const src = state.sourceTable;
   const n = src.rows.length;
   // The ceiling moves with the island count (per-island O(rows) optimiser scratch), so read
-  // the live setting rather than the shipped default: raising Populations lowers it.
-  state.rowLimit = maxRowsForBrowser(src.columns.length, configuredPopulations());
+  // the live setting rather than the shipped default: raising Populations lowers it. The width
+  // is the FITTED width, not the file's, for the same reason — see fittedWidth().
+  state.rowLimit = maxRowsForBrowser(fittedWidth(), configuredPopulations());
   const over = n > state.rowLimit;
 
   const box = $("sample-rows");
   const sizeInput = $("sample-size");
-  $("sample-control").hidden = n <= ROW_WARN_THRESHOLD;
   sizeInput.max = String(state.rowLimit);
   if (fresh) {
     box.checked = over;
@@ -407,6 +419,13 @@ function applyRowPolicy(fresh) {
   }
   box.disabled = over;
   if (over) box.checked = true;
+  // Decided after the checkbox settles, because its final state is part of the condition:
+  // visible whenever the row count is worth acting on, and ALWAYS while sampling is in effect
+  // or forced. The notice tells the user to adjust the count, and a table being fitted on a
+  // sample must keep the control that undoes it. (A small ceiling — many columns, or a raised
+  // population count — can force sampling below the warning threshold, which used to hide the
+  // control the notice pointed at; releasing the lock later must not hide it either.)
+  $("sample-control").hidden = !over && !box.checked && n <= ROW_WARN_THRESHOLD;
 
   let k = parseInt(sizeInput.value, 10);
   if (!Number.isFinite(k) || k < 1) k = Math.min(DEFAULT_SAMPLE_ROWS, state.rowLimit);
@@ -414,31 +433,59 @@ function applyRowPolicy(fresh) {
   sizeInput.value = String(k);
 
   state.table = box.checked ? sampleTable(src, k, SAMPLE_SEED) : src;
-  state.policyPopulations = configuredPopulations();
+  state.policyShape = policyShape();
   renderDataSummary();
   renderDataNotice(over);
 }
 
-// Populations moves the row ceiling, and it can change through paths that fire no `change`
-// event — the settings dialog restores every field by assignment on Cancel/Esc. Comparing
-// against the value the current policy was computed from covers all of them, and skips the
-// needless result-clearing when a field was retyped to the same number.
-function syncRowPolicyIfPopulationsChanged() {
-  if (state.sourceTable && configuredPopulations() !== state.policyPopulations) {
-    reapplyRowPolicy();
-  }
+// The width the engine actually holds: the ticked feature columns plus the target, NOT the
+// file's column count. The difference is not cosmetic — the heap term is 24 bytes per value
+// per row, so modelling 2 columns of a 50-column file triples the row ceiling. Judging by the
+// file's width used to force-sample (and lock the checkbox on) tables that fit comfortably.
+// Falls back to the file's width before the feature list exists.
+function fittedWidth() {
+  const picked = document.querySelectorAll('input[data-feature="1"]:checked').length;
+  if (picked > 0) return picked + 1;
+  return state.sourceTable ? state.sourceTable.columns.length : 1;
 }
 
-// A change to the sampling controls (or to Populations) changes which rows are fitted, so
-// it invalidates a displayed result and a search in flight exactly like loading a new file.
+// Everything the row ceiling depends on, as one comparable value.
+function policyShape() {
+  return `${fittedWidth()}|${configuredPopulations()}`;
+}
+
+// Which rows are fitted, as one comparable value: the sample size when sampling is on, -1 for
+// the whole table. Equal before and after a policy pass means the fitted row set did not move,
+// so a displayed result and a search in flight are still about the same data.
+function fittedSignature() {
+  if (!$("sample-rows").checked) return -1;
+  const k = parseInt($("sample-size").value, 10);
+  return Number.isFinite(k) ? k : -1;
+}
+
+// The ceiling moves with Populations and with the feature selection, and both can change
+// through paths that fire no `change` event on them — the settings dialog restores every field
+// by assignment on Cancel/Esc, and the feature list is rebuilt wholesale when the target
+// changes. Comparing against the shape the current policy was computed from covers all of them.
+function syncRowPolicyIfShapeChanged() {
+  if (state.sourceTable && policyShape() !== state.policyShape) reapplyRowPolicy();
+}
+
+// Re-derive the fitted table after a control that can move it changed. Only a change to the
+// ROWS invalidates what is on screen: re-sampling makes a displayed result an answer about
+// data that is no longer loaded, and makes a search in flight one whose result could not be
+// rendered honestly. Merely recomputing the ceiling (ticking a feature, retyping Populations)
+// leaves the fitted rows alone and must not throw away a result or kill a running search.
 function reapplyRowPolicy() {
+  const before = fittedSignature();
+  applyRowPolicy(false);
+  if (fittedSignature() === before) return;
   if (document.body.classList.contains("running")) {
     if (state.worker) { state.worker.terminate(); state.worker = null; }
     finishRun();
     setStatus("stopped — the data changed");
   }
   clearResults();
-  applyRowPolicy(false);
 }
 
 function syncBatchingDependants() {
@@ -466,7 +513,7 @@ function renderDataNotice(over) {
     el.classList.add("acted");
     el.textContent =
       `${fmtInt(n)} rows exceed what the in-browser engine can hold — about ` +
-      `${fmtInt(state.rowLimit)} rows for ${state.sourceTable.columns.length} columns at ` +
+      `${fmtInt(state.rowLimit)} rows for the ${fittedWidth()} columns being fitted at ` +
       `${configuredPopulations()} populations (fixed 128 MB heap). Fitting a ` +
       `${fmtInt(fitted)}-row sample instead; adjust the count below, or use the R or ` +
       `Python package for the full table.`;
@@ -638,9 +685,25 @@ function updateSettingsSummary() {
     (settingsModified() ? " · modified" : "");
   markModifiedFields();
 }
-function resetDefaults() {
-  Object.keys(DEFAULTS).forEach((id) => { $(id).value = String(DEFAULTS[id].value); });
+// Every field the dialog owns, read and written as one unit, so the snapshot/restore and the
+// reset button can never cover a subset of them (Batching used to survive both).
+function readSettingsFields() {
+  const s = {};
+  Object.keys(DEFAULTS).forEach((id) => { s[id] = $(id).value; });
+  Object.keys(CHECKBOX_DEFAULTS).forEach((id) => { s[id] = $(id).checked; });
+  return s;
+}
+function writeSettingsFields(s) {
+  Object.keys(DEFAULTS).forEach((id) => { if (id in s) $(id).value = s[id]; });
+  Object.keys(CHECKBOX_DEFAULTS).forEach((id) => { if (id in s) $(id).checked = s[id]; });
+  syncBatchingDependants(); // a restored/reset checkbox re-enables what it disabled
   updateSettingsSummary();
+}
+function resetDefaults() {
+  const d = {};
+  Object.keys(DEFAULTS).forEach((id) => { d[id] = String(DEFAULTS[id].value); });
+  Object.keys(CHECKBOX_DEFAULTS).forEach((id) => { d[id] = CHECKBOX_DEFAULTS[id]; });
+  writeSettingsFields(d);
 }
 
 // Print each field's shipped default and what it does, straight from DEFAULTS, so the dialog
@@ -656,24 +719,20 @@ function annotateSettingsFields() {
   });
 }
 
-// Editing is transactional: values are snapshotted on open so every dismissal path restores
-// them, and only Apply keeps them. Without this a mistyped constant could only be undone by
-// resetting all 17 fields.
+// Editing is transactional: every field the dialog owns is snapshotted on open so all four
+// dismissal paths (Cancel, ×, Esc, backdrop) restore them, and only Apply keeps them. Without
+// this a mistyped constant could only be undone by resetting the whole panel.
 function openSettings() {
-  const snapshot = {};
-  Object.keys(DEFAULTS).forEach((id) => { snapshot[id] = $(id).value; });
-  state.settingsSnapshot = snapshot;
+  state.settingsSnapshot = readSettingsFields();
   updateSettingsSummary();
   $("settings-dialog").showModal();
 }
 function closeSettings(keep) {
   const snapshot = state.settingsSnapshot;
-  if (!keep && snapshot) {
-    Object.keys(snapshot).forEach((id) => { $(id).value = snapshot[id]; });
-  }
+  if (!keep && snapshot) writeSettingsFields(snapshot);
   state.settingsSnapshot = null;
   updateSettingsSummary();
-  syncRowPolicyIfPopulationsChanged(); // Apply and every dismissal path can land on a new value
+  syncRowPolicyIfShapeChanged(); // Apply and every dismissal path can land on a new value
   $("settings-dialog").close();
 }
 
@@ -769,7 +828,18 @@ function stop() {
     state.worker = null;
   }
   finishRun();
-  setStatus("stopped");
+  restoreResultCharts();
+  setStatus(state.result ? "stopped — showing the previous result" : "stopped");
+}
+
+// An aborted run leaves the Pareto canvas holding its live front (onProgress draws one per
+// epoch), while the table, the hero equation and the metrics still describe the last COMPLETED
+// run. Once the dimming and the "live" badge come off, that partial front reads as this panel's
+// final answer. So both abort paths put the completed run's chart back — or clear the canvas
+// when there is no completed run to fall back to.
+function restoreResultCharts() {
+  if (state.result) drawParetoChart();
+  else destroyPlots();
 }
 
 function onResult(result, elapsed) {
@@ -779,10 +849,23 @@ function onResult(result, elapsed) {
   // "0.57s | generations: 2800". Use config.generations (what the Settings summary shows), not
   // the engine's epoch count — those are different units, and showing the epoch count here
   // would contradict the "2800 generations" line in the sidebar.
+  // A run can also end before its budget — target_loss, the timeout and max_evals all stop the
+  // loop early — and reporting the configured budget for one of those is simply false (the
+  // bundled quadratic example hits target_loss in well under a second). The epoch counter from
+  // the progress snapshots is what actually ran, so say that instead when the two disagree.
   const gens = state.config ? state.config.generations : null;
-  setStatus(gens != null
-    ? `${elapsed.toFixed(2)}s | generations: ${fmtInt(gens)}`
-    : `done in ${elapsed.toFixed(2)} s`);
+  const early = state.totalEpochs > 0 && state.epoch < state.totalEpochs;
+  const el = $("status");
+  if (early) {
+    setStatus(`${elapsed.toFixed(2)}s | stopped early: epoch ${state.epoch}/${state.totalEpochs}`);
+    el.title = `Ended before the configured budget of ${fmtInt(gens)} generations ` +
+               "(target loss, timeout or max evals).";
+  } else {
+    setStatus(gens != null
+      ? `${elapsed.toFixed(2)}s | generations: ${fmtInt(gens)}`
+      : `done in ${elapsed.toFixed(2)} s`);
+    el.title = "Configured search budget.";
+  }
   renderResult();
 }
 
@@ -791,6 +874,7 @@ function onError(message) {
   // the next run replaces it. Drop it now; run() creates a fresh worker anyway.
   if (state.worker) { state.worker.terminate(); state.worker = null; }
   finishRun();
+  restoreResultCharts(); // same stale-live-front hazard as stop()
   setStatus("error: " + message);
 }
 
@@ -852,7 +936,7 @@ function startTimer() {
     if (state.totalEpochs > 0) line += ` | epoch ${state.epoch}/${state.totalEpochs}`;
     const eta = estimateRemaining();
     if (eta != null) line += ` · ≤ ${formatDuration(eta)} left`;
-    setStatus(line);
+    setStatus(line, false); // ticking text: never announced (see setStatus)
   }, 200);
 }
 function stopTimer() {
@@ -923,6 +1007,10 @@ function renderResult() {
 // Re-pick the recommended equation for the current model_selection, in place (no re-run).
 function applyModelSelection() {
   if (!state.result) return;
+  // Keep the snapshotted config in step: it is what the Python/R snippets are generated from,
+  // and model_selection is the one setting the user can still change after the run. It picks a
+  // member of an existing front, so nothing about the search is invalidated by moving it.
+  if (state.config) state.config.model_selection = $("model_selection").value;
   const front = state.result.pareto_front;
   state.result.best_index = selectBestIndex(front, $("model_selection").value);
   document.querySelectorAll("#pareto-table tbody tr").forEach((tr) => {
@@ -1013,7 +1101,9 @@ function selectEquation(i) {
       yLabel: state.targetName,
     });
   } catch (e) {
-    destroyPlotsPred();
+    // The expression could not be evaluated on these inputs; drop the chart rather than leave
+    // the previous equation's fit under this one's heading.
+    destroyPrediction();
   }
 }
 
@@ -1022,13 +1112,6 @@ function renderEvalAccounting(res) {
   $("eval-accounting").textContent =
     `evaluations: ${fmtInt(res.n_evals)} (forward ${fmtInt(c.forward)}, LM residual ${fmtInt(c.lm_resid)})` +
     (c.cache_hits ? `, cache hits ${fmtInt(c.cache_hits)}` : "");
-}
-
-function destroyPlotsPred() {
-  // Only the prediction chart needs clearing on eval failure; keep the Pareto chart.
-  const c = $("pred-canvas");
-  const ctx = c.getContext("2d");
-  ctx.clearRect(0, 0, c.width, c.height);
 }
 
 // --- Export wiring ----------------------------------------------------------------
@@ -1099,10 +1182,20 @@ function initSplitters() {
 }
 
 // --- Helpers ----------------------------------------------------------------------
-function setStatus(s) { $("status").textContent = s; }
+// The visible status chip, plus a screen-reader announcement for the DISCRETE messages only.
+// The run timer rewrites the chip five times a second (startTimer), which as a live region
+// would be unusable, so it opts out; everything a user needs to hear — errors, "data loaded",
+// the finished run, a stop — announces by default.
+function setStatus(s, announce = true) {
+  $("status").textContent = s;
+  if (announce) $("status-live").textContent = s;
+}
 function metric(k, v) { return `<span class="k">${k}</span><span>${v}</span>`; }
+// Escapes for BOTH text and attribute contexts (renderTable puts expressions in a title=""),
+// so the quote characters are part of the set even though today's callers cannot produce them.
 function esc(s) {
-  return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  return String(s).replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
 // --- Event wiring -----------------------------------------------------------------
@@ -1128,8 +1221,12 @@ function init() {
   });
   $("target-select").addEventListener("change", (e) => {
     state.targetIndex = parseInt(e.target.value, 10);
-    renderFeatureList();
+    renderFeatureList(); // rebuilt with every feature ticked, so the fitted width can move
+    syncRowPolicyIfShapeChanged();
   });
+  // Delegated: the feature checkboxes are rebuilt on every target change. Ticking one changes
+  // the fitted width, hence the row ceiling — see fittedWidth().
+  $("feature-list").addEventListener("change", syncRowPolicyIfShapeChanged);
   $("logloss").addEventListener("change", () => { if (state.result) drawParetoChart(); });
   $("model_selection").addEventListener("change", applyModelSelection);
 
@@ -1197,7 +1294,7 @@ function init() {
   syncBatchingDependants();
   // An edit to Populations can turn a table that fitted into one that does not; re-evaluate
   // the policy instead of waiting for Run to refuse.
-  $("n_populations").addEventListener("change", syncRowPolicyIfPopulationsChanged);
+  $("n_populations").addEventListener("change", syncRowPolicyIfShapeChanged);
   $("reset-defaults").addEventListener("click", resetDefaults);
   annotateSettingsFields();
   updateSettingsSummary();
