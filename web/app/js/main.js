@@ -115,18 +115,28 @@ const MACRO_PRESETS = [
     hint: "Gaussian bump. The width and centre come from what you feed it: exp(-square((x0 - c1) / c2))." },
   { group: "Peaks", name: "lorentz", body: "1 / (1 + square(x))", extra: 5,
     hint: "Lorentzian / Cauchy peak — a resonance lineshape. Both 1s are fitted, giving amplitude and width." },
+  { group: "Peaks", name: "semicircle", body: "sqrt(1 - square(x))", extra: 4,
+    hint: "Semicircular dome: circular and spherical cross-sections, the field of a charged disc, Wigner's semicircle. sqrt is guarded, so it reads 0 outside the fitted radius rather than failing." },
+  { group: "Peaks", name: "lognormal", body: "exp(-square(log(x)))", extra: 4,
+    hint: "Log-normal peak, skewed on a linear axis: particle, droplet and grain size distributions. Needs x > 0." },
   { group: "S-curves", name: "sigmoid", body: "1 / (1 + exp(-x))", extra: 6,
     hint: "Logistic S-curve. Both 1s are fitted, so this is the general logistic, not only the 0-to-1 one." },
   { group: "S-curves", name: "softplus", body: "log(1 + exp(x))", extra: 4,
     hint: "Smooth hinge: ~0 for negative x, ~x for positive x." },
   { group: "S-curves", name: "log1p", body: "log(1 + x)", extra: 3,
     hint: "Diminishing returns that stays finite at x = 0, unlike log(x)." },
+  { group: "S-curves", name: "saturate", body: "1 / (1 + 1 / x)", extra: 6,
+    hint: "Rise to a plateau: Langmuir adsorption, Michaelis-Menten kinetics, saturation magnetisation. This is x / (1 + x), rewritten because that form would use x twice; both 1s are fitted, giving the plateau and the half-way point." },
   { group: "Growth / decay", name: "decay", body: "exp(-1.0 * x)", extra: 3,
     hint: "Exponential decay with a fitted rate, seeded at -1. The rate may fit positive, giving growth." },
   { group: "Growth / decay", name: "arrhenius", body: "exp(-1.0 / x)", extra: 3,
     hint: "Rate law exp(-Ea / kT): activated processes, solubility, viscosity. The barrier is fitted." },
   { group: "Growth / decay", name: "planck", body: "1 / (exp(x) - 1)", extra: 5,
     hint: "Bose-Einstein occupation, the denominator of Planck's law. The fitted -1 also reaches Fermi-Dirac (+1)." },
+  { group: "Growth / decay", name: "stretchexp", body: "exp(-x^2.0)", extra: 4,
+    hint: "Stretched-exponential (Kohlrausch) relaxation: dielectric, structural and luminescence decay. The exponent is fitted from 2, so the family spans the Gaussian (2) and ordinary decay (1)." },
+  { group: "Growth / decay", name: "coth", body: "1 / tanh(x)", extra: 3,
+    hint: "Hyperbolic cotangent: the leading term of the Langevin and Brillouin magnetisation curves and of the Debye heat capacity. Full Langevin coth(x) - 1/x is not expressible, as x may appear only once." },
   { group: "Powers / roots", name: "powlaw", body: "x^2.0", extra: 2,
     hint: "Power law with a fitted exponent, seeded at 2 — not a square. The exponent is free to land on 0.5 or -3." },
   { group: "Powers / roots", name: "rsqrt", body: "1 / sqrt(x)", extra: 3,
@@ -355,7 +365,7 @@ function updateMacroSummary() {
   $("macro-summary").textContent = n ? `— ${n} defined` : "";
 }
 
-// One <optgroup> per shape, so eleven entries stay scannable; the option's tooltip carries the
+// One <optgroup> per shape, so sixteen entries stay scannable; the option's tooltip carries the
 // hint plus the node cost, which is the number that decides whether a macro is worth adding at
 // all (a 2-node motif the search reaches unaided).
 function buildMacroPresets() {

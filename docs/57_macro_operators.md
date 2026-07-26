@@ -150,14 +150,33 @@ The presets exist because the syntax is unguessable, so they are also the only p
 feature explains itself. What qualifies a body is **distance**: a macro's entire benefit is
 reaching a motif in one mutation that the primitive set reaches only in several (§2), so the
 node count it adds over its argument (`macro_extra_nodes`) is the figure of merit. Each
-preset's tooltip prints it. The eleven shipped entries are grouped by the *shape* a user is
-looking for rather than by operator family — Peaks (`gauss` 3, `lorentz` 5), S-curves
-(`sigmoid` 6, `softplus` 4, `log1p` 3), Growth/decay (`decay` 3, `arrhenius` 3, `planck` 5),
-Powers/roots (`powlaw` 2, `rsqrt` 3, `relgamma` 6) — and lean towards motifs from the physical
+preset's tooltip prints it. The sixteen shipped entries are grouped by the *shape* a user is
+looking for rather than by operator family — Peaks (`gauss` 3, `lorentz` 5, `semicircle` 4,
+`lognormal` 4), S-curves (`sigmoid` 6, `softplus` 4, `log1p` 3, `saturate` 6), Growth/decay
+(`decay` 3, `arrhenius` 3, `planck` 5, `stretchexp` 4, `coth` 3), Powers/roots (`powlaw` 2,
+`rsqrt` 3, `relgamma` 6) — and lean towards motifs from the physical
 sciences, since ground-truth recovery on Feynman is the primary benchmark. `relgamma`
 (`1 / sqrt(1 - square(x))`, the relativistic Lorentz factor) is the clearest case for the
 feature: six nodes including a `sqrt` under a subtraction, which a random walk essentially
 never assembles.
+
+The five later additions were chosen the same way, and two of them say something the earlier
+list did not. `saturate` (`1 / (1 + 1/x)`, six nodes: Langmuir, Michaelis–Menten, saturation
+magnetisation) is the strongest argument for shipping presets at all: the motif everyone writes
+as `x / (1 + x)` uses `x` twice and is therefore *rejected*, and the single-occurrence rewrite is
+not something a user guesses under a form field. `coth` (`1 / tanh(x)`) is the opposite lesson —
+it is only the leading term of the Langevin and Brillouin functions, because the full
+`coth(x) - 1/x` cannot be written at all; the preset is offered as the reachable part, under the
+name of what it actually is. `semicircle` (`sqrt(1 - square(x))`) and `lognormal`
+(`exp(-square(log(x)))`) are ordinary distance entries, and `stretchexp` (`exp(-x^c)` seeded at 2,
+Kohlrausch relaxation) is named for the family its fitted exponent spans, per the `cube` lesson
+below.
+
+`invsq = 1 / square(x)` was **considered and left out as genuinely redundant**, which is the
+distinction the `cube` paragraph does not cover: the inverse-square law is `powlaw` with its
+fitted exponent landing on -2, so the preset would add a second button for a template already on
+the list. Redundancy with an existing *preset* disqualifies an entry; distance from the
+*primitive set* is what earns one.
 
 An earlier `cube = x^3` preset was **removed, as a misnamed entry rather than a redundant
 one**: because a numeric literal becomes a tunable constant (§2), the body is `x^c` seeded at
@@ -168,8 +187,8 @@ and width; `planck`'s `-1` can fit `+1` and reach Fermi–Dirac.
 
 Two rules are stated in the disclosure prose rather than left to the engine's error message,
 because they are what a user breaks first: `x` must appear **exactly once** (so `sin(x)/x`, the
-obvious diffraction motif, is simply not expressible as a macro), and literals are fitted, not
-fixed.
+obvious diffraction motif, is simply not expressible as a macro — nor are `coth(x) - 1/x`,
+`sinh`/`cosh`, `atanh` or Yukawa's `exp(-x)/x`), and literals are fitted, not fixed.
 
 `web/wasm/test/parity_test.cjs` §2f asserts every shipped preset is accepted by the engine —
 otherwise a preset is a button that only produces an error message, and nothing in the build
