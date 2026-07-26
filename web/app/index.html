@@ -64,7 +64,8 @@
               <input id="file-input" type="file" accept=".csv,.txt,.tsv" hidden />
             </label>
             <label class="example-picker">or try an example
-              <select id="example-select">
+              <select id="example-select"
+                      title="Load a built-in dataset with a known formula; replaces the data now loaded">
                 <option value="" selected disabled>Choose a dataset…</option>
               </select>
             </label>
@@ -75,7 +76,8 @@
                  Preview button. Disabled (inert) until there is data to preview. -->
             <button id="data-summary" class="link-summary muted small" type="button"
                     disabled title="Show the full data table">No data loaded.</button>
-            <button id="change-data" class="btn small" type="button">change</button>
+            <button id="change-data" class="btn small" type="button"
+                    title="Load different data (reopens the file drop zone and example picker)">change</button>
           </div>
 
           <!-- Large-data feedback. The engine is single-threaded here and its heap is fixed
@@ -86,14 +88,18 @@
                purpose. Sampling is off unless the file cannot fit at all. -->
           <div id="data-notice" class="data-notice" hidden></div>
           <div id="sample-control" class="sample-control" hidden>
-            <label class="check small"><input id="sample-rows" type="checkbox" /> Sample</label>
-            <input id="sample-size" type="number" min="100" step="500" value="5000" />
+            <label class="check small"
+                   title="Fit a random subset of the rows instead of the whole table. The draw is deterministic, so the same file and size give the same sample.">
+              <input id="sample-rows" type="checkbox" /> Sample</label>
+            <input id="sample-size" type="number" min="100" step="500" value="5000"
+                   title="How many rows to fit when Sample is on. Fewer rows run faster and use less memory." />
             <span class="muted small">rows</span>
           </div>
 
           <div class="model-group">
             <div class="group-label">Target</div>
-            <select id="target-select"></select>
+            <select id="target-select"
+                    title="The column the search fits — the y in y = f(x). Every other column can be used as an input."></select>
             <div class="group-label">Features</div>
             <div id="feature-list" class="checkgrid"></div>
           </div>
@@ -127,8 +133,10 @@
             </p>
             <div id="macro-list"></div>
             <div class="row">
-              <button id="add-macro" class="btn small" type="button">+ Add macro</button>
-              <select id="macro-preset">
+              <button id="add-macro" class="btn small" type="button"
+                      title="Add an empty macro row to name and define">+ Add macro</button>
+              <select id="macro-preset"
+                      title="Add a macro already filled in from a ready-made template">
                 <option value="" selected disabled>from preset…</option>
               </select>
             </div>
@@ -144,13 +152,18 @@
           <div class="data-status">
             <button id="settings-summary" class="link-summary muted small" type="button"
                     title="Open search settings"></button>
-            <button id="open-settings" class="btn small" type="button">edit</button>
+            <button id="open-settings" class="btn small" type="button"
+                    title="Open the search settings (budget, seed and the PySR-parity constants)">edit</button>
           </div>
 
           <details class="disclosure">
             <summary>High-accuracy opt-ins (diverge from PySR)</summary>
-            <label class="check"><input id="linear_scaling" type="checkbox" /> Linear scaling (Keijzer 2003)</label>
-            <label class="check"><input id="eval_cache" type="checkbox" /> Duplicate-evaluation cache (speed only)</label>
+            <label class="check"
+                   title="Rescale each candidate to a·f(x)+b before scoring it, so the search judges the SHAPE and need not also discover the scale. Changes the search; off in PySR.">
+              <input id="linear_scaling" type="checkbox" /> Linear scaling (Keijzer 2003)</label>
+            <label class="check"
+                   title="Reuse the stored loss when an identical expression is evaluated again. Same result, less work — the answer and the search path are unchanged.">
+              <input id="eval_cache" type="checkbox" /> Duplicate-evaluation cache (speed only)</label>
             <!-- The engine ignores the cache when batching is on (each iteration resamples
                  its rows, so a stored loss is not reusable); say so rather than leave a
                  checkbox that quietly does nothing. -->
@@ -177,7 +190,8 @@
             <li>Press Run</li>
             <li>Explore the Pareto front and export the equation</li>
           </ol>
-          <button id="placeholder-run-example" class="btn primary">Try an example ▶</button>
+          <button id="placeholder-run-example" class="btn primary"
+                  title="Load a sample dataset and run the search on it right away">Try an example ▶</button>
         </div>
 
         <section class="card hero">
@@ -240,7 +254,9 @@
                     <option value="accuracy">accuracy</option>
                   </select>
                 </label>
-                <label class="check small"><input id="logloss" type="checkbox" checked /> log loss</label>
+                <label class="check small"
+                       title="Plot the loss axis on a log scale. Losses span many orders of magnitude, so the linear view flattens the whole front against zero.">
+                  <input id="logloss" type="checkbox" checked /> log loss</label>
               </div>
             </div>
             <div class="pareto-legend muted small" aria-hidden="true">
@@ -324,7 +340,8 @@
     <dialog id="preview-dialog" class="modal">
       <div class="modal-head">
         <h2>Data preview</h2>
-        <button id="preview-close" class="btn small" type="button" aria-label="Close">&#10005;</button>
+        <button id="preview-close" class="btn small" type="button"
+                aria-label="Close" title="Close">&#10005;</button>
       </div>
       <div class="modal-body">
         <div id="preview-note" class="muted small"></div>
@@ -348,7 +365,8 @@
     <dialog id="settings-dialog" class="modal">
       <div class="modal-head">
         <h2>Search settings</h2>
-        <button id="settings-close" class="btn small" type="button" aria-label="Close">&#10005;</button>
+        <button id="settings-close" class="btn small" type="button"
+                aria-label="Close" title="Close without applying">&#10005;</button>
       </div>
       <div class="modal-body">
         <div class="group-label">Search budget</div>
@@ -387,16 +405,21 @@
           reduce memory — every row still lives in the WASM heap — so it is a cure for slow
           runs, not for the row limit.
         </p>
-        <label class="check"><input id="batching" type="checkbox" /> Batching (default off, as in PySR)</label>
+        <label class="check"
+               title="Score candidates on a fresh random batch of rows each iteration instead of the whole table. Useful on large data; the reported result is always recomputed on all rows.">
+          <input id="batching" type="checkbox" /> Batching (default off, as in PySR)</label>
         <div class="field-grid">
           <label>Batch size<input id="batch_size" type="number" min="1" value="50" /></label>
         </div>
       </div>
       <div class="modal-foot">
-        <button id="reset-defaults" class="btn small" type="button">Reset to PySR defaults</button>
+        <button id="reset-defaults" class="btn small" type="button"
+                title="Put every field back to its shipped PySR-parity default, discarding your edits">Reset to PySR defaults</button>
         <span class="foot-spacer"></span>
-        <button id="settings-cancel" class="btn small" type="button">Cancel</button>
-        <button id="settings-apply" class="btn small primary" type="button">Apply</button>
+        <button id="settings-cancel" class="btn small" type="button"
+                title="Discard the changes made in this panel">Cancel</button>
+        <button id="settings-apply" class="btn small primary" type="button"
+                title="Keep these settings. They take effect on the next run.">Apply</button>
       </div>
     </dialog>
 

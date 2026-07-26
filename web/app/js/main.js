@@ -34,42 +34,47 @@ const BINARY = ["add", "sub", "mul", "div", "pow"];
 const BINARY_DEFAULT = new Set(["add", "sub", "mul"]);
 
 // --- Operator display labels ------------------------------------------------------
-// A pill shows the operator in the form it appears in a result expression, because that is the
-// form the user reads back and writes:
+// Every pill is one token: the operator in ordinary mathematical notation. Nothing on the pill
+// repeats itself, so the row stays scannable and a pill is as wide as the notation needs.
 //
-//   ((x0 * 1.65425) - 0.551418) / (x0 + 3)     binary operators are infix SYMBOLS
-//   exp(neg(sin(x0)))   square(x0)             unary operators are NAMES
+// The engine identifier ("mul", "sqrt") is NOT shown beside it. It is the machine spelling of
+// the same thing, and there is nowhere the user has to type it from memory: an export snippet
+// is generated code they copy, results print the names back (`square(x0)`), and the macro
+// disclosure spells out the one place a name is written by hand, in its own example
+// (`exp(-square(x))`). The identifier lives in each pill's tooltip instead (OP_HINT), which is
+// where it is wanted - when reading a snippet, not when picking operators.
 //
-// So the binary pills carry a glyph alone and never the engine id: "mul" is the machine
-// spelling of "×", and there is nowhere the user types it - a macro body writes `a * b`, and
-// binary_ops=[...] in an export snippet is generated code, not something to reproduce by hand.
-// The unary pills are the mirror image: the id IS the name a macro body calls (`square(x)`),
-// so it is the label, and a gloss is added only where that name misleads (UNARY_GLYPH).
+// sin/cos/tanh/exp keep their word form because that IS the notation for them; sqrt/square/
+// inv/abs/neg/log take the symbolic form, which is both shorter and unambiguous (`log` in
+// particular is the NATURAL log in the core, and many readers take the word for base 10).
 //
 // BINARY_GLYPH must stay character-identical to tree.js's BINARY_LABEL, which maps the same
 // glyphs from the parsed SYMBOL ("*") instead of the engine id ("mul"): showing one operator
 // under two names on one screen is the defect this fixes. Two five-entry tables are cheaper
 // than bridging the two key spaces; change them together.
 const BINARY_GLYPH = { add: "+", sub: "-", mul: "×", div: "÷", pow: "^" };
-// Unary ops whose NAME misleads, and only those - a gloss on sqrt/square/abs/neg would just
-// restate the word beside it. `log` is the natural log in the core (dual.hpp) where many
-// readers take "log" for base 10, and `inv` reads as either "inverse function" or "reciprocal"
-// (it is the latter). Both are misreadings that change what the user believes the fit says, so
-// they are corrected on screen rather than in a tooltip, which touch devices never show.
-const UNARY_GLYPH = { log: "ln", inv: "1/x" };
-// Plain-language meaning, shown as the pill's tooltip. Guard behaviour is stated only where
-// it was read off the core: sqrt clamps a negative argument to 0 and pow is safe_pow
+const UNARY_GLYPH = {
+  log: "ln", sqrt: "√x", square: "x²", inv: "1/x", abs: "|x|", neg: "-x",
+};
+// Pill tooltip: the engine identifier first (this is the only place it appears now, and the
+// form a macro body calls for the unary ops), then the meaning. Guard behaviour is stated only
+// where it was read off the core: sqrt clamps a negative argument to 0 and pow is safe_pow
 // (dual.hpp), while div/inv/log are unguarded (multi_dual.hpp recip, "Unguarded, like
 // operator/"). Absence of a guard clause here means the operator has no guard.
 const OP_HINT = {
-  add: "a + b", sub: "a - b", mul: "a × b",
-  div: "a ÷ b (no divide-by-zero guard)",
-  pow: "a raised to b (safe_pow: a negative base with a fractional exponent gives 0)",
-  neg: "-x", exp: "e to the power x", log: "natural logarithm, base e - not base 10",
-  sin: "sine of x, in radians", cos: "cosine of x, in radians", tanh: "hyperbolic tangent",
-  sqrt: "square root (guarded: a negative argument gives 0)",
-  square: "x × x", inv: "1/x, the reciprocal (no divide-by-zero guard)",
-  abs: "absolute value |x|",
+  add: 'add — a + b', sub: 'sub — a - b', mul: 'mul — a × b',
+  div: 'div — a ÷ b; no divide-by-zero guard',
+  pow: 'pow — a raised to b; safe_pow, so a negative base with a fractional exponent gives 0',
+  neg: 'neg(x) — sign flip, -x',
+  exp: 'exp(x) — e to the power x',
+  log: 'log(x) — natural logarithm, base e (not base 10)',
+  sin: 'sin(x) — sine, in radians',
+  cos: 'cos(x) — cosine, in radians',
+  tanh: 'tanh(x) — hyperbolic tangent',
+  sqrt: 'sqrt(x) — square root; guarded, a negative argument gives 0',
+  square: 'square(x) — x times x',
+  inv: 'inv(x) — reciprocal, 1/x; no divide-by-zero guard',
+  abs: 'abs(x) — absolute value',
 };
 
 // --- Data-size policy (docs/59) ---------------------------------------------------
@@ -216,12 +221,9 @@ function buildOperatorChecks() {
     uwrap.appendChild(group);
   });
 }
-// One operator pill. `primary` is the label; the engine id follows as a dimmer second token
-// only for a UNARY op whose name misleads ("ln log", "1/x inv") -- there the id is the name a
-// macro body calls, so both have to be legible. A binary pill is the glyph alone: its id is
-// the machine spelling of a symbol the user never types. Only the checkbox's `value` reaches
-// the engine, so all of this is presentation.
-function opCheck(kind, op, checked, primary) {
+// One operator pill: the notation as its only visible token, the engine id and the meaning on
+// hover. Only the checkbox's `value` reaches the engine, so all of this is presentation.
+function opCheck(kind, op, checked, label) {
   const l = document.createElement("label");
   l.className = "check";
   if (OP_HINT[op]) l.title = OP_HINT[op];
@@ -231,16 +233,10 @@ function opCheck(kind, op, checked, primary) {
   cb.dataset.kind = kind;
   cb.value = op;
   l.appendChild(cb);
-  const main = document.createElement("span");
-  main.className = "op-primary";
-  main.textContent = primary;
-  l.appendChild(main);
-  if (kind === "un" && primary !== op) {
-    const id = document.createElement("span");
-    id.className = "op-id";
-    id.textContent = op;
-    l.appendChild(id);
-  }
+  const text = document.createElement("span");
+  text.className = "op-primary";
+  text.textContent = label;
+  l.appendChild(text);
   return l;
 }
 function checkedOps(kind) {
@@ -264,10 +260,14 @@ function addMacroRow(name = "", body = "") {
   const nameInput = document.createElement("input");
   nameInput.type = "text";
   nameInput.placeholder = "name";
+  nameInput.title = "What to call this operator. It joins the unary list for the search, but " +
+                    "results always print the expanded primitive form.";
   nameInput.value = name;
   nameInput.dataset.macro = "name";
   const bodyInput = document.createElement("input");
   bodyInput.type = "text";
+  bodyInput.title = 'The template, in terms of x — e.g. exp(-square(x)). Use x exactly once. ' +
+                    'Numbers in it become tunable constants seeded at that value.';
   bodyInput.placeholder = "exp(-square(x))";
   bodyInput.value = body;
   bodyInput.dataset.macro = "body";
@@ -655,6 +655,7 @@ function renderFeatureList() {
     if (j === state.targetIndex) return;
     const l = document.createElement("label");
     l.className = "check";
+    l.title = `Use column "${c}" as an input variable. Unchecked columns are ignored entirely.`;
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.checked = true;
