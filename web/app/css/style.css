@@ -523,8 +523,8 @@ label.modified > .field-hint { color: var(--accent); }
   color: var(--muted); text-align: center; margin: auto; padding: 2.5rem 1.5rem;
   max-width: 34rem;
 }
-.placeholder ol { text-align: left; display: inline-block; margin: 0 0 1rem; padding-left: 1.2rem; }
-/* The call-to-action sits on its own centered line below the steps, not inline after them. */
+.placeholder p { margin: 0 0 1rem; }
+/* The call-to-action sits on its own centered line below the note, not inline after it. */
 .placeholder .btn { display: flex; margin: 0.25rem auto 0; }
 
 /* Visibility: only the placeholder is shown until a run completes, then JS adds .has-result. */

@@ -191,14 +191,14 @@
       <!-- RIGHT: results, a single scrollable column of cards. Hidden result cards until the
            first run finishes (results-area.has-result, see style.css). -->
       <section class="results" id="results-area" aria-label="Results">
+        <!-- The empty state says only what this column is; it does NOT restate the steps
+             ("load data", "press Run"), because the drop zone, the example picker and the
+             Run button are all on screen and already labelled. What is left is the one
+             action nothing else offers: load a dataset AND run it in a single click. -->
         <div class="card placeholder" id="results-placeholder">
-          <ol>
-            <li>Load data or pick an example</li>
-            <li>Press Run</li>
-            <li>Explore the Pareto front and export the equation</li>
-          </ol>
+          <p>Results appear here after a run.</p>
           <button id="placeholder-run-example" class="btn primary"
-                  title="Load a sample dataset and run the search on it right away">Try an example ▶</button>
+                  title="Load the quadratic sample dataset and run the search on it right away">Try an example ▶</button>
         </div>
 
         <section class="card hero">
