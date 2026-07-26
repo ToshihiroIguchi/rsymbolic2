@@ -91,6 +91,13 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
+/* The `hidden` attribute must win over any layout rule in this file. The browser gives it
+   `display: none` from the UA stylesheet, which ANY author rule setting `display` beats
+   regardless of specificity — so `.sample-control { display: flex }` below silently made
+   `$("sample-control").hidden = true` a no-op, and the sampling control stayed on screen for
+   a 40-row table. Anything toggled by .hidden in main.js needs this guarantee, so state it
+   once here rather than per class. */
+[hidden] { display: none !important; }
 /* App shell: a fixed-height column (header + main) so the page itself does not scroll on
    desktop; the body region fills the rest and hosts its own internal scroll panes. Narrow or
    short viewports release this to natural page scroll (see the media queries below). */
@@ -369,8 +376,8 @@ textarea { resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospa
 /* A button carrying a monochrome glyph (SVG stroke=currentColor, so it follows the button text
    colour in both themes). Used where the glyph is the only thing needed because the target is
    adjacent (#copy-expr, beside the string it copies) or where a single control stands alone in
-   its row (#download-tree, #download-csv), so nothing nearby repeats the glyph. .icon-tag adds
-   a short uppercase word where that lone control still needs naming (#download-tree's "SVG").
+   its card head (#download-tree, #download-csv), so nothing nearby repeats the glyph. .icon-tag
+   adds a short uppercase word where that lone control still needs naming ("SVG", "CSV").
    NOT for a set of sibling actions: one glyph repeated across several buttons hides the
    difference between them, which is why the export row below spells its actions out. */
 .icon-btn { gap: 0.3rem; padding: 0.26rem 0.5rem; }
@@ -378,13 +385,12 @@ textarea { resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospa
 .icon-btn .icon-tag { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.02em; }
 
 /* Hero export row. "Copy" is stated once as a leading label so the three copy buttons can
-   spend their width on their object. The download is pushed to the far edge - a different
-   verb, and the gap says so; when the row wraps it takes its own right-aligned line. */
+   spend their width on their object. The row is now copies only — the Pareto CSV download
+   moved to the "All equations" card head — so it needs no separator for a second verb. */
 .export-label {
   font-size: 0.72rem; color: var(--muted);
   text-transform: uppercase; letter-spacing: 0.03em;
 }
-.export-download { margin-left: auto; }
 
 .muted { color: var(--muted); }
 .small { font-size: 0.8rem; }

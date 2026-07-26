@@ -111,17 +111,38 @@
                constants: they are the shared PROBLEM INPUT (CLAUDE.md Benchmarking
                Requirements), and an unchecked box makes whole expressions unreachable no
                matter how long the search runs. The numeric settings below are the opposite —
-               PySR-parity defaults that should rarely be touched — so they stay collapsed. -->
+               PySR-parity defaults that should rarely be touched — so the rail shows only a
+               one-line summary of them and the fields live in a modal. -->
           <div class="subhead">Operator library</div>
           <div class="group-label">Binary</div>
           <div id="binary-ops" class="checkgrid"></div>
           <div class="group-label">Unary</div>
           <div id="unary-ops"></div>
 
+          <!-- The numeric settings live in a modal, not a disclosure. Expanded inline they
+               are 544px of a ~700px rail — the block starts below the fold on a 768px-tall
+               screen — and a 163px field leaves no room to print what a constant means or
+               what PySR's default for it is. The rail keeps the one line users actually read
+               (budget + seed + a "modified" warning); "edit" opens the full panel. Same
+               summary-line-plus-button pattern as the Data card above.
+               It sits ABOVE the two disclosures below, not between them: those are both
+               off-by-default opt-ins opened rarely, while this line is read on every run.
+               Behind an open "Custom operators" (a ~150px block of explanatory prose) the
+               summary moved far down the rail and the budget stopped being glanceable, so the
+               always-read line keeps the stable position and the opt-ins are grouped after
+               it. -->
+          <div class="group-label">Settings</div>
+          <div class="data-status">
+            <button id="settings-summary" class="link-summary muted small" type="button"
+                    title="Open search settings"></button>
+            <button id="open-settings" class="btn small" type="button"
+                    title="Open the search settings (budget, seed and the PySR-parity constants)">edit</button>
+          </div>
+
           <!-- Macro operators (docs/57): one-argument templates over the primitives, so they
-               belong with the operators above (they are an entry in the unary alphabet, i.e.
-               problem input) rather than with the parity constants below. Collapsed because
-               they are off by default and rarely used. -->
+               are an entry in the unary alphabet (problem input), not a parity constant —
+               which is why they stay inside this card rather than moving into the settings
+               modal. Collapsed because they are off by default and rarely used. -->
           <details class="disclosure">
             <summary>Custom operators (macros) <span id="macro-summary" class="muted"></span></summary>
             <p class="muted small">
@@ -141,20 +162,6 @@
               </select>
             </div>
           </details>
-
-          <!-- The numeric settings live in a modal, not a disclosure. Expanded inline they
-               are 544px of a ~700px rail — the block starts below the fold on a 768px-tall
-               screen — and a 163px field leaves no room to print what a constant means or
-               what PySR's default for it is. The rail keeps the one line users actually read
-               (budget + seed + a "modified" warning); "edit" opens the full panel. Same
-               summary-line-plus-button pattern as the Data card above. -->
-          <div class="group-label">Settings</div>
-          <div class="data-status">
-            <button id="settings-summary" class="link-summary muted small" type="button"
-                    title="Open search settings"></button>
-            <button id="open-settings" class="btn small" type="button"
-                    title="Open the search settings (budget, seed and the PySR-parity constants)">edit</button>
-          </div>
 
           <details class="disclosure">
             <summary>High-accuracy opt-ins (diverge from PySR)</summary>
@@ -208,16 +215,17 @@
             </button>
           </div>
           <div id="eq-metrics" class="metrics chips"></div>
-          <!-- Export row. Three of these four actions are copies, so the verb is said once as a
-               leading label and each button spends its width on WHAT it copies. (It used to
-               repeat the same clipboard glyph three times, which left the only discriminating
-               information - a 3-character tag - as the smallest thing in the row, and "Py" did
-               not say whether it copied the equation or the call that reproduces the run.) The
-               CSV button keeps a glyph because it is the one action that is NOT a copy: there
-               the icon earns its place by contrast rather than repetition. aria-label stays
-               because the leading "Copy" is a visual grouping only; each accessible name
-               contains its button's visible text (WCAG 2.5.3). Ids are unchanged, so the
-               wireExport() handlers bind exactly as before. -->
+          <!-- Export row. Every action here copies the ONE equation this card is about, so the
+               verb is said once as a leading label and each button spends its width on WHAT it
+               copies. (It used to repeat the same clipboard glyph three times, which left the
+               only discriminating information - a 3-character tag - as the smallest thing in
+               the row, and "Py" did not say whether it copied the equation or the call that
+               reproduces the run.) The front-wide CSV download used to sit here too, pushed to
+               the far edge by margin-left:auto; it exports every Pareto member, not this
+               equation, so it now lives in the "All equations" card whose contents it actually
+               is. aria-label stays because the leading "Copy" is a visual grouping only; each
+               accessible name contains its button's visible text (WCAG 2.5.3). Ids are
+               unchanged, so the wireExport() handlers bind exactly as before. -->
           <div class="row wrap eq-export">
             <span class="export-label">Copy</span>
             <button id="copy-latex" class="btn small" type="button"
@@ -229,14 +237,6 @@
             <button id="copy-r" class="btn small" type="button"
                     aria-label="Copy R code"
                     title="Copy an R snippet that reproduces this run">R code</button>
-            <button id="download-csv" class="btn small icon-btn export-download" type="button"
-                    aria-label="Download Pareto front (.csv)"
-                    title="Download the whole Pareto front as CSV">
-              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none"
-                   stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M8 2v8" /><path d="M4.5 7.5 8 11l3.5-3.5" /><path d="M3 13h10" />
-              </svg><span>Pareto front (.csv)</span>
-            </button>
           </div>
         </section>
 
@@ -288,8 +288,23 @@
           </section>
         </div>
 
+        <!-- The CSV download belongs to THIS card: paretoCsv() (export.js) writes one row per
+             Pareto member with the same columns the table shows, so the file is this table.
+             Same head-with-a-download pattern as the tree card below. -->
         <section class="card">
-          <h2>All equations</h2>
+          <div class="results-head">
+            <h2>All equations</h2>
+            <div class="results-head-controls">
+              <button id="download-csv" class="btn small icon-btn" type="button"
+                      aria-label="Download all equations as CSV"
+                      title="Download every equation in this table as CSV">
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none"
+                     stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M8 2v8" /><path d="M4.5 7.5 8 11l3.5-3.5" /><path d="M3 13h10" />
+                </svg><span class="icon-tag">CSV</span>
+              </button>
+            </div>
+          </div>
           <div class="table-wrap">
             <table id="pareto-table">
               <thead>
