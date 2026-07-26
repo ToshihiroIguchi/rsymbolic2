@@ -163,6 +163,21 @@ points (no new heavy features, no engine/default change):
   All three ways a run can end — user Stop, a result, or an error — funnel through one shared
   `finishRun()` that restores the idle button state, so the button can never get stuck showing
   "Stop" after the search has actually finished.
+  The "no layout shift" part of that was only true of the button's own label until the header
+  group's order was fixed. `.header-actions` is right-aligned (`margin-left: auto`), so an
+  element's position is set by the widths of the elements *after* it, and the status chip was
+  after the button: measured at a 1912 px viewport, the chip growing from empty to
+  `31.8s | epoch 118/2800 · ≤ 12m 20s left` moved Run **253 px left** (1772 → 1519), and the
+  200 ms timer rewrite kept nudging it for the rest of the run. The moving target was the
+  *Stop* button — the one control whose press is unplanned and urgent. The chip now comes
+  first in the DOM and carries `font-variant-numeric: tabular-nums`, which pins Run's offset
+  from the right edge to the theme toggle's width plus one gap. Re-measured across the same
+  chip strings, an example run and the Run→Stop morph: the right edge is constant and the
+  left edge moves 4 px, entirely from the "▶ Run"/"■ Stop" label difference. This is the
+  header's placement rationale as well — a control that doubles as Stop has to live in the one
+  region that never scrolls (both panes scroll internally; on ≤1100 px the shell releases to
+  page scroll and the header stays sticky), next to the status chip and progress bar that
+  report the run it starts.
 - **8 deterministic example datasets** (`web/app/js/examples.js`) behind a single compact
   `<select>` dropdown, replacing the earlier 2-example wrapping pill-button row so the Data
   card no longer grows with the list: quadratic `y = 2.5x² − 1.3`, damped oscillation

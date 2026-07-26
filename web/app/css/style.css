@@ -134,10 +134,13 @@ body {
 .theme-toggle { background: transparent; color: var(--header-fg); border-color: rgba(255, 255, 255, 0.25); }
 .theme-toggle:hover { background: rgba(255, 255, 255, 0.12); }
 /* Status/timer as a compact chip on the dark header bar (e.g. "0.57s | generations: 2800").
-   Hidden until it has text so an empty pill never shows before the first run. */
+   Hidden until it has text so an empty pill never shows before the first run. Fixed-width
+   digits: the timer rewrites this text every 200 ms, and with proportional figures each
+   rewrite changed the chip's width, so everything before it in the header twitched. */
 .status {
   color: var(--status-fg); font-size: 0.82rem; white-space: nowrap;
   padding: 0.2rem 0.55rem; border-radius: 999px; background: rgba(255, 255, 255, 0.07);
+  font-variant-numeric: tabular-nums;
 }
 .status:empty { display: none; }
 /* Off-screen but still in the accessibility tree — the status chip's announcement channel

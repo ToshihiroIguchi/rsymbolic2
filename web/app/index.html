@@ -36,13 +36,21 @@
              does, since "rsymbolic2" alone does not say it. -->
         <span class="tag">Symbolic Regression</span>
       </div>
+      <!-- Order matters: the status chip comes BEFORE the Run button. This group is right-
+           aligned (margin-left:auto), so an element's position is fixed by the widths of the
+           elements AFTER it. With the chip second, its text growing from "" to
+           "31.8s | epoch 118/2800 · ≤ 12m 20s left" pushed Run 253 px to the left, and the
+           200 ms timer rewrite kept it jittering for the whole run — i.e. the target moved
+           exactly while it was the "Stop" button someone might need to hit in a hurry. Placed
+           after the chip, Run's distance from the right edge is the theme toggle's width plus
+           one gap, whatever the chip says. -->
       <div class="header-actions">
-        <button id="run-btn" class="btn primary" disabled title="Ctrl+Enter">&#9654; Run</button>
         <span id="status" class="status"></span>
         <!-- Announcement channel for the status chip. The chip itself cannot be a live region:
              the run timer rewrites it every 200 ms. main.js writes here only for the discrete
              messages (errors, data loaded, run finished, stopped). -->
         <span id="status-live" class="visually-hidden" role="status" aria-live="polite"></span>
+        <button id="run-btn" class="btn primary" disabled title="Ctrl+Enter">&#9654; Run</button>
         <button id="theme-toggle" class="btn small theme-toggle" type="button"
                 aria-label="Toggle dark mode" title="Toggle dark mode">&#127769;</button>
       </div>
