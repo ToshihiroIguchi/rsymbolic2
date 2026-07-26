@@ -135,6 +135,10 @@ if(RSYMBOLIC2_BUILD_BENCHMARKS)
     # -DCMAKE_CXX_FLAGS=-DRSYMBOLIC2_PROFILE so both the core and this driver see it.
     add_executable(bench_profile benchmarks/bench_profile.cpp)
     target_link_libraries(bench_profile PRIVATE rsymbolic2_core)
+    # peak_rss_mb() uses GetProcessMemoryInfo (docs/60 Phase 2 memory budget).
+    if(WIN32)
+        target_link_libraries(bench_profile PRIVATE psapi)
+    endif()
 
     # SoA point-batched residual evaluator evidence micro-benchmark (docs/30 "SoA
     # point-batched evaluator"). Header-only; links core only for its include path.

@@ -43,6 +43,15 @@ static double process_cpu_seconds() {
     uu.LowPart = u.dwLowDateTime; uu.HighPart = u.dwHighDateTime;
     return (static_cast<double>(ku.QuadPart) + static_cast<double>(uu.QuadPart)) * 1e-7;
 }
+// Peak resident memory, MB. Reported so the eval_cache capacity sweep (docs/60 Phase 2)
+// can be judged against a real memory budget — notably the web GUI's fixed 128 MB WASM
+// heap, which cannot grow (docs/51).
+#  include <psapi.h>
+static double peak_rss_mb() {
+    PROCESS_MEMORY_COUNTERS pmc{};
+    if (!GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))) return 0.0;
+    return static_cast<double>(pmc.PeakWorkingSetSize) / (1024.0 * 1024.0);
+}
 #else
 #  include <sys/resource.h>
 static double process_cpu_seconds() {
@@ -50,6 +59,12 @@ static double process_cpu_seconds() {
     getrusage(RUSAGE_SELF, &r);
     return r.ru_utime.tv_sec + r.ru_utime.tv_usec * 1e-6 +
            r.ru_stime.tv_sec + r.ru_stime.tv_usec * 1e-6;
+}
+static double peak_rss_mb() {
+    rusage r{};
+    getrusage(RUSAGE_SELF, &r);
+    // ru_maxrss is KB on Linux, bytes on macOS; this harness targets Linux/Windows.
+    return static_cast<double>(r.ru_maxrss) / 1024.0;
 }
 #endif
 
@@ -138,6 +153,9 @@ int main(int argc, char* argv[]) {
     const std::string which = argc > 1 ? argv[1] : "spring_pe";
     const double timeout_s   = argc > 2 ? std::atof(argv[2]) : 60.0;
     const std::uint64_t seed = argc > 3 ? std::strtoull(argv[3], nullptr, 10) : 1;
+    // Opt-in duplicate-evaluation cache (docs/49; capacity sweep in docs/60 Phase 2).
+    // Results are bit-identical either way, so this arm switch changes only wall time.
+    const bool use_eval_cache = argc > 4 && std::atoi(argv[4]) != 0;
 
     const FeynmanProblem prob =
         (which == "rel_mass") ? make_rel_mass() : make_spring_pe();
@@ -149,6 +167,7 @@ int main(int argc, char* argv[]) {
     SearchOptions opts = gate_options(static_cast<int>(prob.domains.size()));
     opts.timeout_seconds = timeout_s;
     opts.seed = seed;
+    opts.eval_cache = use_eval_cache;
 
     std::printf("bench_profile  problem=%s  formula=%s\n",
                 prob.name.c_str(), prob.formula.c_str());
@@ -174,5 +193,16 @@ int main(int argc, char* argv[]) {
                 sr.loss, sr.complexity, sr.expression.c_str());
     std::printf("wall=%.2fs  cpu=%.2fs  cpu/wall=%.2f  (healthy ~= OMP_NUM_THREADS)\n",
                 wall, cpu, wall > 0.0 ? cpu / wall : 0.0);
+    const std::uint64_t looked_up = sr.cache_hits + sr.cache_misses;
+    std::printf("eval_cache=%d  hits=%llu misses=%llu  hit_rate=%.4f  peak_rss=%.1fMB\n",
+                use_eval_cache ? 1 : 0,
+                static_cast<unsigned long long>(sr.cache_hits),
+                static_cast<unsigned long long>(sr.cache_misses),
+                looked_up ? static_cast<double>(sr.cache_hits) / looked_up : 0.0,
+                peak_rss_mb());
+    std::printf("n_evals=%llu (forward=%llu lm_resid=%llu)\n",
+                static_cast<unsigned long long>(sr.n_evals),
+                static_cast<unsigned long long>(sr.n_forward_evals),
+                static_cast<unsigned long long>(sr.n_lm_resid_evals));
     return 0;
 }

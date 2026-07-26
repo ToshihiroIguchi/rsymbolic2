@@ -10,6 +10,9 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#ifdef RSYMBOLIC2_INDEP_PROBE
+#include <atomic>  // diagnostic-only counters (docs/60 Phase 3); see probe below
+#endif
 // Use R's error channel when building inside the R package; fall back to
 // stderr for the standalone cmake build (no R headers available there).
 #ifdef __has_include
@@ -53,7 +56,15 @@ constexpr double kInf = std::numeric_limits<double>::infinity();
 // eval_cache.hpp). Power of two (the direct-mapped slot index is key & (slots-1)).
 // 1024 entries x one tree of <= max_nodes nodes bounds the memory to a few hundred KB
 // per island. Purely an implementation constant — never a search setting.
-constexpr std::size_t kEvalCacheSlots = 1024;
+//
+// Overridable at compile time with -DRSYMBOLIC2_EVAL_CACHE_SLOTS=<N> for re-measurement
+// (docs/60 Phase 2 capacity sweep), the same idiom as RSYMBOLIC2_JAC_BLOCK_WIDTH in
+// multi_dual.hpp. The shipped default is unchanged; the value affects only how many
+// duplicate evaluations are memoised, never a returned value (a miss is always safe).
+#ifndef RSYMBOLIC2_EVAL_CACHE_SLOTS
+#define RSYMBOLIC2_EVAL_CACHE_SLOTS 1024
+#endif
+constexpr std::size_t kEvalCacheSlots = RSYMBOLIC2_EVAL_CACHE_SLOTS;
 
 // Deterministic Layer-2 budget for opt-in options.strong_simplify (docs/55), applied
 // per population member in optimize_and_simplify_population. max_millis is neutralised
@@ -306,6 +317,88 @@ struct Island {
 #endif
 };
 
+// ---------------------------------------------------------------------------
+// Data-independence probe — DIAGNOSTIC ONLY (compiled out unless
+// RSYMBOLIC2_INDEP_PROBE is defined). Measures the *ceiling* of the proposed
+// constant-subtree scalarisation (docs/60 Phase 3) before any of it is built: how much
+// of the forward path's node x P work is spent on subtrees that contain no Variable and
+// therefore produce the same double at every point.
+//
+// A node is data-independent iff its whole subtree is (Constant leaves are; Variable
+// leaves are not; an operator is iff all its operands are). Under scalarisation each
+// *maximal* data-independent subtree would be evaluated once, scalar, and broadcast
+// across the tile exactly once — so the removable work is
+//   (indep node visits) - (maximal indep subtrees)   ... x P
+// The subtracted term is the one broadcast per maximal subtree that survives.
+//
+// Counting maximal subtrees without parent pointers: every child of an indep operator
+// is itself indep, so the number of indep nodes that HAVE an indep parent equals the
+// summed arity of the indep operator nodes. Hence
+//   maximal = indep_nodes - sum(arity of indep operator nodes).
+//
+// Transcendental counts are collected alongside because a node x P saving on exp/log/
+// sin/cos/sqrt/tanh/pow is worth far more than one on +-*/; the node-count fraction
+// alone would overstate a saving concentrated in cheap ops (and understate the reverse).
+#ifdef RSYMBOLIC2_INDEP_PROBE
+inline std::atomic<std::uint64_t> g_ip_calls{0};
+inline std::atomic<std::uint64_t> g_ip_nodes{0};       // total node visits
+inline std::atomic<std::uint64_t> g_ip_indep{0};       // data-independent node visits
+inline std::atomic<std::uint64_t> g_ip_maximal{0};     // maximal indep subtrees
+inline std::atomic<std::uint64_t> g_ip_trans{0};       // transcendental node visits
+inline std::atomic<std::uint64_t> g_ip_indep_trans{0}; // ... of which data-independent
+
+inline bool is_transcendental(const Node& n) {
+    if (n.kind == NodeKind::Unary) {
+        switch (n.uop) {
+            case UnaryOp::Exp: case UnaryOp::Log: case UnaryOp::Sin:
+            case UnaryOp::Cos: case UnaryOp::Sqrt: case UnaryOp::Tanh:
+                return true;
+            default: return false;
+        }
+    }
+    return n.kind == NodeKind::Binary && n.bop == BinaryOp::Pow;
+}
+
+// One postfix pass; `flags` is caller-owned scratch to keep the probe allocation-free.
+inline void probe_data_independence(const Tree& tree, std::vector<char>& flags) {
+    flags.clear();
+    std::uint64_t indep = 0, trans = 0, indep_trans = 0, indep_arity = 0;
+    for (const Node& node : tree) {
+        bool node_indep = false;
+        switch (node.kind) {
+            case NodeKind::Constant: node_indep = true;  flags.push_back(1); break;
+            case NodeKind::Variable: node_indep = false; flags.push_back(0); break;
+            case NodeKind::Unary: {
+                const bool a = flags.back() != 0;
+                node_indep = a;
+                if (a) indep_arity += 1;
+                flags.back() = static_cast<char>(node_indep);
+                break;
+            }
+            case NodeKind::Binary: {
+                const bool b = flags.back() != 0; flags.pop_back();
+                const bool a = flags.back() != 0;
+                node_indep = a && b;
+                if (node_indep) indep_arity += 2;
+                flags.back() = static_cast<char>(node_indep);
+                break;
+            }
+        }
+        if (node_indep) ++indep;
+        if (is_transcendental(node)) {
+            ++trans;
+            if (node_indep) ++indep_trans;
+        }
+    }
+    g_ip_calls.fetch_add(1, std::memory_order_relaxed);
+    g_ip_nodes.fetch_add(tree.size(), std::memory_order_relaxed);
+    g_ip_indep.fetch_add(indep, std::memory_order_relaxed);
+    g_ip_maximal.fetch_add(indep - indep_arity, std::memory_order_relaxed);
+    g_ip_trans.fetch_add(trans, std::memory_order_relaxed);
+    g_ip_indep_trans.fetch_add(indep_trans, std::memory_order_relaxed);
+}
+#endif
+
 // SSE with the tree's current constants — no LM, no Jacobian.
 // Used for children that skip the optimizer this step (optimize_probability < 1).
 // Strictly cheaper than fit(): one forward pass over the data vs. many LM iterations.
@@ -319,6 +412,16 @@ struct Island {
 // on Windows/MinGW, so two islands shared one buffer and raced — corrupting the heap.
 double sse_current(const Tree& tree, const Dataset& data,
                    std::vector<double>& pool, std::vector<double*>& stk) {
+#ifdef RSYMBOLIC2_INDEP_PROBE
+    // Diagnostic only (docs/60 Phase 3 ceiling). The local buffer allocates per call,
+    // which perturbs the probe build's timing — irrelevant, since the probe measures
+    // node counts, not time, and this build is never used for a wall-clock arm.
+    {
+        std::vector<char> flags;
+        flags.reserve(tree.size());
+        probe_data_independence(tree, flags);
+    }
+#endif
     const std::vector<double> c = initial_constants(tree);
     const std::size_t m = data.y.size();
     // Per-point weighting (PySR `weights`): the same sqrt(w_i) scaling as the LM residual
@@ -1454,6 +1557,33 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
                      jac_s, jac_s * finv,
                      static_cast<unsigned long long>(jac_c),
                      jac_c ? jac_s / static_cast<double>(jac_c) * 1e6 : 0.0);
+    }
+#endif
+
+#ifdef RSYMBOLIC2_INDEP_PROBE
+    {
+        const double nodes   = static_cast<double>(g_ip_nodes.load());
+        const std::uint64_t indep   = g_ip_indep.load();
+        const std::uint64_t maximal = g_ip_maximal.load();
+        const std::uint64_t saved   = indep >= maximal ? indep - maximal : 0;
+        const double inv = nodes > 0.0 ? 100.0 / nodes : 0.0;
+        rsym_eprintf("\n=== data-independence probe (forward path, docs/60 Phase 3) ===\n");
+        rsym_eprintf("  sse_current calls      %llu\n",
+                     static_cast<unsigned long long>(g_ip_calls.load()));
+        rsym_eprintf("  node visits            %.0f\n", nodes);
+        rsym_eprintf("  data-independent       %llu (%.2f%%)\n",
+                     static_cast<unsigned long long>(indep),
+                     static_cast<double>(indep) * inv);
+        rsym_eprintf("  maximal indep subtrees %llu\n",
+                     static_cast<unsigned long long>(maximal));
+        rsym_eprintf("  REMOVABLE node x P     %llu (%.2f%% of node visits)\n",
+                     static_cast<unsigned long long>(saved),
+                     static_cast<double>(saved) * inv);
+        rsym_eprintf("  transcendental nodes   %llu (%.2f%%), of which indep %llu (%.2f%% of all nodes)\n",
+                     static_cast<unsigned long long>(g_ip_trans.load()),
+                     static_cast<double>(g_ip_trans.load()) * inv,
+                     static_cast<unsigned long long>(g_ip_indep_trans.load()),
+                     static_cast<double>(g_ip_indep_trans.load()) * inv);
     }
 #endif
 
