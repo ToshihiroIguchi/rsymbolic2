@@ -31,7 +31,10 @@
     <header class="app-header">
       <div class="brand">
         <strong>rsymbolic2</strong>
-        <span class="tag">Symbolic Regression · in-browser (WebAssembly)</span>
+        <!-- "in-browser (WebAssembly)" was here: the page IS the browser, and WASM is an
+             implementation detail no user acts on. What the tag has to say is what the tool
+             does, since "rsymbolic2" alone does not say it. -->
+        <span class="tag">Symbolic Regression</span>
       </div>
       <div class="header-actions">
         <button id="run-btn" class="btn primary" disabled title="Ctrl+Enter">&#9654; Run</button>
@@ -144,20 +147,19 @@
                which is why they stay inside this card rather than moving into the settings
                modal. Collapsed because they are off by default and rarely used. -->
           <details class="disclosure">
-            <summary>Custom operators (macros) <span id="macro-summary" class="muted"></span></summary>
-            <!-- The two rules stated first are the ones a user breaks first: `x` twice
-                 (sin(x)/x is the classic attempt) is rejected by the engine at Run, and a
-                 literal silently becoming a fitted constant means a body named for a fixed
-                 coefficient does not have one. Both are engine behaviour, not GUI policy
-                 (docs/57 §2, §5). -->
+            <!-- Only the two rules a user breaks first stay on screen: `x` twice (sin(x)/x is
+                 the classic attempt) is rejected by the engine at Run, and a literal silently
+                 becoming a fitted constant means a body named for a fixed coefficient does not
+                 have one. Both are engine behaviour, not GUI policy (docs/57 §2, §5). The rest
+                 of the paragraph that used to sit here — expansion timing, complexity counting,
+                 primitive-form printing, bodies may use unchecked operators — is true but read
+                 once, so it moved into the summary's tooltip. -->
+            <summary title="One-argument templates expanded into the expression as the search builds it. Complexity counts the expanded nodes and results print the primitive form. A body may use operators that are not checked above. Off by default — with no macros the search is unchanged.">Custom operators (macros) <span id="macro-summary" class="muted"></span></summary>
             <p class="muted small">
-              One-argument templates over <code>x</code>, e.g. <code>exp(-square(x))</code>,
-              expanded into the expression as the search builds it. <code>x</code> must appear
-              <strong>exactly once</strong> (so <code>sin(x)/x</code> is not expressible), and
-              numbers in a body become <strong>tunable constants</strong> seeded at that value —
-              <code>x^3</code> is a fitted power, not a cube. Complexity counts the expanded
-              nodes and results print the primitive form. A body may use operators that are not
-              checked above. Off by default — with no macros the search is unchanged.
+              Templates over <code>x</code>, e.g. <code>exp(-square(x))</code>. <code>x</code>
+              must appear <strong>exactly once</strong> (so <code>sin(x)/x</code> is out), and
+              numbers become <strong>tunable constants</strong> seeded at that value —
+              <code>x^3</code> is a fitted power, not a cube.
             </p>
             <div id="macro-list"></div>
             <div class="row">
@@ -185,10 +187,12 @@
           </details>
         </section>
 
+        <!-- One line, not three: "runs in your browser" is not news on a web page. The single
+             fact worth the rail space is the limit and where to go past it. -->
         <p class="sidebar-note muted small">
-          Runs entirely in your browser — the same C++ engine as the R and Python packages,
-          single-threaded here. For large or long searches, use the
-          <a href="https://github.com/ToshihiroIguchi/rsymbolic2" target="_blank" rel="noopener">R or Python package</a>.
+          Single-threaded here — for large or long searches use the
+          <a href="https://github.com/ToshihiroIguchi/rsymbolic2" target="_blank" rel="noopener">R or Python package</a>,
+          which runs the same C++ engine in parallel.
         </p>
       </aside>
 
@@ -418,14 +422,12 @@
              parity divergence — but it IS a speed/accuracy trade, which is why it lives here
              and not under "High-accuracy opt-ins" in the sidebar. -->
         <div class="group-label">Large data</div>
+        <!-- Trimmed to what the checkbox's own tooltip does not already say (what batching does,
+             and that the result is recomputed on all rows): the measured speedup and the memory
+             caveat. -->
         <p class="muted small">
-          Batching evaluates each iteration on a random <em>batch_size</em> rows instead of
-          the whole table, making a candidate evaluation cost O(batch_size) rather than
-          O(rows). The hall of fame, the early-stop test and the reported result are always
-          recomputed on the full data, so a returned model's loss still means what it says.
-          Measured here: about 18× faster at 10,000 rows and 22× at 100,000. It does not
-          reduce memory — every row still lives in the WASM heap — so it is a cure for slow
-          runs, not for the row limit.
+          About 18× faster at 10,000 rows here and 22× at 100,000, but memory is unchanged —
+          every row still lives in the heap, so this cures slow runs, not the row limit.
         </p>
         <label class="check"
                title="Score candidates on a fresh random batch of rows each iteration instead of the whole table. Useful on large data; the reported result is always recomputed on all rows.">
