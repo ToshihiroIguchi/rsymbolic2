@@ -8,6 +8,8 @@
 #include <array>
 #include <cmath>
 
+#include "rsymbolic/expression/dual.hpp"  // kTwoOverSqrtPi (shared, so erf cannot drift)
+
 namespace rsymbolic {
 
 // Vector-mode (batched) forward-mode automatic differentiation.
@@ -190,6 +192,35 @@ inline MultiDual<N> recip(const MultiDual<N>& a) {
     r.value = rv;
     // dual.hpp: -a.deriv * r * r — same left-associative product, same bits.
     for (int c = 0; c < N; ++c) r.grad[c] = -a.grad[c] * rv * rv;
+    return r;
+}
+
+// erf(x); derivative (2/sqrt(pi)) * exp(-x^2). Unguarded (see dual.hpp::erf).
+template <int N>
+inline MultiDual<N> erf(const MultiDual<N>& a) {
+    const double d = kTwoOverSqrtPi * std::exp(-a.value * a.value);
+    MultiDual<N> r;
+    r.value = std::erf(a.value);
+    for (int c = 0; c < N; ++c) r.grad[c] = a.grad[c] * d;
+    return r;
+}
+
+// sinh/cosh; derivatives cosh/sinh. Unguarded like exp (see dual.hpp).
+template <int N>
+inline MultiDual<N> sinh(const MultiDual<N>& a) {
+    const double d = std::cosh(a.value);
+    MultiDual<N> r;
+    r.value = std::sinh(a.value);
+    for (int c = 0; c < N; ++c) r.grad[c] = a.grad[c] * d;
+    return r;
+}
+
+template <int N>
+inline MultiDual<N> cosh(const MultiDual<N>& a) {
+    const double d = std::sinh(a.value);
+    MultiDual<N> r;
+    r.value = std::cosh(a.value);
+    for (int c = 0; c < N; ++c) r.grad[c] = a.grad[c] * d;
     return r;
 }
 

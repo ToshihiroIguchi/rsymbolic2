@@ -150,10 +150,10 @@ The presets exist because the syntax is unguessable, so they are also the only p
 feature explains itself. What qualifies a body is **distance**: a macro's entire benefit is
 reaching a motif in one mutation that the primitive set reaches only in several (§2), so the
 node count it adds over its argument (`macro_extra_nodes`) is the figure of merit. Each
-preset's tooltip prints it. The sixteen shipped entries are grouped by the *shape* a user is
+preset's tooltip prints it. The seventeen shipped entries are grouped by the *shape* a user is
 looking for rather than by operator family — Peaks (`gauss` 3, `lorentz` 5, `semicircle` 4,
-`lognormal` 4), S-curves (`sigmoid` 6, `softplus` 4, `log1p` 3, `saturate` 6), Growth/decay
-(`decay` 3, `arrhenius` 3, `planck` 5, `stretchexp` 4, `coth` 3), Powers/roots (`powlaw` 2,
+`lognormal` 4), S-curves (`sigmoid` 6, `softplus` 4, `log1p` 3, `saturate` 6, `erfc` 3),
+Growth/decay (`decay` 3, `arrhenius` 3, `planck` 5, `stretchexp` 4, `coth` 3), Powers/roots (`powlaw` 2,
 `rsqrt` 3, `relgamma` 6) — and lean towards motifs from the physical
 sciences, since ground-truth recovery on Feynman is the primary benchmark. `relgamma`
 (`1 / sqrt(1 - square(x))`, the relativistic Lorentz factor) is the clearest case for the
@@ -171,6 +171,13 @@ name of what it actually is. `semicircle` (`sqrt(1 - square(x))`) and `lognormal
 (`exp(-square(log(x)))`) are ordinary distance entries, and `stretchexp` (`exp(-x^c)` seeded at 2,
 Kohlrausch relaxation) is named for the family its fitted exponent spans, per the `cube` lesson
 below.
+
+`erfc = 1 - erf(x)` (three nodes) arrived with the `erf` primitive (`docs/62`) and is the
+clearest illustration of where the boundary between the two layers falls: `erf` itself is not
+an elementary composition, so it had to be a primitive, while its complement uses `x` once and
+is therefore a preset rather than a second operator. Its tooltip carries the one caveat a user
+should know — for a large `x` the subtraction cancels to a few digits, which is irrelevant to
+the shape being fitted but would matter if the value itself were the answer.
 
 `invsq = 1 / square(x)` was **considered and left out as genuinely redundant**, which is the
 distinction the `cube` paragraph does not cover: the inverse-square law is `powlaw` with its

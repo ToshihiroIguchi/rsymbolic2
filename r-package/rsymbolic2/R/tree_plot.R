@@ -12,7 +12,8 @@
 # Unary operators the core prints in call form. `neg`, `square` and `inv` are not R
 # functions (predict.rsymbolic2() supplies them in its evaluation environment); the rest
 # are, but here they are only labels.
-UNARY_OPS <- c("neg", "exp", "log", "sin", "cos", "sqrt", "tanh", "abs", "square", "inv")
+UNARY_OPS <- c("neg", "exp", "log", "sin", "cos", "sqrt", "tanh", "abs", "square", "inv",
+               "erf", "sinh", "cosh")
 
 # Binary glyphs. "/" and "*" are rewritten: "/" reads as part of a fraction that is not
 # there, and "*" is a raised asterisk that sits off-centre inside a node. The web GUI and

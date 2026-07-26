@@ -79,6 +79,11 @@ void test_unary_operators() {
     CHECK_EQ(to_latex({x(0), u(UnaryOp::Cos)}), "\\cos\\left( x_{0} \\right)");
     CHECK_EQ(to_latex({x(0), u(UnaryOp::Tanh)}), "\\tanh\\left( x_{0} \\right)");
     CHECK_EQ(to_latex({x(0), u(UnaryOp::Exp)}), "e^{x_{0}}");
+    CHECK_EQ(to_latex({x(0), u(UnaryOp::Sinh)}), "\\sinh\\left( x_{0} \\right)");
+    CHECK_EQ(to_latex({x(0), u(UnaryOp::Cosh)}), "\\cosh\\left( x_{0} \\right)");
+    // erf has no LaTeX control sequence; \operatorname gives the upright function name.
+    CHECK_EQ(to_latex({x(0), u(UnaryOp::Erf)}),
+             "\\operatorname{erf}\\left( x_{0} \\right)");
 
     // neg parenthesizes addition-level children only; square parenthesizes
     // everything below an atom.

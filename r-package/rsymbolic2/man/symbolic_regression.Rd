@@ -108,13 +108,21 @@ finish sooner than restricting to physical cores, so the default is intentionall
 \item{unary_ops}{Character vector of unary operators to allow.  Recognised
 values: \code{"neg"}, \code{"exp"}, \code{"log"}, \code{"sin"},
 \code{"cos"}, \code{"sqrt"}, \code{"tanh"}, \code{"abs"}, \code{"square"},
-\code{"inv"}.  Default uses the first five; the rest must be added
-explicitly when needed.
+\code{"inv"}, \code{"erf"}, \code{"sinh"}, \code{"cosh"}.  Default uses the
+first five; the rest must be added explicitly when needed.  Every name is one
+\code{SymbolicRegression.jl} also provides, so the identical operator set can
+be handed to PySR in a comparison.
 \code{"square"} computes \eqn{x^2} as a single node (cheaper than
 \code{pow} for the common quadratic case), and \code{"inv"} computes
 \eqn{1/x} as a single node (cheaper than \code{div} with a fitted
 numerator).  \code{"inv"} is unguarded like \code{"div"}: a zero argument
-yields a non-finite value and the candidate is rejected by the loss guard.}
+yields a non-finite value and the candidate is rejected by the loss guard.
+\code{"erf"}, \code{"sinh"} and \code{"cosh"} cover physical-science motifs
+(diffusion and Maxwell-Boltzmann profiles; Butler-Volmer and double-layer
+forms) that the other operators cannot build, because each needs its argument
+twice.  \code{"sinh"}/\code{"cosh"} are unguarded like \code{"exp"}: a large
+argument overflows and the loss guard rejects the candidate.  See
+\code{docs/62}.}
 
 \item{binary_ops}{Character vector of binary operators.  Recognised values:
 \code{"add"}, \code{"sub"}, \code{"mul"}, \code{"div"}, \code{"pow"}.

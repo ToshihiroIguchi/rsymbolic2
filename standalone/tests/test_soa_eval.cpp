@@ -245,6 +245,20 @@ void test_inv() {
     run_case("inv", t, X, {1.4, 0.5}, true);
 }
 
+// erf/sinh/cosh: c0 * erf(x0 * c1) + sinh(x0 * c2) + cosh(c3 - x0). Smooth everywhere,
+// so the finite-difference check applies; inputs stay well inside the double range.
+void test_erf_sinh_cosh() {
+    Tree t = {constant_node(0, 1.1), variable_node(0), constant_node(1, 0.8),
+              binary_node(BinaryOp::Mul), unary_node(UnaryOp::Erf),
+              binary_node(BinaryOp::Mul),
+              variable_node(0), constant_node(2, 0.6), binary_node(BinaryOp::Mul),
+              unary_node(UnaryOp::Sinh), binary_node(BinaryOp::Add),
+              constant_node(3, 0.3), variable_node(0), binary_node(BinaryOp::Sub),
+              unary_node(UnaryOp::Cosh), binary_node(BinaryOp::Add)};
+    std::vector<std::vector<double>> X = {{0.4}, {-1.2}, {2.3}, {0.0}};
+    run_case("erf_sinh_cosh", t, X, {1.1, 0.8, 0.6, 0.3}, true);
+}
+
 // Neg + Div: -(c0 / (x0 + c1))
 void test_neg_div() {
     Tree t = {constant_node(0, 1.4), variable_node(0), constant_node(1, 0.5),
@@ -308,6 +322,7 @@ int main() {
     test_sin_sqrt();
     test_all_unary();
     test_inv();
+    test_erf_sinh_cosh();
     test_neg_div();
     test_pow_standard();
     test_pow_guarded();

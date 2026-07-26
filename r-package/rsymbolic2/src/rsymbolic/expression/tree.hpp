@@ -25,9 +25,12 @@ template <typename T>
 T apply_unary(UnaryOp op, const T& a) {
     using std::abs;
     using std::cos;
+    using std::cosh;
+    using std::erf;
     using std::exp;
     using std::log;
     using std::sin;
+    using std::sinh;
     using std::sqrt;
     using std::tanh;
     switch (op) {
@@ -41,6 +44,9 @@ T apply_unary(UnaryOp op, const T& a) {
         case UnaryOp::Abs:    return abs(a);
         case UnaryOp::Square: return square(a); // rsymbolic::square via ADL
         case UnaryOp::Inv:    return recip(a);  // rsymbolic::recip via ADL (1/x)
+        case UnaryOp::Erf:    return erf(a);    // ADL: rsymbolic:: for Dual, std:: for double
+        case UnaryOp::Sinh:   return sinh(a);
+        case UnaryOp::Cosh:   return cosh(a);
     }
     return a;  // unreachable
 }
@@ -69,6 +75,9 @@ inline const char* unary_name(UnaryOp op) {
         case UnaryOp::Abs:    return "abs";
         case UnaryOp::Square: return "square";
         case UnaryOp::Inv:    return "inv";
+        case UnaryOp::Erf:    return "erf";
+        case UnaryOp::Sinh:   return "sinh";
+        case UnaryOp::Cosh:   return "cosh";
     }
     return "?";
 }

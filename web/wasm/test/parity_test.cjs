@@ -245,6 +245,64 @@ function assert(cond, msg) {
   assert(badPresets.length === 0,
     `all ${presets.length} shipped macro presets are accepted by the engine`);
 
+  // 2g. The browser's own evaluator (web/app/js/predict.js) must agree with the engine on
+  // every operator it re-implements. This matters most for `erf`: R borrows pnorm and Python
+  // borrows math.erf, but JavaScript has no error function at all, so predict.js carries its
+  // own series/continued-fraction implementation (docs/62 §5) — the one place where a
+  // prediction could silently disagree with the search that produced the expression.
+  // The check is end-to-end: fit data generated FROM erf/sinh/cosh, then recompute the
+  // engine's reported loss from the returned expression using predict.js alone.
+  const { predict, parseExpression } = await import(
+    require("url").pathToFileURL(path.join(__dirname, "..", "..", "app", "js", "predict.js")).href);
+
+  // First, directly: erf at points spanning both branches of the implementation (the series
+  // below |x| = 3 and the continued fraction above it), against values printed by C's erf —
+  // the same function the engine calls. 1e-14 relative is far tighter than the few-ulp
+  // agreement claimed, and loose enough not to depend on the last bit of Math.exp.
+  const ERF_REF = [
+    [-2.5, -0.999593047982555], [-0.13, -0.14586711483569575],
+    [0.0, 0.0], [0.5, 0.5204998778130465], [1.0, 0.8427007929497149],
+    [2.9, 0.9999589021219005], [3.0, 0.9999779095030014], [4.0, 0.9999999845827421],
+  ];
+  for (const [x, want] of ERF_REF) {
+    const got = predict(`erf(${x})`, [[0]])[0];
+    assert(Math.abs(got - want) <= 1e-14 * Math.max(1, Math.abs(want)),
+      `predict.js erf(${x}) = ${got}, expected ${want}`);
+  }
+  assert(parseExpression("(sinh(x0) + cosh(x0))") !== null,
+    "predict.js parses the new unary operators");
+
+  const Xs = [];
+  const ys = [];
+  for (let k = 0; k < 40; k++) {
+    const x = -2 + (4 * k) / 39;
+    Xs.push([Math.round(x * 1e6) / 1e6]);
+    // A target shaped by all three operators, so the search space is exercised. The values
+    // come from predict.js itself only to SHAPE the data; the assertion below compares
+    // predict.js against the ENGINE's loss, so this cannot make a broken erf look correct.
+    ys.push(Math.round(
+      (1.7 * predict(`erf(${x})`, [[0]])[0] + 0.4 * Math.sinh(x) + 0.3 * Math.cosh(x)) * 1e6) / 1e6);
+  }
+  const fs2 = flatten(Xs);
+  const rSpecial = Module.run(Object.assign({}, OPTIONS, {
+    X: fs2.flat, y: Float64Array.from(ys), nrow: fs2.nrow, ncol: fs2.ncol,
+    unary_ops: ["erf", "sinh", "cosh"], generations: 300,
+  }));
+  if (rSpecial && rSpecial.error) throw new Error("WASM run error (erf/sinh/cosh): " + rSpecial.error);
+  assert(Number.isFinite(rSpecial.loss), "a run over erf/sinh/cosh completes with a finite loss");
+
+  const yhat = predict(rSpecial.expression, Xs);
+  let sse = 0;
+  for (let i = 0; i < ys.length; i++) sse += (ys[i] - yhat[i]) * (ys[i] - yhat[i]);
+  // The engine's loss is the same SSE over the same rows. Exact equality is NOT available:
+  // to_string prints constants with "%.6g", so re-evaluating the printed expression fits
+  // slightly rounded constants (docs/48 D2) — worth ~1e-5 relative on this loss. A relative
+  // 1e-3 is therefore the honest bar, and it is still orders of magnitude tighter than any
+  // wrong erf would survive; the exactness of erf itself is the reference check above.
+  assert(Math.abs(sse - rSpecial.loss) <= 1e-3 * Math.max(1e-12, Math.abs(rSpecial.loss)),
+    `predict.js reproduces the engine loss for an erf/sinh/cosh expression ` +
+    `(js ${sse}, engine ${rSpecial.loss}): ${rSpecial.expression}`);
+
   // 3. Cross-build equivalence vs Python (best-effort; outcome, not string equality).
   let py = null;
   try {

@@ -65,6 +65,9 @@ inline WildcardDim eval_unary(UnaryOp op, const WildcardDim& a) {
         case UnaryOp::Sin:
         case UnaryOp::Cos:
         case UnaryOp::Tanh:
+        case UnaryOp::Erf:
+        case UnaryOp::Sinh:
+        case UnaryOp::Cosh:
             if (!(a.wildcard || a.dim.dimensionless())) r.violates = true;
             r.dim = Dimension{};  // dimensionless
             r.wildcard = false;   // output of a transcendental is concretely dimensionless

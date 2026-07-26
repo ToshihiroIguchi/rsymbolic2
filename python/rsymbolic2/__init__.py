@@ -20,6 +20,7 @@ Example
 from __future__ import annotations
 
 import ast
+import math
 from typing import Mapping, Optional, Sequence, Union
 
 import numpy as np
@@ -33,7 +34,8 @@ __version__ = "0.1.0"
 # the single source of truth for both jobs it serves: validating the caller's `unary_ops`
 # and recognising the call form the core prints when drawing an equation tree. Defining it
 # twice would let the two drift silently, so both read this one set.
-_UNARY_OPS = {"neg", "exp", "log", "sin", "cos", "sqrt", "tanh", "abs", "square", "inv"}
+_UNARY_OPS = {"neg", "exp", "log", "sin", "cos", "sqrt", "tanh", "abs", "square", "inv",
+              "erf", "sinh", "cosh"}
 _BINARY_OPS = {"add", "sub", "mul", "div", "pow"}
 
 
@@ -670,7 +672,19 @@ def _tree_layout(expr: str, variable_names=None) -> list:
     return nodes
 
 
-# Math namespace used by predict(). neg/square/inv are not Python builtins; the rest map
+# erf is the one operator with no NumPy ufunc (it lives in scipy.special, and scipy is not
+# a dependency of this package). `math.erf` is the C library's, so this matches the core's
+# std::erf to the last bit on the same platform; frompyfunc only supplies the vectorisation
+# NumPy would otherwise give for free. predict() is not a hot path, so the per-element call
+# overhead is irrelevant here.
+_erf_ufunc = np.frompyfunc(math.erf, 1, 1)
+
+
+def _erf(v):
+    return np.asarray(_erf_ufunc(v), dtype=float)
+
+
+# Math namespace used by predict(). neg/square/inv/erf are not Python builtins; the rest map
 # to NumPy ufuncs so evaluation is vectorised over the input columns.
 def _eval_namespace(X: np.ndarray) -> dict:
     ns = {
@@ -689,6 +703,9 @@ def _eval_namespace(X: np.ndarray) -> dict:
         "sqrt": np.sqrt,
         "tanh": np.tanh,
         "abs": np.abs,
+        "erf": _erf,
+        "sinh": np.sinh,
+        "cosh": np.cosh,
     }
     for j in range(X.shape[1]):
         ns[f"x{j}"] = X[:, j]
@@ -788,11 +805,16 @@ def symbolic_regression(
         Tournament size for selection/replacement (PySR ``tournament_selection_n``).
     unary_ops : sequence of str, default ("neg","exp","log","sin","cos")
         Allowed unary operators. Recognised: neg, exp, log, sin, cos, sqrt, tanh,
-        abs, square, inv. (PySR ships no default operator set; this is the shared
-        problem input, given identically to both tools.) ``square`` (x**2) and
-        ``inv`` (1/x) are single-node forms of structures that otherwise cost a
-        ``pow``/``div`` plus a fitted constant; ``inv`` is unguarded like ``div``,
-        so a zero argument yields a non-finite value that the loss guard rejects.
+        abs, square, inv, erf, sinh, cosh. (PySR ships no default operator set; this
+        is the shared problem input, given identically to both tools — every name
+        here exists in SymbolicRegression.jl with the same meaning.) ``square``
+        (x**2) and ``inv`` (1/x) are single-node forms of structures that otherwise
+        cost a ``pow``/``div`` plus a fitted constant; ``inv`` is unguarded like
+        ``div``, so a zero argument yields a non-finite value that the loss guard
+        rejects. ``erf``/``sinh``/``cosh`` are physical-science motifs the primitive
+        set cannot reach (each needs its argument twice, so a macro cannot express
+        it); ``sinh``/``cosh`` are unguarded like ``exp`` and overflow to a
+        non-finite value for a large argument (docs/62).
     binary_ops : sequence of str, default ("add","sub","mul")
         Allowed binary operators. Recognised: add, sub, mul, div, pow.
     max_depth : int, default 30

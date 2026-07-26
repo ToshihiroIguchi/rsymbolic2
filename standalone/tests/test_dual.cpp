@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <initializer_list>
 
 #include "rsymbolic/expression/dual.hpp"
 
@@ -131,6 +132,48 @@ void test_pow_guarded() {
     CHECK(std::isfinite(bad.deriv));
 }
 
+// erf/sinh/cosh: AD vs central finite differences at several points (the standing rule
+// for a newly added operator), plus the odd/even symmetry the display simplifier relies on.
+void test_erf_sinh_cosh() {
+    const double h = 1e-6;
+    for (double x0 : {-2.4, -0.7, 0.0, 0.35, 1.9}) {
+        const double fd_erf =
+            (rsymbolic::erf(Dual(x0 + h)).value - rsymbolic::erf(Dual(x0 - h)).value) / (2 * h);
+        const double fd_sinh =
+            (std::sinh(x0 + h) - std::sinh(x0 - h)) / (2 * h);
+        const double fd_cosh =
+            (std::cosh(x0 + h) - std::cosh(x0 - h)) / (2 * h);
+        CHECK(std::fabs(rsymbolic::erf(Dual(x0, 1.0)).deriv - fd_erf) < 1e-6);
+        CHECK(std::fabs(rsymbolic::sinh(Dual(x0, 1.0)).deriv - fd_sinh) < 1e-6);
+        CHECK(std::fabs(rsymbolic::cosh(Dual(x0, 1.0)).deriv - fd_cosh) < 1e-6);
+    }
+
+    // Values against the library functions, and the known erf landmarks.
+    CHECK(close(rsymbolic::erf(Dual(0.0, 1.0)).value, 0.0));
+    CHECK(close(rsymbolic::erf(Dual(0.0, 1.0)).deriv, 1.1283791670955126));  // 2/sqrt(pi)
+    CHECK(close(rsymbolic::erf(Dual(1.0, 0.0)).value, 0.8427007929497149));
+    CHECK(close(rsymbolic::sinh(Dual(1.5, 0.0)).value, std::sinh(1.5)));
+    CHECK(close(rsymbolic::cosh(Dual(1.5, 0.0)).value, std::cosh(1.5)));
+
+    // cosh(x)^2 - sinh(x)^2 == 1 (a check that is independent of the library values).
+    const double c = rsymbolic::cosh(Dual(0.9, 0.0)).value;
+    const double s = rsymbolic::sinh(Dual(0.9, 0.0)).value;
+    CHECK(close(c * c - s * s, 1.0));
+
+    // Exact odd/even symmetry: the display simplifier folds neg through these
+    // (display_simplify.cpp), which is only sound if libm is exactly antisymmetric.
+    CHECK(rsymbolic::erf(Dual(-0.73)).value == -rsymbolic::erf(Dual(0.73)).value);
+    CHECK(rsymbolic::sinh(Dual(-0.73)).value == -rsymbolic::sinh(Dual(0.73)).value);
+    CHECK(rsymbolic::cosh(Dual(-0.73)).value == rsymbolic::cosh(Dual(0.73)).value);
+
+    // Unguarded like exp: an overflowing argument yields Inf rather than a silent clamp,
+    // and the loss finiteness guard is what rejects such a candidate.
+    CHECK(std::isinf(rsymbolic::cosh(Dual(1000.0, 1.0)).value));
+    // erf saturates instead of overflowing — it is bounded, so no guard is possible.
+    CHECK(close(rsymbolic::erf(Dual(30.0, 1.0)).value, 1.0));
+    CHECK(rsymbolic::erf(Dual(30.0, 1.0)).deriv == 0.0);
+}
+
 }  // namespace
 
 int main() {
@@ -140,6 +183,7 @@ int main() {
     test_partial_wrt_one_variable();
     test_square();
     test_inv();
+    test_erf_sinh_cosh();
     test_pow_std_branch();
     test_pow_guarded();
 

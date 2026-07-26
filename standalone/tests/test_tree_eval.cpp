@@ -151,6 +151,25 @@ void test_inv_value_and_gradient() {
     CHECK(to_string(tree) == "(3 * inv(x0))");
 }
 
+// y = a * erf(x) + sinh(x) + cosh(x): values, AD-vs-finite-difference, rendered string.
+void test_erf_sinh_cosh_value_and_gradient() {
+    const Tree tree = {constant_node(0, 3.0), variable_node(0),
+                       unary_node(UnaryOp::Erf), binary_node(BinaryOp::Mul),
+                       variable_node(0), unary_node(UnaryOp::Sinh),
+                       binary_node(BinaryOp::Add),
+                       variable_node(0), unary_node(UnaryOp::Cosh),
+                       binary_node(BinaryOp::Add)};
+    const std::vector<double> c = {3.0};
+    const std::vector<double> row = {0.5};
+    const double want = 3.0 * std::erf(0.5) + std::sinh(0.5) + std::cosh(0.5);
+    CHECK(close(evaluate<double>(tree, row.data(), c.data()), want, 1e-12));
+
+    const double h = 1e-6;
+    CHECK(close(dual_grad(tree, row, c, 0), finite_diff(tree, row, c, 0, h), 1e-6));
+
+    CHECK(to_string(tree) == "(((3 * erf(x0)) + sinh(x0)) + cosh(x0))");
+}
+
 void test_pow_value_and_gradient() {
     const Tree tree = pow_tree(3.0);
     const std::vector<double> c = {3.0};
@@ -202,6 +221,7 @@ int main() {
     test_count_and_initial_constants();
     test_square_value_and_gradient();
     test_inv_value_and_gradient();
+    test_erf_sinh_cosh_value_and_gradient();
     test_pow_value_and_gradient();
     test_safe_boundaries();
 

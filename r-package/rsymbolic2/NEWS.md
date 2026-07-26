@@ -1,5 +1,17 @@
 # rsymbolic2 0.1.0.9000 (development)
 
+New operators (docs/62):
+
+- `unary_ops` accepts `"erf"`, `"sinh"` and `"cosh"`. All three are **opt-in**: the
+  default operator set is unchanged, so PySR default parity is untouched. They cover
+  physical-science motifs that no combination of the existing operators (or of a macro
+  operator, which may use its argument only once) can build. Each has the same name and
+  meaning in SymbolicRegression.jl, so a comparison can still hand both tools the
+  identical operator set. `sinh`/`cosh` are unguarded like `exp` — a large argument
+  overflows and the loss guard rejects the candidate; `erf` is bounded, so no guard
+  arises. `predict()` gains an `erf` shim (`2 * pnorm(x * sqrt(2)) - 1`), which is why
+  the package now declares `Imports: stats`.
+
 Interface fixes (docs/61). None of these touch the C++ core, so the search itself,
 its defaults, and PySR parity are unchanged:
 

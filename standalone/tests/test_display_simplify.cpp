@@ -346,6 +346,14 @@ void test_unary_rewrites() {
     CHECK_STR(t5, "neg(sin(x0))");
     const Tree t6 = {variable_node(0), unary_node(UnaryOp::Neg), unary_node(UnaryOp::Cos)};
     CHECK_STR(t6, "cos(x0)");
+    // Same two classes for the special-function operators: erf and sinh are odd,
+    // cosh is even (exact in IEEE libm, as test_dual.cpp asserts on the values).
+    const Tree t5b = {variable_node(0), unary_node(UnaryOp::Neg), unary_node(UnaryOp::Erf)};
+    CHECK_STR(t5b, "neg(erf(x0))");
+    const Tree t5c = {variable_node(0), unary_node(UnaryOp::Neg), unary_node(UnaryOp::Sinh)};
+    CHECK_STR(t5c, "neg(sinh(x0))");
+    const Tree t6b = {variable_node(0), unary_node(UnaryOp::Neg), unary_node(UnaryOp::Cosh)};
+    CHECK_STR(t6b, "cosh(x0)");
     // Excluded inverse compositions stay untouched (docs/54): exp(log t), log(exp t).
     const Tree t7 = {variable_node(0), unary_node(UnaryOp::Log), unary_node(UnaryOp::Exp)};
     CHECK_STR(t7, "exp(log(x0))");
@@ -422,7 +430,7 @@ void test_semantics_preserved_random() {
                         BinaryOp::Pow};
     space.unary_ops = {UnaryOp::Neg, UnaryOp::Sin, UnaryOp::Cos, UnaryOp::Exp,
                        UnaryOp::Log, UnaryOp::Sqrt, UnaryOp::Square, UnaryOp::Abs,
-                       UnaryOp::Tanh};
+                       UnaryOp::Tanh, UnaryOp::Erf, UnaryOp::Sinh, UnaryOp::Cosh};
     space.max_depth = 4;
     std::mt19937_64 rng(2024);
 

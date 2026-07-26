@@ -23,10 +23,11 @@ import { fmt, fmtInt } from "./format.js";
 // trajectory for a fixed seed. The checkboxes are grouped only for readability (UNARY_GROUPS);
 // checkedOps("un") re-emits in this canonical order so the visual grouping never changes the
 // search. Keep this array's order stable.
-const UNARY = ["neg", "exp", "log", "sin", "cos", "sqrt", "tanh", "abs", "square", "inv"];
+const UNARY = ["neg", "exp", "log", "sin", "cos", "sqrt", "tanh", "abs", "square", "inv",
+               "erf", "sinh", "cosh"];
 const UNARY_GROUPS = [
-  { label: "Trigonometric", ops: ["sin", "cos", "tanh"] },
-  { label: "Exp / Log", ops: ["exp", "log"] },
+  { label: "Trigonometric", ops: ["sin", "cos", "tanh", "sinh", "cosh"] },
+  { label: "Exp / Log", ops: ["exp", "log", "erf"] },
   { label: "Power / other", ops: ["sqrt", "square", "inv", "abs", "neg"] },
 ];
 const UNARY_DEFAULT = new Set(["neg", "exp", "log", "sin", "cos"]);
@@ -75,6 +76,9 @@ const OP_HINT = {
   square: 'square(x) — x times x',
   inv: 'inv(x) — reciprocal, 1/x; no divide-by-zero guard',
   abs: 'abs(x) — absolute value',
+  erf: 'erf(x) — error function, the integral of a Gaussian: diffusion profiles, Maxwell-Boltzmann fractions, the normal CDF. Bounded between -1 and 1, so no guard is possible or needed',
+  sinh: 'sinh(x) — hyperbolic sine: Butler-Volmer current, catenary. No overflow guard; a large argument gives a non-finite value and the candidate is rejected',
+  cosh: 'cosh(x) — hyperbolic cosine, same overflow behaviour as sinh',
 };
 
 // --- Data-size policy (docs/59) ---------------------------------------------------
@@ -127,6 +131,8 @@ const MACRO_PRESETS = [
     hint: "Diminishing returns that stays finite at x = 0, unlike log(x)." },
   { group: "S-curves", name: "saturate", body: "1 / (1 + 1 / x)", extra: 6,
     hint: "Rise to a plateau: Langmuir adsorption, Michaelis-Menten kinetics, saturation magnetisation. This is x / (1 + x), rewritten because that form would use x twice; both 1s are fitted, giving the plateau and the half-way point." },
+  { group: "S-curves", name: "erfc", body: "1 - erf(x)", extra: 3,
+    hint: "Complementary error function: the concentration profile of one-dimensional diffusion (Fick's second law) and the tail of a Maxwell-Boltzmann distribution. Needs no erf checkbox — declaring the body is what enables it. For a very large x, 1 - erf(x) cancels to a few digits; the shape is what the search uses it for." },
   { group: "Growth / decay", name: "decay", body: "exp(-1.0 * x)", extra: 3,
     hint: "Exponential decay with a fitted rate, seeded at -1. The rate may fit positive, giving growth." },
   { group: "Growth / decay", name: "arrhenius", body: "exp(-1.0 / x)", extra: 3,

@@ -6,6 +6,7 @@ Kept fast (small population/generations) so it runs in a few seconds.
 """
 
 import inspect
+import math
 
 import numpy as np
 import pytest
@@ -79,6 +80,35 @@ def test_reciprocal_recovery_with_inv():
     assert "inv" in res.expression
     pred = res.predict(X, expression=res.expression)
     np.testing.assert_allclose(pred, y, atol=1e-2)
+
+
+def test_erf_recovery_and_predict_round_trip():
+    """erf has no NumPy ufunc, so predict() uses math.erf through frompyfunc. The round
+    trip is what proves that shim reproduces the core's std::erf rather than a lookalike."""
+    X = np.linspace(-2.0, 2.0, 40).reshape(-1, 1)
+    y = np.array([math.erf(v) for v in X[:, 0]])
+    res = symbolic_regression(
+        X, y, unary_ops=["erf"], population_size=200, generations=60, seed=1
+    )
+    assert res.loss < 1e-4
+    assert "erf" in res.expression
+    pred = res.predict(X, expression=res.expression)
+    # Loose on purpose: the expression string prints constants with "%.6g" (docs/48 D2),
+    # so re-evaluating it fits slightly rounded constants. A wrong erf misses by far more.
+    np.testing.assert_allclose(np.sum((y - pred) ** 2), res.loss, rtol=1e-3, atol=1e-10)
+
+
+def test_sinh_cosh_recovery_and_predict_round_trip():
+    X = np.linspace(-2.0, 2.0, 40).reshape(-1, 1)
+    y = np.sinh(X[:, 0])
+    res = symbolic_regression(
+        X, y, unary_ops=["sinh", "cosh"], population_size=200, generations=60, seed=1
+    )
+    assert res.loss < 1e-4
+    pred = res.predict(X, expression=res.expression)
+    # Loose on purpose: the expression string prints constants with "%.6g" (docs/48 D2),
+    # so re-evaluating it fits slightly rounded constants. A wrong erf misses by far more.
+    np.testing.assert_allclose(np.sum((y - pred) ** 2), res.loss, rtol=1e-3, atol=1e-10)
 
 
 def test_macro_ops_default_none_is_inert():

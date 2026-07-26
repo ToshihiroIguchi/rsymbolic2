@@ -453,7 +453,14 @@ fair comparison the same operator set is given to both tools.
 - **Binary:** `add` (`+`), `sub` (`−`), `mul` (`×`), `div` (`÷`), `pow` (`^`).
 - **Unary:** `neg` (`−x`), `exp`, `log`, `sin`, `cos`, `sqrt`, `tanh`, `abs`,
   `square` (`x²` as a single cheap node), `inv` (`1/x`, likewise a single node —
-  cheaper than `div` with a fitted numerator; unguarded like `div`).
+  cheaper than `div` with a fitted numerator; unguarded like `div`), `erf`, `sinh`,
+  `cosh`.
+
+Every name above is one SymbolicRegression.jl also provides, which is what makes handing
+the identical set to both tools possible. `erf`/`sinh`/`cosh` cover physical-science
+motifs — diffusion and Maxwell–Boltzmann profiles, Butler–Volmer and double-layer forms —
+that no combination of the others can build, because each needs its argument twice
+(`docs/62`). They are opt-in like every other non-default operator.
 
 Two operators are **protected** so that an invalid intermediate value cannot poison the
 least-squares solver with `NaN` (matching SymbolicRegression.jl's `safe_*` semantics):

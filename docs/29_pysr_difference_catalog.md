@@ -85,8 +85,9 @@ mechanism entirely. Listed so the gap is explicit, not to adopt speculatively
 13. **`model_selection`** modes `"accuracy"` / `"score"` — rsymbolic2 implements only
     `"best"` (the accuracy/complexity knee).
 14. **Arbitrary user operators** — rsymbolic2 has a fixed operator enum
-    (`neg/exp/log/sin/cos/sqrt/tanh/abs/square/inv`, `add/sub/mul/div/pow`; `inv` added
-    2026-07-23, `docs/56`, off by default like every non-default operator). PySR accepts
+    (`neg/exp/log/sin/cos/sqrt/tanh/abs/square/inv/erf/sinh/cosh`, `add/sub/mul/div/pow`;
+    `inv` added 2026-07-23 (`docs/56`), `erf`/`sinh`/`cosh` 2026-07-26 (`docs/62`), all off
+    by default like every non-default operator). PySR accepts
     arbitrary Julia operators because it has a Julia runtime; rsymbolic2 must not.
     **Partially addressed** (2026-07-23, `docs/57`) by opt-in **macro operators**:
     single-argument templates over the primitive operators (`macro_ops`), expanded into

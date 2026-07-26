@@ -97,6 +97,29 @@ inline Dual recip(const Dual& a) {
     return {r, -a.deriv * r * r};
 }
 
+// 2/sqrt(pi), the factor in d/dx erf(x) = (2/sqrt(pi)) * exp(-x^2). Written as a literal
+// because <cmath> guarantees no pi constant portably; multi_dual.hpp and soa_eval.hpp use
+// THIS one (they include this header) so the three paths stay bit-identical by construction.
+inline constexpr double kTwoOverSqrtPi = 1.1283791670955125739;
+
+// erf(x): the Gauss error function. Unguarded because none is possible or needed — erf is
+// defined, smooth and bounded on all of R (SymbolicRegression.jl's `erf` is equally plain).
+inline Dual erf(const Dual& a) {
+    const double d = kTwoOverSqrtPi * std::exp(-a.value * a.value);
+    return {std::erf(a.value), a.deriv * d};
+}
+
+// sinh/cosh: unguarded like exp — a large argument overflows to +-Inf and the loss
+// finiteness guard rejects the candidate, which is this codebase's convention for an
+// operator whose *real function* is defined everywhere but can leave the double range.
+inline Dual sinh(const Dual& a) {
+    return {std::sinh(a.value), a.deriv * std::cosh(a.value)};
+}
+
+inline Dual cosh(const Dual& a) {
+    return {std::cosh(a.value), a.deriv * std::sinh(a.value)};
+}
+
 // safe_pow for plain doubles: same branch logic as the Dual overload so the value
 // path and the AD path always agree. Named pow() so ADL in apply_binary<double> picks
 // this instead of std::pow, giving both the same guarded semantics.

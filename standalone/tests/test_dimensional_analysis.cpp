@@ -73,6 +73,18 @@ void test_transcendental_requires_dimensionless() {
     CHECK(violates_dimensions(t, units({"m"}), parse_unit("1"), true));
 }
 
+// erf/sinh/cosh are transcendental like sin: a dimensioned argument violates, and the
+// result is concretely dimensionless.
+void test_erf_sinh_cosh_require_dimensionless() {
+    for (UnaryOp op : {UnaryOp::Erf, UnaryOp::Sinh, UnaryOp::Cosh}) {
+        Tree t = {rsymbolic::variable_node(0), rsymbolic::unary_node(op)};
+        CHECK(violates_dimensions(t, units({"m"}), std::nullopt, true));
+        CHECK(!violates_dimensions(t, units({"1"}), parse_unit("1"), true));
+        // dimensionless in, dimensionless out: y in metres is a violation.
+        CHECK(violates_dimensions(t, units({"1"}), parse_unit("m"), true));
+    }
+}
+
 // sqrt(square(x)) == x dimensionally: [x0, square, sqrt].
 void test_sqrt_square_roundtrip() {
     Tree t = {rsymbolic::variable_node(0), rsymbolic::unary_node(UnaryOp::Square),
@@ -154,6 +166,7 @@ int main() {
     test_force_ma_consistent();
     test_force_ma_add_violates();
     test_transcendental_requires_dimensionless();
+    test_erf_sinh_cosh_require_dimensionless();
     test_sqrt_square_roundtrip();
     test_inv_inverts_dimension();
     test_y_units_mismatch();

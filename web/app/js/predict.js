@@ -7,13 +7,50 @@
 // rsymbolic2/__init__.py::_eval_expression). We do the same here with a small, safe
 // recursive-descent parser (no `eval`), matching the grammar emitted by
 // tree.hpp::to_string: variables `x<i>`, `%.6g` constants (incl. inf / nan /
-// scientific), unary `name(arg)` for neg/exp/log/sin/cos/sqrt/tanh/abs/square/inv, and
+// scientific), unary `name(arg)` for
+// neg/exp/log/sin/cos/sqrt/tanh/abs/square/inv/erf/sinh/cosh, and
 // fully-parenthesised binary `(a op b)` with op in + - * / ^.
 //
 // Safe-pow caveat (identical to the Python wrapper): `^` maps to JS `**`, which yields
 // NaN for a negative base with a non-integer exponent — this differs from the
 // training-time safe pow (which returns 0 there). It only matters if the fitted
 // expression raises a negative base to a fractional power on the prediction inputs.
+
+// erf: the one operator with no JavaScript counterpart (R borrows pnorm, Python borrows
+// math.erf, both exact; `Math` has nothing). Computed here to near double precision by the
+// two standard series, chosen so neither is used outside its well-conditioned range:
+//
+//   |x| < 3   erf(x) = (2x/sqrt(pi)) e^{-x^2} * sum_n (2x^2)^n / (1*3*...*(2n+1))
+//             — the confluent form of the Maclaurin series. Every term is positive, so it
+//               has none of the catastrophic cancellation the alternating form suffers.
+//   |x| >= 3  erf(x) = sign(x) * (1 - erfc|x|), erfc from its continued fraction
+//               1/(x + (1/2)/(x + 1/(x + (3/2)/(x + ...)))) * e^{-x^2}/sqrt(pi),
+//             evaluated backwards. erfc(3) is 2.2e-5, so even a modest relative error
+//             there is far below one ulp of the erf value it is subtracted from.
+//
+// Verified against the engine's std::erf by web/wasm/test/parity_test.cjs.
+const SQRT_PI = Math.sqrt(Math.PI);
+
+function erf(x) {
+  if (Number.isNaN(x)) return NaN;
+  const ax = Math.abs(x);
+  if (ax < 3) {
+    const t = 2 * x * x;
+    let term = 1;
+    let sum = 1;
+    for (let n = 1; n < 200; n++) {
+      term *= t / (2 * n + 1);
+      sum += term;
+      if (term < 1e-18 * sum) break;
+    }
+    return ((2 * x) / SQRT_PI) * Math.exp(-x * x) * sum;
+  }
+  if (!Number.isFinite(ax)) return Math.sign(x);
+  let f = 0;
+  for (let n = 60; n >= 1; n--) f = (n / 2) / (ax + f);
+  const erfc = Math.exp(-ax * ax) / (SQRT_PI * (ax + f));
+  return Math.sign(x) * (1 - erfc);
+}
 
 const UNARY_FNS = {
   neg: (v) => -v,
@@ -26,6 +63,9 @@ const UNARY_FNS = {
   sqrt: Math.sqrt,
   tanh: Math.tanh,
   abs: Math.abs,
+  erf,
+  sinh: Math.sinh,
+  cosh: Math.cosh,
 };
 
 // --- Tokenizer --------------------------------------------------------------------

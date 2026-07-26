@@ -74,9 +74,14 @@ predict.rsymbolic2 <- function(object, newdata, expression = NULL, ...) {
     #   neg(x)    -> unary minus
     #   square(x) -> x^2
     #   inv(x)    -> 1/x
+    #   erf(x)    -> 2 * pnorm(x * sqrt(2)) - 1
+    # R has sinh() and cosh() in base, but no erf(); the pnorm identity is exact to
+    # double precision (pnorm uses Cody's algorithm), so predict() reproduces the
+    # core's std::erf rather than approximating it.
     env$neg    <- function(x) -x
     env$square <- function(x) x * x
     env$inv    <- function(x) 1 / x
+    env$erf    <- function(x) 2 * stats::pnorm(x * sqrt(2)) - 1
     # The core renders constants with "%.6g", which emits the bare tokens `inf` and
     # `nan` for a non-finite one. R's parser reads those as names, not numbers, so they
     # need binding here -- the package's tree renderer (tree_plot.R) and the Python

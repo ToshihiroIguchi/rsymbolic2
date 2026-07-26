@@ -59,6 +59,9 @@ inline void soa_res_unary(UnaryOp op, double* a, std::size_t P) {
         case UnaryOp::Abs:    for (std::size_t p = 0; p < P; ++p) a[p] = std::abs(a[p]); break;
         case UnaryOp::Square: for (std::size_t p = 0; p < P; ++p) a[p] = a[p] * a[p]; break;
         case UnaryOp::Inv:    for (std::size_t p = 0; p < P; ++p) a[p] = 1.0 / a[p]; break;
+        case UnaryOp::Erf:    for (std::size_t p = 0; p < P; ++p) a[p] = std::erf(a[p]); break;
+        case UnaryOp::Sinh:   for (std::size_t p = 0; p < P; ++p) a[p] = std::sinh(a[p]); break;
+        case UnaryOp::Cosh:   for (std::size_t p = 0; p < P; ++p) a[p] = std::cosh(a[p]); break;
     }
 }
 
@@ -184,6 +187,26 @@ inline void soa_jac_unary(UnaryOp op, double* s, std::size_t P, double* coeff) {
             for (int c = 0; c < N; ++c) { double* gc = g(c);
                 for (std::size_t p = 0; p < P; ++p) gc[p] = -gc[p] * coeff[p] * coeff[p]; }
             for (std::size_t p = 0; p < P; ++p) val[p] = coeff[p];
+            break;
+        case UnaryOp::Erf:
+            // multi_dual.hpp erf: d = kTwoOverSqrtPi * exp(-value*value); grad = grad * d.
+            for (std::size_t p = 0; p < P; ++p)
+                coeff[p] = kTwoOverSqrtPi * std::exp(-val[p] * val[p]);
+            for (int c = 0; c < N; ++c) { double* gc = g(c);
+                for (std::size_t p = 0; p < P; ++p) gc[p] = gc[p] * coeff[p]; }
+            for (std::size_t p = 0; p < P; ++p) val[p] = std::erf(val[p]);
+            break;
+        case UnaryOp::Sinh:
+            for (std::size_t p = 0; p < P; ++p) coeff[p] = std::cosh(val[p]);
+            for (int c = 0; c < N; ++c) { double* gc = g(c);
+                for (std::size_t p = 0; p < P; ++p) gc[p] = gc[p] * coeff[p]; }
+            for (std::size_t p = 0; p < P; ++p) val[p] = std::sinh(val[p]);
+            break;
+        case UnaryOp::Cosh:
+            for (std::size_t p = 0; p < P; ++p) coeff[p] = std::sinh(val[p]);
+            for (int c = 0; c < N; ++c) { double* gc = g(c);
+                for (std::size_t p = 0; p < P; ++p) gc[p] = gc[p] * coeff[p]; }
+            for (std::size_t p = 0; p < P; ++p) val[p] = std::cosh(val[p]);
             break;
     }
 }

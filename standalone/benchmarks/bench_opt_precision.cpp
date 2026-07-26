@@ -111,6 +111,16 @@ template <typename T> GDual<T> abs(const GDual<T>& a) {
 template <typename T> GDual<T> square(const GDual<T>& a) {
     return {a.value * a.value, T(2) * a.value * a.deriv};
 }
+template <typename T> GDual<T> erf(const GDual<T>& a) {
+    const T d = static_cast<T>(kTwoOverSqrtPi) * std::exp(-a.value * a.value);
+    return {std::erf(a.value), a.deriv * d};
+}
+template <typename T> GDual<T> sinh(const GDual<T>& a) {
+    return {std::sinh(a.value), a.deriv * std::cosh(a.value)};
+}
+template <typename T> GDual<T> cosh(const GDual<T>& a) {
+    return {std::cosh(a.value), a.deriv * std::sinh(a.value)};
+}
 template <typename T> GDual<T> recip(const GDual<T>& a) {
     const T r = T(1) / a.value;
     return {r, -a.deriv * r * r};

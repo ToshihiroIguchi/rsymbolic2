@@ -34,7 +34,8 @@ inline constexpr UnaryOpName kUnaryOpNames[] = {
     {"neg", UnaryOp::Neg},     {"exp", UnaryOp::Exp},   {"log", UnaryOp::Log},
     {"sin", UnaryOp::Sin},     {"cos", UnaryOp::Cos},   {"sqrt", UnaryOp::Sqrt},
     {"tanh", UnaryOp::Tanh},   {"abs", UnaryOp::Abs},   {"square", UnaryOp::Square},
-    {"inv", UnaryOp::Inv},
+    {"inv", UnaryOp::Inv},     {"erf", UnaryOp::Erf},   {"sinh", UnaryOp::Sinh},
+    {"cosh", UnaryOp::Cosh},
 };
 
 inline constexpr BinaryOpName kBinaryOpNames[] = {

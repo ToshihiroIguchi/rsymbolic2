@@ -117,6 +117,18 @@ inline std::string to_latex(const Tree& tree, int precision = 6) {
                                    "^{2}",
                                LatexPrec::Pow};
                         break;
+                    case UnaryOp::Erf:
+                        // No \erf in LaTeX; \operatorname sets it upright with the
+                        // spacing of a function name, which is the standard rendering.
+                        out = {"\\operatorname{erf}\\left( " + a.first + " \\right)",
+                               LatexPrec::Atom};
+                        break;
+                    case UnaryOp::Sinh:
+                        out = {"\\sinh\\left( " + a.first + " \\right)", LatexPrec::Atom};
+                        break;
+                    case UnaryOp::Cosh:
+                        out = {"\\cosh\\left( " + a.first + " \\right)", LatexPrec::Atom};
+                        break;
                     case UnaryOp::Inv:
                         // \frac braces group on their own, like BinaryOp::Div below.
                         out = {"\\frac{1}{" + a.first + "}", LatexPrec::Atom};

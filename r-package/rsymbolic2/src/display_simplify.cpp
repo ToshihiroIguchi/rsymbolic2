@@ -210,13 +210,16 @@ Ast norm_unary(UnaryOp op, Ast kid) {
             break;
         case UnaryOp::Sin:
         case UnaryOp::Tanh:
+        case UnaryOp::Erf:
+        case UnaryOp::Sinh:
             if (is_unary(kid, UnaryOp::Neg)) {  // odd: pull the negation out
                 return negate(mk_unary(op, std::move(kid.kids[0])));
             }
             break;
         case UnaryOp::Cos:
+        case UnaryOp::Cosh:
             if (is_unary(kid, UnaryOp::Neg)) {  // even: drop the negation
-                return mk_unary(UnaryOp::Cos, std::move(kid.kids[0]));
+                return mk_unary(op, std::move(kid.kids[0]));
             }
             break;
         default:
