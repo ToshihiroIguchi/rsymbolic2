@@ -164,6 +164,18 @@ test_that("the tree plot checks variable_names against the fitted feature count"
   expect_true("speed" %in% labels)
 })
 
+test_that("the fit plot draws a data-free (constant) expression", {
+  # predict() recycles a constant to nrow(newdata); before that it returned a single
+  # value and this view failed with a misleading "newdata has 1 row(s)".
+  skip_if_not_installed("ggplot2")
+  f <- fit_1d()
+  p <- draw(f$res, type = "fit", newdata = f$X, y = f$y, expression = "4.2")
+  expect_s3_class(p, "ggplot")
+  built <- ggplot2::ggplot_build(p)
+  expect_identical(nrow(built$data[[1]]), nrow(f$X))
+  expect_true(all(built$data[[2]]$y == 4.2))
+})
+
 test_that("the fit plot rejects missing or mismatched data", {
   skip_if_not_installed("ggplot2")
   f <- fit_1d()

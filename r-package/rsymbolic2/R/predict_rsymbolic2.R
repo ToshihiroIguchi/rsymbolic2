@@ -17,6 +17,10 @@
 #' variable domains excluded negative inputs (the Feynman / Nguyen defaults),
 #' this distinction does not affect predictions.
 #'
+#' An expression that uses no data column -- a bare constant, which the simplest
+#' Pareto-front member usually is -- yields the same value for every row; it is
+#' recycled to \code{nrow(newdata)} so the returned length is always one per row.
+#'
 #' @param object An object of class \code{"rsymbolic2"} returned by
 #'   \code{\link{symbolic_regression}}.
 #' @param newdata New input features. For a model fitted via the matrix
@@ -25,7 +29,9 @@
 #'   via the \code{\link{symbolic_regression}} formula interface, a
 #'   \code{data.frame} containing the predictor columns named in the formula; they
 #'   are selected by name in the fitted order, so column order in \code{newdata}
-#'   does not matter.
+#'   does not matter. A formula-fitted model \strong{requires} a \code{data.frame}:
+#'   a matrix carries no names to match and would be read positionally, which for a
+#'   fit made by name is a silently wrong answer rather than an error.
 #' @param expression Which fitted expression to evaluate. \code{NULL} (default)
 #'   uses \code{object$recommended} (the Pareto "best" accuracy/complexity
 #'   trade-off chosen by \code{model_selection}). Otherwise pass an expression
@@ -71,20 +77,43 @@ predict.rsymbolic2 <- function(object, newdata, expression = NULL, ...) {
     env$neg    <- function(x) -x
     env$square <- function(x) x * x
     env$inv    <- function(x) 1 / x
+    # The core renders constants with "%.6g", which emits the bare tokens `inf` and
+    # `nan` for a non-finite one. R's parser reads those as names, not numbers, so they
+    # need binding here -- the package's tree renderer (tree_plot.R) and the Python
+    # package already recognise them.
+    env$inf    <- Inf
+    env$nan    <- NaN
 
-    as.numeric(eval(parse(text = expr), envir = env))
+    out <- as.numeric(eval(parse(text = expr), envir = env))
+    # An expression that uses no data column (a bare constant -- the simplest Pareto
+    # member usually is one) evaluates to a single value. The documented contract is one
+    # prediction per row, so recycle it; any other length means the string was not one
+    # this engine produced.
+    if (length(out) == 1L) out <- rep(out, nrow(X))
+    if (length(out) != nrow(X))
+        stop(sprintf("the expression evaluated to %d value(s) for %d row(s) of newdata.",
+                     length(out), nrow(X)))
+    out
 }
 
 # Turn user-supplied `newdata` into the numeric design matrix a fitted expression
 # expects, checked against the fitted feature count. Shared by predict() and
 # plot(type = "fit") so the formula/matrix rule is stated once.
 #
-# A formula-fitted model carries `terms`: use them to pull the predictor columns
-# out of a data.frame newdata by name, in the fitted order (so the caller's column
-# order is irrelevant). Otherwise treat newdata as a matrix in column order,
-# preserving the matrix-interface behaviour.
+# A formula-fitted model carries `terms`: the predictor columns are pulled out of a
+# data.frame newdata by name, in the fitted order, so the caller's column order is
+# irrelevant. That guarantee is only available from a named object, so such a model
+# REQUIRES a data.frame -- a matrix would silently be matched positionally, and a user
+# who fitted by name has no reason to expect their column order to matter. A
+# matrix-fitted model has no names to match and stays positional.
 design_matrix <- function(object, newdata) {
-    if (is.data.frame(newdata) && !is.null(object$terms)) {
+    if (!is.null(object$terms)) {
+        if (!is.data.frame(newdata)) {
+            stop("this model was fitted with the formula interface, so newdata must be ",
+                 "a data.frame holding the predictor column(s): ",
+                 paste(all.vars(object$terms), collapse = ", "),
+                 ". Columns are matched by name, which a matrix cannot provide.")
+        }
         X <- as.matrix(stats::model.frame(object$terms, newdata))
     } else {
         X <- as.matrix(newdata)
@@ -99,5 +128,10 @@ design_matrix <- function(object, newdata) {
             ncol(X), p
         ))
     }
+    # as.matrix() on a data.frame carrying a factor or character column yields a
+    # character matrix; without this the failure surfaces from inside eval() as
+    # "non-numeric argument to binary operator", naming nothing useful.
+    if (!is.numeric(X)) stop("newdata must be numeric; convert factor/character ",
+                             "columns to numeric ones first.")
     X
 }

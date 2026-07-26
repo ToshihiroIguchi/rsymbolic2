@@ -16,7 +16,9 @@ columns in the same order as the training matrix \code{X}. For a model fitted
 via the \code{\link{symbolic_regression}} formula interface, a
 \code{data.frame} containing the predictor columns named in the formula; they
 are selected by name in the fitted order, so column order in \code{newdata}
-does not matter.}
+does not matter. A formula-fitted model \strong{requires} a \code{data.frame}:
+a matrix carries no names to match and would be read positionally, which for a
+fit made by name is a silently wrong answer rather than an error.}
 
 \item{expression}{Which fitted expression to evaluate. \code{NULL} (default)
 uses \code{object$recommended} (the Pareto "best" accuracy/complexity
@@ -45,6 +47,10 @@ non-integer exponents.  This differs slightly from the safe-pow semantics
 used during training (which returns 0 in those cases).  If the training
 variable domains excluded negative inputs (the Feynman / Nguyen defaults),
 this distinction does not affect predictions.
+
+An expression that uses no data column -- a bare constant, which the simplest
+Pareto-front member usually is -- yields the same value for every row; it is
+recycled to \code{nrow(newdata)} so the returned length is always one per row.
 }
 \examples{
 \donttest{

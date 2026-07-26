@@ -14,7 +14,8 @@ format_pareto_lines <- function(df, best_index, indent = "  ", max_rows = 20L) {
     n <- nrow(df)
     if (n == 0L) return(paste0(indent, "(empty Pareto front)"))
 
-    marker <- ifelse(seq_len(n) == best_index, ">", " ")
+    # !is.na() first: without it a fit with no recommendation prints "NA" markers.
+    marker <- ifelse(!is.na(best_index) & seq_len(n) == best_index, ">", " ")
     comp   <- formatC(df$complexity, width = max(nchar(df$complexity)), flag = " ")
     loss   <- formatC(fmt_g(df$loss), width = max(nchar(fmt_g(df$loss))), flag = "-")
     rows   <- paste0(indent, marker, " ", comp, " | ", loss, " | ", df$expression)

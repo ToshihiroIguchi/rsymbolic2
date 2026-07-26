@@ -1,5 +1,30 @@
 # rsymbolic2 0.1.0.9000 (development)
 
+Interface fixes (docs/61). None of these touch the C++ core, so the search itself,
+its defaults, and PySR parity are unchanged:
+
+- **Behaviour change.** A model fitted through the formula interface now *requires* a
+  `data.frame` as `newdata` in `predict()` and `plot(type = "fit")`. Its predictor
+  columns are matched by name, and a matrix carries no names to match — it was
+  silently taken positionally, so a matrix whose columns were in a different order
+  than the fitted terms returned wrong numbers with no error. Matrix-fitted models
+  are unaffected and stay positional.
+- `predict()` now returns one value per row of `newdata` for every expression. An
+  expression that uses no data column — a bare constant, which the simplest
+  Pareto-front member usually is — evaluated to a single value regardless of
+  `nrow(newdata)`, contradicting the documented return contract; it is now recycled.
+  This also fixes `plot(type = "fit", expression = <a constant member>)`, which
+  failed with a misleading "newdata has 1 row(s)".
+- `predict()` now evaluates the `inf` and `nan` constant tokens that the core's
+  `"%.6g"` rendering can emit. R parses them as names, so they previously raised
+  `object 'inf' not found` on a string the package's own `plot(type = "tree")`
+  drew without complaint.
+- `predict()` reports a non-numeric `newdata` column directly instead of letting it
+  surface from inside `eval()` as "non-numeric argument to binary operator".
+- `summary()`, `as.data.frame()` and `print()` no longer propagate `NA` when a fit
+  carries no recommendation (`best_index = NA`); they mark no row instead, where
+  `summary()` previously failed with "missing value where TRUE/FALSE needed".
+
 Result-display additions (docs/48):
 
 - `pareto_front` gains a `score` column computed by the C++ core — the log-loss

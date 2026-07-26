@@ -29,9 +29,33 @@ from ._core import symbolic_regression_cpp
 __all__ = ["symbolic_regression", "SymbolicRegressionResult"]
 __version__ = "0.1.0"
 
-# Recognised operator names (kept in sync with the C++ bridge parsers).
+# Recognised operator names (kept in sync with the C++ bridge parsers). `_UNARY_OPS` is
+# the single source of truth for both jobs it serves: validating the caller's `unary_ops`
+# and recognising the call form the core prints when drawing an equation tree. Defining it
+# twice would let the two drift silently, so both read this one set.
 _UNARY_OPS = {"neg", "exp", "log", "sin", "cos", "sqrt", "tanh", "abs", "square", "inv"}
 _BINARY_OPS = {"add", "sub", "mul", "div", "pow"}
+
+
+def _as_design_matrix(a, name: str) -> np.ndarray:
+    """Coerce feature input to a float (n_samples, n_features) matrix.
+
+    A 1-D input is one *column* (n samples of a single feature) — the reading the R
+    package's `as.matrix()` gives, and the one the single-feature case that dominates
+    symbolic regression wants. It is deliberately never read as one row of several
+    features: guessing between the two from the shape alone is how a silently wrong
+    prediction gets made, so a caller with a single multi-feature sample passes an
+    explicit `(1, n_features)` array.
+    """
+    arr = np.asarray(a, dtype=float)
+    if arr.ndim == 1:
+        return arr.reshape(-1, 1)
+    if arr.ndim != 2:
+        raise ValueError(
+            f"{name} must be 1-D (a single column) or 2-D (n_samples, n_features); "
+            f"got a {arr.ndim}-D array."
+        )
+    return arr
 
 ArrayLike = Union[np.ndarray, Sequence[float], Sequence[Sequence[float]]]
 
@@ -166,7 +190,10 @@ class SymbolicRegressionResult:
         Parameters
         ----------
         newdata : array-like, shape (n_samples, n_features)
-            New inputs. A 1-D array is treated as a single column. Must have
+            New inputs. A 1-D array is treated as a single column, matching the
+            training-side rule — so a model fitted on one feature can be predicted
+            from a plain 1-D array, and a multi-feature model raises rather than
+            silently reading the same array as one row. Must have
             :attr:`n_features` columns in the same order as the training ``X``.
         expression : str, optional
             Which expression to evaluate. Defaults to :attr:`recommended` (the
@@ -181,9 +208,7 @@ class SymbolicRegressionResult:
         during training (which returns 0 there); it only matters if the training
         domain included negative bases under a fractional power.
         """
-        X = np.atleast_2d(np.asarray(newdata, dtype=float))
-        if X.ndim == 1:
-            X = X.reshape(-1, 1)
+        X = _as_design_matrix(newdata, "newdata")
         if X.shape[1] != self.n_features:
             raise ValueError(
                 f"newdata has {X.shape[1]} column(s) but the model was fitted on "
@@ -206,6 +231,11 @@ class SymbolicRegressionResult:
             raise ValueError("get_best() called on an empty Pareto front.")
         if index is None:
             index = self.best_index
+        if index is None:
+            raise ValueError(
+                "get_best() has no index to fall back on: this fit carries no "
+                "recommended member (best_index is None). Pass an explicit index."
+            )
         if not 0 <= index < len(self.pareto_front):
             raise IndexError(
                 f"index {index} is out of range for a Pareto front with "
@@ -293,11 +323,27 @@ class SymbolicRegressionResult:
         return rows[:head] + [f"      ... ({n - max_rows} more) ..."] + rows[n - tail:]
 
     def to_pandas(self):
-        """Return the Pareto front as a :class:`pandas.DataFrame` (requires pandas)."""
+        """Return the Pareto front as a :class:`pandas.DataFrame` (requires pandas).
+
+        Columns are ``complexity``, ``loss``, ``score``, ``recommended`` (True on the
+        member ``model_selection`` chose) and ``expression`` — the same frame the R
+        package's ``as.data.frame()`` returns, so the two counterparts agree.
+        """
         import pandas as pd  # imported lazily; pandas is an optional extra
 
+        rows = [
+            {
+                "complexity": m["complexity"],
+                "loss": m["loss"],
+                "score": m["score"],
+                "recommended": i == self.best_index,
+                "expression": m["expression"],
+            }
+            for i, m in enumerate(self.pareto_front)
+        ]
         return pd.DataFrame(
-            self.pareto_front, columns=["complexity", "loss", "score", "expression"]
+            rows,
+            columns=["complexity", "loss", "score", "recommended", "expression"],
         )
 
     def plot(
@@ -513,11 +559,11 @@ class SymbolicRegressionResult:
 
 
 # --- Equation tree (docs/48 D6) --------------------------------------------------------
-# Unary operators the core prints in call form, and the binary glyphs. "/" and "*" are
+# The unary operators the core prints in call form are `_UNARY_OPS` above (one definition
+# for both validation and drawing). Below are the binary glyphs. "/" and "*" are
 # rewritten: "/" reads as part of a fraction that is not there, and "*" is a raised
 # asterisk that sits off-centre inside a node. The R package and the web GUI use the same
 # substitutions, so one equation draws identically on all three surfaces.
-_UNARY_OPS = ("neg", "exp", "log", "sin", "cos", "sqrt", "tanh", "abs", "square", "inv")
 _BINARY_LABEL = {
     ast.Add: "+", ast.Sub: "-", ast.Mult: "×", ast.Div: "÷",
     # The core renders power as `^`, which Python's parser reads as a bitwise xor. It is
@@ -709,7 +755,8 @@ def symbolic_regression(
     Parameters
     ----------
     X : array-like, shape (n_samples, n_features)
-        Input features. A 1-D array is treated as a single column.
+        Input features. A 1-D array is treated as a single column (n samples of one
+        feature), never as one row of several features.
     y : array-like, shape (n_samples,)
         Target values; ``len(y)`` must equal ``X.shape[0]``.
     population_size : int, default 27
@@ -903,9 +950,7 @@ def symbolic_regression(
     columns = getattr(X, "columns", None)
     feature_names = [str(c) for c in columns] if columns is not None else None
 
-    X_arr = np.atleast_2d(np.asarray(X, dtype=float))
-    if X_arr.ndim == 1:
-        X_arr = X_arr.reshape(-1, 1)
+    X_arr = _as_design_matrix(X, "X")
     y_arr = np.asarray(y, dtype=float).ravel()
     if X_arr.shape[0] == 0:
         raise ValueError("X must have at least one row.")

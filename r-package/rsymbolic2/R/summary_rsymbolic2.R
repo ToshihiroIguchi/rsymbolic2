@@ -56,7 +56,9 @@ summary.rsymbolic2 <- function(object, ...) {
     } else {
         rep(NA_real_, nrow(df))
     }
-    recommended <- seq_len(nrow(df)) == object$best_index
+    # !is.na() first: a fit with no recommendation (best_index = NA) must mark no row,
+    # not propagate NA through every downstream any()/ifelse() that reads this.
+    recommended <- !is.na(object$best_index) & seq_len(nrow(df)) == object$best_index
     pareto <- data.frame(
         complexity  = df$complexity,
         loss        = df$loss,

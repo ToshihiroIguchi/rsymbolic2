@@ -49,6 +49,31 @@ test_that("summary.rsymbolic2 returns a structured object with a score column", 
   expect_output(print(s), "Pareto front")
 })
 
+test_that("the display methods survive a fit with no recommendation", {
+  # best_index = NA means "no member was recommended". Without an is.na() guard the
+  # comparison propagates NA into every any()/ifelse() that reads it, and summary()
+  # dies with "missing value where TRUE/FALSE needed".
+  X <- matrix(seq(-3, 3, length.out = 20), ncol = 1)
+  y <- 2 * X[, 1] + 1
+  res <- symbolic_regression(
+    X, y,
+    unary_ops       = character(0),
+    population_size = 40L,
+    generations     = 10L,
+    n_populations   = 2L,
+    seed            = 1L
+  )
+  res$best_index <- NA_integer_
+
+  s <- summary(res)
+  expect_false(any(s$pareto$recommended))
+  expect_true(is.na(s$r_squared))
+  expect_output(print(s), "Pareto front")
+
+  expect_false(any(as.data.frame(res)$recommended))
+  expect_output(print(res), "Pareto front")
+})
+
 test_that("summary reports NA R-squared for a constant target (SST = 0)", {
   X <- matrix(seq(-3, 3, length.out = 12), ncol = 1)
   y <- rep(2.5, 12)

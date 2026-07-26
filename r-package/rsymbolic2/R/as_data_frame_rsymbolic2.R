@@ -39,7 +39,9 @@ as.data.frame.rsymbolic2 <- function(x, ..., score = TRUE) {
     )
     if (isTRUE(score))
         out$score <- df$score
-    out$recommended <- seq_len(nrow(df)) == x$best_index
+    # !is.na() first: a fit with no recommendation (best_index = NA) marks no row rather
+    # than filling the column with NA. Mirrors summary.rsymbolic2().
+    out$recommended <- !is.na(x$best_index) & seq_len(nrow(df)) == x$best_index
     out$expression  <- df$expression
     out
 }

@@ -768,3 +768,68 @@ def test_units_do_not_degrade_recovery():
     res_on = symbolic_regression(X, y, X_units=["kg", "m/s^2"], y_units="N", **common)
     assert res_off.loss < 1e-6
     assert res_on.loss < 1e-6
+
+
+# --- Input shape contract ---------------------------------------------------------------
+# A 1-D array is one COLUMN (n samples of a single feature), matching the R package's
+# as.matrix() and the README. It is never read as one row of several features: guessing
+# between the two from the shape alone is how a silently wrong prediction gets made.
+
+
+def test_one_d_X_is_a_single_column():
+    x = np.linspace(-3, 3, 20)          # 1-D, no reshape
+    y = 2.5 * x + 1.7
+    res = symbolic_regression(x, y, unary_ops=[], population_size=40,
+                              generations=20, n_populations=2, seed=1, verbosity=0)
+    assert res.n_features == 1
+    # ... and predict() reads a 1-D array the same way, so the round trip needs no reshape.
+    pred = res.predict(np.array([0.0, 1.0, 2.0]))
+    assert pred.shape == (3,)
+
+
+def test_one_d_newdata_on_a_multi_feature_model_raises():
+    """The ambiguous "1-D might be one sample" reading fails loudly, never silently."""
+    X = np.column_stack([np.linspace(1, 3, 20), np.linspace(2, 4, 20)])
+    y = X[:, 0] + X[:, 1]
+    res = symbolic_regression(X, y, unary_ops=[], population_size=40,
+                              generations=10, n_populations=2, seed=1, verbosity=0)
+    with pytest.raises(ValueError, match="fitted on 2 feature"):
+        res.predict(np.array([1.0, 2.0]))
+    # An explicit single sample is a (1, n_features) array.
+    assert res.predict(np.array([[1.0, 2.0]])).shape == (1,)
+
+
+def test_three_d_X_is_rejected():
+    with pytest.raises(ValueError, match="1-D .* or 2-D"):
+        symbolic_regression(np.zeros((2, 2, 2)), np.zeros(2), verbosity=0)
+
+
+def test_unary_op_names_have_one_definition():
+    """_UNARY_OPS serves both operator validation and tree drawing; a second definition
+    at module scope would silently shadow the first and let the two drift apart."""
+    import rsymbolic2
+
+    assert isinstance(rsymbolic2._UNARY_OPS, set)
+    src = inspect.getsource(rsymbolic2)
+    assert sum(line.startswith("_UNARY_OPS =") for line in src.splitlines()) == 1
+    # Every name it accepts must actually be usable by the engine.
+    for op in sorted(rsymbolic2._UNARY_OPS):
+        symbolic_regression(np.linspace(1.0, 2.0, 6), np.linspace(1.0, 2.0, 6),
+                            unary_ops=[op], population_size=8, generations=2,
+                            n_populations=1, seed=1, verbosity=0)
+
+
+def test_to_pandas_matches_the_R_data_frame():
+    """to_pandas() is the counterpart of R's as.data.frame(): same columns, same order."""
+    pd = pytest.importorskip("pandas")
+    X = np.linspace(-3, 3, 20).reshape(-1, 1)
+    y = 2 * X[:, 0] + 1
+    res = symbolic_regression(X, y, unary_ops=[], population_size=40,
+                              generations=20, n_populations=2, seed=1, verbosity=0)
+    df = res.to_pandas()
+    assert isinstance(df, pd.DataFrame)
+    assert list(df.columns) == [
+        "complexity", "loss", "score", "recommended", "expression",
+    ]
+    assert df["recommended"].sum() == 1
+    assert df.loc[df["recommended"], "expression"].iloc[0] == res.recommended
