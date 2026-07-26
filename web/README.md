@@ -131,9 +131,17 @@ right tool: they are multi-threaded and not bounded by a 128 MB heap.
 
 The sidebar's **Custom operators (macros)** disclosure (under the operator checkboxes) lets a
 user define one-argument templates over the primitives — `gauss = exp(-square(x))` — which the
-engine expands as it builds expressions (docs/57). A preset list seeds the common ones. The
-feature is **off by default**: with no macro rows the two option arrays sent to the bridge are
-empty and the search is bit-identical to the PySR-parity run.
+engine expands as it builds expressions (docs/57). The feature is **off by default**: with no
+macro rows the two option arrays sent to the bridge are empty and the search is bit-identical
+to the PySR-parity run.
+
+A grouped preset list (Peaks, S-curves, Growth/decay, Powers/roots) fills a row in, since the
+syntax is unguessable and the presets are where the feature explains itself. Each carries the
+node count it adds — the figure of merit, because a macro's whole benefit is reaching in one
+mutation what the primitives reach in several — and a note on which of its numbers end up
+*fitted*: a literal in a body becomes a tunable constant, so `x^3` is a fitted power rather
+than a cube (`docs/57` §6). `parity_test.cjs` asserts every shipped preset is accepted by the
+engine, reading the bodies out of `main.js` so the list is never duplicated.
 
 Bodies are validated by the engine's own parser when Run is pressed, so the browser rejects
 exactly what R and Python reject, with the same message — the page carries no second copy of

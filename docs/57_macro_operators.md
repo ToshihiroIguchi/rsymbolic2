@@ -144,6 +144,38 @@ Operators used *inside* a body need not be checked in the operator panel: declar
 the statement that those operators may appear (the same reasoning as `ops_within_search_space`
 in §3).
 
+### The preset list, and what earns a place on it
+
+The presets exist because the syntax is unguessable, so they are also the only place this
+feature explains itself. What qualifies a body is **distance**: a macro's entire benefit is
+reaching a motif in one mutation that the primitive set reaches only in several (§2), so the
+node count it adds over its argument (`macro_extra_nodes`) is the figure of merit. Each
+preset's tooltip prints it. The eleven shipped entries are grouped by the *shape* a user is
+looking for rather than by operator family — Peaks (`gauss` 3, `lorentz` 5), S-curves
+(`sigmoid` 6, `softplus` 4, `log1p` 3), Growth/decay (`decay` 3, `arrhenius` 3, `planck` 5),
+Powers/roots (`powlaw` 2, `rsqrt` 3, `relgamma` 6) — and lean towards motifs from the physical
+sciences, since ground-truth recovery on Feynman is the primary benchmark. `relgamma`
+(`1 / sqrt(1 - square(x))`, the relativistic Lorentz factor) is the clearest case for the
+feature: six nodes including a `sqrt` under a subtraction, which a random walk essentially
+never assembles.
+
+An earlier `cube = x^3` preset was **removed, as a misnamed entry rather than a redundant
+one**: because a numeric literal becomes a tunable constant (§2), the body is `x^c` seeded at
+3, and its name promised a fixed exponent the engine does not have. The same template is now
+offered honestly as `powlaw`. This is the general lesson for writing a preset — name the
+*family* the fitted constants span, not one member of it. `lorentz`'s two `1`s become amplitude
+and width; `planck`'s `-1` can fit `+1` and reach Fermi–Dirac.
+
+Two rules are stated in the disclosure prose rather than left to the engine's error message,
+because they are what a user breaks first: `x` must appear **exactly once** (so `sin(x)/x`, the
+obvious diffraction motif, is simply not expressible as a macro), and literals are fitted, not
+fixed.
+
+`web/wasm/test/parity_test.cjs` §2f asserts every shipped preset is accepted by the engine —
+otherwise a preset is a button that only produces an error message, and nothing in the build
+would notice, since the GUI holds no copy of the grammar (§5). The test reads the bodies out of
+`main.js` rather than restating them; a second copy of the list is the drift it exists to catch.
+
 ## 7. What is NOT claimed
 
 No accuracy claim. Macros are a **capability** (a user can express a domain motif the

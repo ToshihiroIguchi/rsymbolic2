@@ -145,11 +145,18 @@
                modal. Collapsed because they are off by default and rarely used. -->
           <details class="disclosure">
             <summary>Custom operators (macros) <span id="macro-summary" class="muted"></span></summary>
+            <!-- The two rules stated first are the ones a user breaks first: `x` twice
+                 (sin(x)/x is the classic attempt) is rejected by the engine at Run, and a
+                 literal silently becoming a fitted constant means a body named for a fixed
+                 coefficient does not have one. Both are engine behaviour, not GUI policy
+                 (docs/57 §2, §5). -->
             <p class="muted small">
               One-argument templates over <code>x</code>, e.g. <code>exp(-square(x))</code>,
-              expanded into the expression as the search builds it. Complexity counts the
-              expanded nodes, results print the primitive form, and numbers in a body become
-              tunable constants seeded at that value. A body may use operators that are not
+              expanded into the expression as the search builds it. <code>x</code> must appear
+              <strong>exactly once</strong> (so <code>sin(x)/x</code> is not expressible), and
+              numbers in a body become <strong>tunable constants</strong> seeded at that value —
+              <code>x^3</code> is a fitted power, not a cube. Complexity counts the expanded
+              nodes and results print the primitive form. A body may use operators that are not
               checked above. Off by default — with no macros the search is unchanged.
             </p>
             <div id="macro-list"></div>

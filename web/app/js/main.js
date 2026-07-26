@@ -98,12 +98,41 @@ const DISPLAY_POINT_CAP = 5000;
 // is a feature nobody uses. Each body is written in the grammar the C++ parser accepts
 // (parse_expression.hpp): binary operators in infix, unary operators in call form, and the
 // argument `x` exactly once.
+//
+// What earns a preset a place here is DISTANCE: how many lucky mutations the primitive set
+// needs to reach the motif, which is the only thing a macro buys (docs/57 §2). `extra` below
+// is the node count the macro adds over its argument, measured with make_macro_op() — a
+// 5-or-6-node motif is one a random walk essentially never assembles, while a 2-node one the
+// search finds unaided. That is also why an earlier `cube = x^3` entry is gone: a numeric
+// literal in a body becomes a TUNABLE constant, so it was never a cube — it was `x^c` seeded
+// at 3, two nodes from reach and misnamed. `powlaw` is the same template under its true name.
+//
+// The groups are the shapes a user is actually looking for, not operator families; each
+// preset's `hint` says where the motif comes from and which numbers end up fitted, since a
+// name alone cannot warn that `lorentz`'s 1s are free parameters.
 const MACRO_PRESETS = [
-  { name: "gauss", body: "exp(-square(x))" },
-  { name: "sigmoid", body: "1 / (1 + exp(-x))" },
-  { name: "softplus", body: "log(1 + exp(x))" },
-  { name: "cube", body: "x^3" },
-  { name: "decay", body: "exp(-1.0 * x)" },
+  { group: "Peaks", name: "gauss", body: "exp(-square(x))", extra: 3,
+    hint: "Gaussian bump. The width and centre come from what you feed it: exp(-square((x0 - c1) / c2))." },
+  { group: "Peaks", name: "lorentz", body: "1 / (1 + square(x))", extra: 5,
+    hint: "Lorentzian / Cauchy peak — a resonance lineshape. Both 1s are fitted, giving amplitude and width." },
+  { group: "S-curves", name: "sigmoid", body: "1 / (1 + exp(-x))", extra: 6,
+    hint: "Logistic S-curve. Both 1s are fitted, so this is the general logistic, not only the 0-to-1 one." },
+  { group: "S-curves", name: "softplus", body: "log(1 + exp(x))", extra: 4,
+    hint: "Smooth hinge: ~0 for negative x, ~x for positive x." },
+  { group: "S-curves", name: "log1p", body: "log(1 + x)", extra: 3,
+    hint: "Diminishing returns that stays finite at x = 0, unlike log(x)." },
+  { group: "Growth / decay", name: "decay", body: "exp(-1.0 * x)", extra: 3,
+    hint: "Exponential decay with a fitted rate, seeded at -1. The rate may fit positive, giving growth." },
+  { group: "Growth / decay", name: "arrhenius", body: "exp(-1.0 / x)", extra: 3,
+    hint: "Rate law exp(-Ea / kT): activated processes, solubility, viscosity. The barrier is fitted." },
+  { group: "Growth / decay", name: "planck", body: "1 / (exp(x) - 1)", extra: 5,
+    hint: "Bose-Einstein occupation, the denominator of Planck's law. The fitted -1 also reaches Fermi-Dirac (+1)." },
+  { group: "Powers / roots", name: "powlaw", body: "x^2.0", extra: 2,
+    hint: "Power law with a fitted exponent, seeded at 2 — not a square. The exponent is free to land on 0.5 or -3." },
+  { group: "Powers / roots", name: "rsqrt", body: "1 / sqrt(x)", extra: 3,
+    hint: "Inverse square root: periods, orbital and wave speeds, standard errors." },
+  { group: "Powers / roots", name: "relgamma", body: "1 / sqrt(1 - square(x))", extra: 6,
+    hint: "Relativistic Lorentz factor 1/sqrt(1 - (v/c)^2). Six nodes deep, so the search rarely builds it alone." },
 ];
 
 const $ = (id) => document.getElementById(id);
@@ -254,7 +283,9 @@ function checkedOps(kind) {
 // A row is one macro: its name and its body. Rows where BOTH fields are blank are ignored,
 // so a leftover empty row can never switch the feature on — with no macros the two option
 // arrays are empty and the search stays bit-identical to the PySR-parity run (docs/57 §4).
-function addMacroRow(name = "", body = "") {
+// `hint` is set only for a preset row: an <option>'s tooltip is gone the moment it is picked,
+// and what the motif means is exactly what the user wants to re-read while editing the row.
+function addMacroRow(name = "", body = "", hint = "") {
   const row = document.createElement("div");
   row.className = "macro-row";
   const nameInput = document.createElement("input");
@@ -267,7 +298,8 @@ function addMacroRow(name = "", body = "") {
   const bodyInput = document.createElement("input");
   bodyInput.type = "text";
   bodyInput.title = 'The template, in terms of x — e.g. exp(-square(x)). Use x exactly once. ' +
-                    'Numbers in it become tunable constants seeded at that value.';
+                    'Numbers in it become tunable constants seeded at that value.' +
+                    (hint ? `\n\n${hint}` : "");
   bodyInput.placeholder = "exp(-square(x))";
   bodyInput.value = body;
   bodyInput.dataset.macro = "body";
@@ -323,17 +355,27 @@ function updateMacroSummary() {
   $("macro-summary").textContent = n ? `— ${n} defined` : "";
 }
 
+// One <optgroup> per shape, so eleven entries stay scannable; the option's tooltip carries the
+// hint plus the node cost, which is the number that decides whether a macro is worth adding at
+// all (a 2-node motif the search reaches unaided).
 function buildMacroPresets() {
   const sel = $("macro-preset");
+  let group = null;
   MACRO_PRESETS.forEach((m, i) => {
+    if (!group || group.label !== m.group) {
+      group = document.createElement("optgroup");
+      group.label = m.group;
+      sel.appendChild(group);
+    }
     const o = document.createElement("option");
     o.value = String(i);
     o.textContent = `${m.name} = ${m.body}`;
-    sel.appendChild(o);
+    o.title = `${m.hint} Adds ${m.extra} nodes to the expression.`;
+    group.appendChild(o);
   });
   sel.addEventListener("change", () => {
     const m = MACRO_PRESETS[parseInt(sel.value, 10)];
-    if (m) addMacroRow(m.name, m.body);
+    if (m) addMacroRow(m.name, m.body, m.hint);
     sel.value = ""; // back to the placeholder, so the same preset can be picked again
   });
 }

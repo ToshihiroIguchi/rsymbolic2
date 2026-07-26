@@ -220,6 +220,31 @@ function assert(cond, msg) {
       && rMacro2.pareto_front.loss.join(",") === rMacro.pareto_front.loss.join(","),
     "a macro run is deterministic across runs (same seed)");
 
+  // 2f. Every macro preset the web GUI offers must be accepted by the engine. A preset that
+  // the parser rejects is a button that produces an error message, and nothing else in the
+  // build would notice: the GUI deliberately carries no copy of the grammar (docs/57 §5), so
+  // the bodies are only ever validated at Run. The bodies are READ OUT of main.js rather than
+  // restated here — a second copy of the list is exactly the drift this is meant to catch.
+  // Cheap on purpose: validation happens before the search, so one generation suffices.
+  const mainJs = require("fs").readFileSync(
+    path.join(__dirname, "..", "..", "app", "js", "main.js"), "utf8");
+  const presetBlock = /const MACRO_PRESETS = \[([\s\S]*?)\n\];/.exec(mainJs);
+  assert(presetBlock !== null, "MACRO_PRESETS block found in web/app/js/main.js");
+  const presets = [...presetBlock[1].matchAll(/name: "([^"]+)",\s*body: "([^"]+)"/g)]
+    .map((m) => ({ name: m[1], body: m[2] }));
+  // A lower bound, not an exact count: reading source text means a reformatted list could
+  // match nothing, and this must FAIL in that case rather than vacuously pass on zero presets.
+  assert(presets.length >= 5, `parsed ${presets.length} macro presets out of main.js`);
+  const badPresets = presets.filter((p) => {
+    const res = runOpts({
+      macro_names: [p.name], macro_bodies: [p.body], generations: 1, n_populations: 2,
+    });
+    if (res && res.error) console.error(`   preset '${p.name} = ${p.body}': ${res.error}`);
+    return Boolean(res && res.error);
+  });
+  assert(badPresets.length === 0,
+    `all ${presets.length} shipped macro presets are accepted by the engine`);
+
   // 3. Cross-build equivalence vs Python (best-effort; outcome, not string equality).
   let py = null;
   try {
