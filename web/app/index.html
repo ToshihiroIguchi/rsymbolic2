@@ -141,11 +141,18 @@
                Behind an open "Custom operators" (a ~150px block of explanatory prose) the
                summary moved far down the rail and the budget stopped being glanceable, so the
                always-read line keeps the stable position and the opt-ins are grouped after
-               it. -->
+               it.
+               The summary is plain TEXT and "edit" is the only trigger — the one place this
+               card deliberately differs from the Data card above. There the line is itself the
+               action ("40 rows x 2 columns" and "show me those rows" are one thought, so it is
+               a button); here the line reports the budget while the action opens a dialog of
+               parity constants, which is not the same thought. Making the line a second way to
+               open that dialog gave one action two controls, and put the only obvious
+               affordance (a labelled button) on the one that was cut. The line stays short for
+               the same reason: the budget, plus any setting moved off its shipped value. -->
           <div class="group-label">Settings</div>
           <div class="data-status">
-            <button id="settings-summary" class="link-summary muted small" type="button"
-                    title="Open search settings"></button>
+            <span id="settings-summary" class="status-line muted small"></span>
             <button id="open-settings" class="btn small" type="button"
                     title="Open the search settings (budget, seed and the PySR-parity constants)">edit</button>
           </div>
@@ -158,16 +165,24 @@
             <!-- Only the two rules a user breaks first stay on screen: `x` twice (sin(x)/x is
                  the classic attempt) is rejected by the engine at Run, and a literal silently
                  becoming a fitted constant means a body named for a fixed coefficient does not
-                 have one. Both are engine behaviour, not GUI policy (docs/57 §2, §5). The rest
-                 of the paragraph that used to sit here — expansion timing, complexity counting,
-                 primitive-form printing, bodies may use unchecked operators — is true but read
-                 once, so it moved into the summary's tooltip. -->
+                 have one. Both are engine behaviour, not GUI policy (docs/57 §2, §5), and both
+                 are silent surprises rather than errors you can see coming — which is why they
+                 are on screen and not in a tooltip: a hover is undiscoverable, and absent on
+                 touch. The rest of the paragraph that used to sit here — expansion timing,
+                 complexity counting, primitive-form printing, bodies may use unchecked
+                 operators — is true but read once, so it moved into the summary's tooltip.
+                 The closing sentence names BOTH entry points: with only a small button beside
+                 a full-width dropdown, the section reads as if presets were all there is. That
+                 is a wording problem and it is fixed in wording — an always-present empty row
+                 and a narrowed picker were tried instead and made both paths worse (the row
+                 pushed the controls down and the cap truncated the longest presets). -->
             <summary title="One-argument templates expanded into the expression as the search builds it. Complexity counts the expanded nodes and results print the primitive form. A body may use operators that are not checked above. Off by default — with no macros the search is unchanged.">Custom operators (macros) <span id="macro-summary" class="muted"></span></summary>
             <p class="muted small">
               Templates over <code>x</code>, e.g. <code>exp(-square(x))</code>. <code>x</code>
               must appear <strong>exactly once</strong> (so <code>sin(x)/x</code> is out), and
               numbers become <strong>tunable constants</strong> seeded at that value —
               <code>x^3</code> is a fitted power, not a cube.
+              Write your own with <strong>+ Add macro</strong>, or start from a preset.
             </p>
             <div id="macro-list"></div>
             <div class="row">
@@ -175,7 +190,7 @@
                       title="Add an empty macro row to name and define">+ Add macro</button>
               <select id="macro-preset"
                       title="Add a macro already filled in from a ready-made template">
-                <option value="" selected disabled>from preset…</option>
+                <option value="" selected disabled>or start from a preset…</option>
               </select>
             </div>
           </details>

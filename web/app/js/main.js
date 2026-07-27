@@ -301,6 +301,18 @@ function checkedOps(kind) {
 // arrays are empty and the search stays bit-identical to the PySR-parity run (docs/57 §4).
 // `hint` is set only for a preset row: an <option>'s tooltip is gone the moment it is picked,
 // and what the motif means is exactly what the user wants to re-read while editing the row.
+//
+// The body tooltip spells out the two notations, because the operator pills show `x²` and `^`
+// side by side and a reader cannot tell from them which one a body may be written in: both,
+// and they mean different things. `x^2` is pow with a FITTED exponent seeded at 2 (a numeric
+// literal is always tunable, docs/57 §2); `square(x)` is the fixed one. That distinction is
+// the same one the paragraph above the list makes, said where a body is actually typed.
+const MACRO_BODY_HINT =
+  "The template, in terms of x — e.g. exp(-square(x)). Binary operators are infix (x^2, 1/x), " +
+  "unary ones are calls (square(x), log(x)); a body may use operators left unchecked above. " +
+  "Use x exactly once. Numbers become tunable constants seeded at that value, so x^2 is a " +
+  "fitted power — square(x) is the fixed square.";
+
 function addMacroRow(name = "", body = "", hint = "") {
   const row = document.createElement("div");
   row.className = "macro-row";
@@ -313,9 +325,7 @@ function addMacroRow(name = "", body = "", hint = "") {
   nameInput.dataset.macro = "name";
   const bodyInput = document.createElement("input");
   bodyInput.type = "text";
-  bodyInput.title = 'The template, in terms of x — e.g. exp(-square(x)). Use x exactly once. ' +
-                    'Numbers in it become tunable constants seeded at that value.' +
-                    (hint ? `\n\n${hint}` : "");
+  bodyInput.title = MACRO_BODY_HINT + (hint ? `\n\n${hint}` : "");
   bodyInput.placeholder = "exp(-square(x))";
   bodyInput.value = body;
   bodyInput.dataset.macro = "body";
@@ -799,8 +809,15 @@ function updateSettingsSummary() {
   // Batching is a checkbox, so it is outside DEFAULTS and invisible to the "modified"
   // marker — but it does change which candidates the search sees, and a change of that
   // size must never be silent in a rail that otherwise reports the budget faithfully.
+  // The seed is printed only when it is NOT the shipped value. Every run is seeded and the
+  // seed is 1 unless someone changes it, so "seed 1" was a constant string next to the one
+  // number that does vary — it said nothing about this run. A seed the user has moved is a
+  // fact about this run, and then it appears. Same rule as the "modified" marker.
+  const seed = $("seed").value;
+  const seedMoved = seed !== "" && Number(seed) !== DEFAULTS.seed.value;
   $("settings-summary").textContent =
-    `${$("generations").value} generations · seed ${$("seed").value}` +
+    `${$("generations").value} generations` +
+    (seedMoved ? ` · seed ${seed}` : "") +
     ($("batching").checked ? " · batching" : "") +
     (settingsModified() ? " · modified" : "");
   markModifiedFields();
@@ -1442,9 +1459,8 @@ function init() {
   annotateSettingsFields();
   updateSettingsSummary();
 
-  // The summary line is the settings trigger, matching the data summary above it; "edit" is
-  // the same action spelled out. Every dismissal path (Cancel, ×, Esc, backdrop) discards.
-  $("settings-summary").addEventListener("click", openSettings);
+  // "edit" is the only trigger; the summary beside it is plain text (index.html says why).
+  // Every dismissal path (Cancel, ×, Esc, backdrop) discards.
   $("open-settings").addEventListener("click", openSettings);
   $("settings-apply").addEventListener("click", () => closeSettings(true));
   $("settings-cancel").addEventListener("click", () => closeSettings(false));

@@ -252,6 +252,10 @@ body:not(.has-data) #change-data { display: none; }
   cursor: pointer; text-decoration: underline dotted; text-underline-offset: 0.2em;
 }
 .link-summary:disabled { cursor: default; text-decoration: none; }
+/* The Settings summary is the same line WITHOUT the click: it is read, not pressed (its
+   trigger is the "edit" button beside it), so it takes the row space and none of the
+   affordance. */
+.status-line { flex: 1; min-width: 0; }
 
 /* Large-data notice under the data summary. Two severities: `warn` (the run will be slow)
    and `acted` (rows were dropped to fit the engine — a statement about what was fitted, so
@@ -342,6 +346,11 @@ textarea { resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospa
 /* One macro operator per row: fixed-width name, elastic body, remove button. */
 .macro-row { display: grid; grid-template-columns: 6rem 1fr auto; gap: 0.3rem; margin-bottom: 0.3rem; }
 .macro-row input { font-size: 0.8rem; min-width: 0; }
+/* The preset picker takes the rest of the row. It must NOT be capped to look less prominent
+   than "+ Add macro" beside it: an option reads `name = body`, and the longest shipped one
+   (`relgamma = 1 / sqrt(1 - square(x))`) needs ~240px with its arrow and padding, so a 14rem
+   cap truncated the very entries that are hardest to guess. Whether the button or the picker
+   looks primary is a wording problem, not a width problem. */
 #macro-preset { width: auto; flex: 1; min-width: 0; }
 
 /* Drop zone for CSV files: dashed border, centered muted prompt, accent highlight on hover
