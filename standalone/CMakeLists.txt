@@ -163,6 +163,12 @@ if(RSYMBOLIC2_BUILD_BENCHMARKS)
     add_executable(bench_opt_precision benchmarks/bench_opt_precision.cpp)
     target_link_libraries(bench_opt_precision PRIVATE rsymbolic2_core)
 
+    # Display-simplifier cost + reproducibility probe (docs/66). Reports the per-call time
+    # distribution under a given iteration/e-node cap and asserts that the same tree renders
+    # identically twice — the evidence behind dropping the e-graph's wall-clock budget.
+    add_executable(bench_simplify benchmarks/bench_simplify.cpp)
+    target_link_libraries(bench_simplify PRIVATE rsymbolic2_core)
+
     # Search-result digest (docs/65): diff-based external golden for refactors that must
     # leave the search bit-identical. Not a ctest target — it is run on the parent commit
     # and again after the change, and the two outputs are diffed.

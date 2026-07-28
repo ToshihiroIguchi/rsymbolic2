@@ -31,8 +31,8 @@ namespace rsymbolic {
 //   sign-invariant arguments, odd/even functions of neg, sqrt(square t) -> abs t).
 //
 //   Layer 2 — bounded equality saturation (egraph.hpp): the Layer-1 form seeds an
-//   e-graph, an audited rule set saturates within hard limits (iterations / e-nodes /
-//   wall-clock; EGraphLimits), and the minimum-node-count equivalent is extracted.
+//   e-graph, an audited rule set saturates within hard limits (iterations / e-nodes;
+//   EGraphLimits), and the minimum-node-count equivalent is extracted.
 //   The result is adopted only when it is STRICTLY smaller than the Layer-1 form;
 //   otherwise — including when any limit was hit — the Layer-1 result stands (the
 //   fallback contract). Layer 2 is what finds cross-structure reductions Layer 1
@@ -47,10 +47,15 @@ namespace rsymbolic {
 // guarded. The displayed value therefore never diverges from predict() beyond
 // rounding drift. Node count never increases.
 //
+// Reproducibility (docs/66): the whole pipeline is a pure function of `tree` and
+// `limits`. The same tree always renders the same string, so a fixed-seed search reports
+// the same `expression_simplified` on every run and on every machine running this build.
+//
 // `stats` (optional) reports what Layer 2 did — for tests and diagnostics only.
 // `limits` bounds Layer 2; `limits.max_iterations = 0` disables Layer 2 entirely
-// (pure Layer-1 normalisation). The defaults keep the per-expression cost at a few
-// milliseconds. Existing one-argument call sites are unchanged.
+// (pure Layer-1 normalisation). The defaults keep the per-expression cost in the
+// milliseconds at the default maxsize (docs/66 §3). Existing one-argument call sites
+// are unchanged.
 struct DisplaySimplifyStats {
     int egraph_iterations = 0;
     int egraph_enodes = 0;

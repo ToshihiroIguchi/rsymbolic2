@@ -14,7 +14,6 @@
 
 #include <algorithm>
 #include <array>
-#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -538,13 +537,6 @@ EGraphResult egraph_simplify(const Tree& tree, const EGraphLimits& limits) {
     EGraphResult result;
     if (tree.empty()) return result;
 
-    const auto t0 = std::chrono::steady_clock::now();
-    const auto over_time = [&]() {
-        const std::chrono::duration<double, std::milli> dt =
-            std::chrono::steady_clock::now() - t0;
-        return dt.count() > limits.max_millis;
-    };
-
     EGraph g;
     // Seed: the postfix tree maps directly onto adds via a stack.
     std::vector<Id> stack;
@@ -581,7 +573,7 @@ EGraphResult egraph_simplify(const Tree& tree, const EGraphLimits& limits) {
     g.rebuild();
 
     for (int iter = 0; iter < limits.max_iterations; ++iter) {
-        if (over_time() || g.num_enodes() > limits.max_enodes) break;
+        if (g.num_enodes() > limits.max_enodes) break;
         result.iterations = iter + 1;
 
         // Read phase: collect matches against a stable snapshot.
@@ -599,7 +591,6 @@ EGraphResult egraph_simplify(const Tree& tree, const EGraphLimits& limits) {
                     matches.push_back({static_cast<Id>(cid), {rule.rhs.get(), s}});
                 }
             }
-            if (over_time()) break;
         }
 
         // Write phase: instantiate + union, respecting the node cap.
@@ -607,7 +598,7 @@ EGraphResult egraph_simplify(const Tree& tree, const EGraphLimits& limits) {
         const int enodes_before = g.num_enodes();
         bool capped = false;
         for (const auto& m : matches) {
-            if (g.num_enodes() > limits.max_enodes || over_time()) {
+            if (g.num_enodes() > limits.max_enodes) {
                 capped = true;
                 break;
             }

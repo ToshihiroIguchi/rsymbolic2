@@ -77,9 +77,15 @@ egg (Willsey et al., POPL 2021, arXiv:2004.03082); Herbie (PLDI 2015) and Ruler
 (OOPSLA 2021, arXiv:2108.10436) for rule-audit practice; Caviar (arXiv:2111.12116)
 for bounded-budget saturation.
 
-**Limits (hard caps, `EGraphLimits`):** 10 iterations, 10 000 e-nodes, 10 ms
-wall-clock per expression. Iteration/e-node caps are deterministic; the wall-clock
-cap is a safety net (the only non-deterministic stop — see Determinism).
+**Limits (hard caps, `EGraphLimits`):** 10 iterations and 2 000 e-nodes per
+expression. Both are counts, so the stop is a function of the input tree alone.
+
+> **Superseded by docs/66.** As shipped here this also carried a 10 ms wall-clock cap,
+> described below as a safety net that rarely binds. That was wrong: it bound routinely,
+> making `expression_simplified` differ between two runs of the same fixed-seed search.
+> The wall-clock cap is **removed** and the e-node cap tightened 10 000 → 2 000 to bound
+> the cost it had been hiding. Read the "Determinism" and "Measurements" sections below
+> against docs/66, which supersedes both.
 
 **Fallback contract:** the Layer-2 result is adopted **only when strictly smaller**
 than the Layer-1 tree (after a final Layer-1 re-normalisation for canonical display
@@ -164,10 +170,13 @@ drift class B describes.
 
 Given the same tree on the same platform, the output is fully deterministic
 (sorted node lists drive matching and extraction; extraction ties break on a total
-order over e-nodes, not hash order). Two caveats, both display-only:
+order over e-nodes, not hash order). One caveat, display-only:
 
-- The wall-clock cap (10 ms) is the one non-deterministic stop; hitting it can only
-  cause a fallback toward the Layer-1 form (which is itself deterministic).
+- ~~The wall-clock cap (10 ms) is the one non-deterministic stop; hitting it can only
+  cause a fallback toward the Layer-1 form (which is itself deterministic).~~
+  **Wrong, and fixed in docs/66.** The cap bound often enough to change the reported
+  string between runs. There is no longer any non-deterministic stop: within a platform,
+  the rendering is a pure function of the tree.
 - Across platforms (native vs WASM), libm ULP differences and merge-order-dependent
   representative ids can pick different equal-size forms — the same cross-platform
   caveat docs/51 already accepts for the search itself. Within a platform, repeated
@@ -184,11 +193,15 @@ limits:
 | 6 | 7.9 → 5.5 | 151/300 | 14 | 123 | 0.003 / 1.23 / 14.6 |
 | 8 | 11.5 → 8.3 | 175/300 | 40 | 114 | 0.012 / 6.4 / 13.2 |
 
-Median cost is microseconds; the p90 stays in the low milliseconds; the 10 ms cap
-binds only on the pathological tail (max observed 14.6 ms including extraction).
-Reducing the cap from 50 ms to 10 ms changed **no** output in these runs (identical
-node reductions and adoption counts) — the cap is genuinely a safety net. At
-finalize time the function runs once per Pareto member (≤ ~25 calls).
+Median cost is microseconds; the p90 stays in the low milliseconds. At finalize time
+the function runs once per Pareto member (≤ ~25 calls).
+
+**The conclusion drawn here — "the cap is genuinely a safety net" — did not hold.** These
+runs used `generate_random_tree` at `max_depth ≤ 8`, which produces trees averaging 5-12
+nodes: far below the `maxsize = 30` the display layer is actually handed, so the cap looked
+harmless because the sample was too small. Measured at realistic sizes (docs/66), 1-2% of
+30-node trees exceed 10 ms and the worst 60-node tree took 615 ms. See docs/66 §3 for the
+distribution that replaced this table, and §1 for the defect the wrong conclusion caused.
 
 ## Verification
 

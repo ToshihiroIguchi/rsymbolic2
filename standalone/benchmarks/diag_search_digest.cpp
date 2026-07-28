@@ -22,7 +22,9 @@
 // Cases are chosen to cover the code paths the memory work touches: the default
 // full-data path, several island counts and thread counts (the per-worker scratch),
 // batching (which is the only reader of the row-major dataset copy), and the opt-in
-// scorers that route through different evaluation entry points.
+// scorers that route through different evaluation entry points. `strong_simplify` is
+// included because it is the only option that runs the display simplifier inside the
+// evolution loop, so it is the arm that would move if EGraphLimits changed (docs/66).
 
 #include <cstdio>
 #include <cstdint>
@@ -44,10 +46,13 @@ using rsymbolic::SearchResult;
 void report(const std::string& label, const SearchResult& r) {
     std::printf("=== %s\n", label.c_str());
     std::printf("  expression   : %s\n", r.expression.c_str());
-    // expression_simplified is deliberately NOT digested. It is display-only (docs/52),
-    // and display_simplify()'s e-graph runs under a wall-clock budget, so the SAME binary
-    // produces different strings on different runs. Including it would make this golden
-    // report false differences. Everything below is a search output and is exact.
+    // expression_simplified IS digested. It was excluded while display_simplify()'s e-graph
+    // ran under a wall-clock budget, because the same binary then produced different strings
+    // on different runs; docs/66 removed that budget, so the field is now a pure function of
+    // the tree and belongs in the golden like everything else. If it ever starts producing
+    // false differences again, the bug is a reintroduced non-deterministic stop in
+    // EGraphLimits — fix that, do not re-exclude the field.
+    std::printf("  simplified   : %s\n", r.expression_simplified.c_str());
     std::printf("  loss         : %a\n", r.loss);
     std::printf("  complexity   : %d\n", r.complexity);
     std::printf("  best_index   : %d\n", r.best_index);
@@ -145,6 +150,13 @@ int main() {
             SearchOptions o = base_opts(nguyen1, seed);
             o.warmup_maxsize_by = 0.5;
             run_case("nguyen1 warmup seed=" + std::to_string(seed), nguyen1, o);
+        }
+        {
+            // The only option that puts the e-graph INSIDE the evolution loop (docs/55),
+            // so it is the one whose trajectory a change to EGraphLimits could move.
+            SearchOptions o = base_opts(nguyen1, seed);
+            o.strong_simplify = true;
+            run_case("nguyen1 strong_simplify seed=" + std::to_string(seed), nguyen1, o);
         }
         {
             SearchOptions o = base_opts(keijzer, seed);

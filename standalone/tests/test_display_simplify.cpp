@@ -452,6 +452,40 @@ void test_semantics_preserved_random() {
     }
 }
 
+// --- Reproducibility: the rendering is a pure function of the tree (docs/66) ----------
+//
+// display_simplify() feeds SearchResult::expression_simplified, so a fixed-seed search
+// must report the same string every time it is run. That holds only while every stop
+// condition in EGraphLimits is a COUNT. An earlier revision also stopped on a wall-clock
+// budget, and it bound often enough that two runs of the same binary disagreed.
+//
+// The trees here are deliberately at and beyond the default maxsize, and the loop is run
+// under a size sweep, because the cheap trees never approach any cap and would pass
+// regardless — the expensive ones are the ones a timing-dependent stop truncates.
+void test_rendering_is_reproducible() {
+    for (int nodes : {30, 60, 120}) {
+        SearchSpace space;
+        space.binary_ops = {BinaryOp::Add, BinaryOp::Sub, BinaryOp::Mul, BinaryOp::Div,
+                            BinaryOp::Pow};
+        space.unary_ops = {UnaryOp::Neg,  UnaryOp::Sin,    UnaryOp::Cos,  UnaryOp::Exp,
+                           UnaryOp::Log,  UnaryOp::Sqrt,   UnaryOp::Square, UnaryOp::Abs,
+                           UnaryOp::Tanh, UnaryOp::Erf,    UnaryOp::Sinh, UnaryOp::Cosh,
+                           UnaryOp::Inv};
+        space.num_features = 3;
+        space.max_nodes = nodes;
+        space.max_depth = nodes;
+
+        std::mt19937_64 rng(4242);
+        for (int t = 0; t < 40; ++t) {
+            const Tree tree = gen_random_tree_fixed_size(nodes, space, rng);
+            const std::string first = to_string(display_simplify(tree));
+            for (int rep = 0; rep < 3; ++rep) {
+                CHECK(to_string(display_simplify(tree)) == first);
+            }
+        }
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -491,6 +525,7 @@ int main() {
     test_layer2_fallback_on_tiny_limits();
     test_layer1_idempotent_random();
     test_semantics_preserved_random();
+    test_rendering_is_reproducible();
 
     if (g_failures == 0) {
         std::printf("All %d checks passed\n", g_checks);

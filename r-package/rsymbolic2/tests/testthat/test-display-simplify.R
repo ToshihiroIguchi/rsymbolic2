@@ -88,3 +88,31 @@ test_that("a hand-built display_simplify-eligible fit exposes a shorter simplifi
   expect_true(is.numeric(val))
   expect_false(anyNA(val))
 })
+
+test_that("the same seed reports the same expression_simplified (docs/66)", {
+  # The user-facing half of the reproducibility contract. expression_simplified used to
+  # come out of an e-graph bounded partly by a wall-clock budget, so two runs of the same
+  # fixed-seed search could report different renderings of the identical model. The
+  # budget is now counts only, making display_simplify a pure function of the tree.
+  #
+  # A unary set and enough generations to reach non-trivial trees, because a two-node
+  # answer would render identically no matter how the e-graph were bounded.
+  X <- matrix(seq(-3, 3, length.out = 40), ncol = 1)
+  y <- 1.4 * X[, 1]^2 - 0.8 * X[, 1] + 2.1
+
+  fit <- function() {
+    symbolic_regression(
+      X, y,
+      unary_ops       = c("square", "neg"),
+      population_size = 60L, n_populations = 4L, generations = 60L, seed = 909L
+    )
+  }
+  a <- fit()
+  b <- fit()
+
+  expect_identical(a$expression_simplified, b$expression_simplified)
+  expect_identical(a$recommended_simplified, b$recommended_simplified)
+  expect_identical(a$pareto_front$expression_simplified,
+                   b$pareto_front$expression_simplified)
+  expect_identical(a$pareto_front$latex_simplified, b$pareto_front$latex_simplified)
+})

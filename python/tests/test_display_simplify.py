@@ -55,6 +55,37 @@ def test_predict_and_get_best_unaffected_by_simplification():
     assert "expression_simplified" in best
 
 
+def test_same_seed_reports_the_same_expression_simplified():
+    """The user-facing half of the docs/66 reproducibility contract.
+
+    expression_simplified used to come out of an e-graph bounded partly by a wall-clock
+    budget, so two runs of the same fixed-seed search could report different renderings
+    of the identical model. The budget is now counts only, making display_simplify a
+    pure function of the tree.
+
+    A unary set and enough generations to reach non-trivial trees, because a two-node
+    answer would render identically no matter how the e-graph were bounded.
+    """
+    X = np.linspace(-3, 3, 40).reshape(-1, 1)
+    y = 1.4 * X[:, 0] ** 2 - 0.8 * X[:, 0] + 2.1
+
+    def fit():
+        return symbolic_regression(
+            X, y, unary_ops=["square", "neg"], population_size=60, n_populations=4,
+            generations=60, seed=909,
+        )
+
+    a, b = fit(), fit()
+
+    assert a.expression_simplified == b.expression_simplified
+    assert [m["expression_simplified"] for m in a.pareto_front] == [
+        m["expression_simplified"] for m in b.pareto_front
+    ]
+    assert [m["latex_simplified"] for m in a.pareto_front] == [
+        m["latex_simplified"] for m in b.pareto_front
+    ]
+
+
 def _synthetic_raw_with_simplified(n_members=3, best_index=1):
     return {
         "expression": f"expr{n_members - 1}",

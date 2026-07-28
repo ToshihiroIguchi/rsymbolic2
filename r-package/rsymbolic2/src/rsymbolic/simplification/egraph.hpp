@@ -22,13 +22,28 @@ namespace rsymbolic {
 // reassociate/redistribute floating-point operations (drift by a rounding step, the
 // same caveat simplify()'s combine pass already carries) are allowed.
 //
-// All limits are hard caps; saturation is best-effort within them. Iteration and
-// e-node caps are deterministic; the wall-clock cap is a safety net that is not
-// expected to bind at these sizes (hitting it is the only non-deterministic stop).
+// All limits are hard caps; saturation is best-effort within them. Both caps are counts,
+// which is the point: they make the stop a function of the INPUT TREE ALONE, so the same
+// tree always renders the same way (docs/66). An earlier revision also carried a
+// wall-clock safety net, and it bound often enough at these sizes to make
+// `expression_simplified` differ between two runs of the same fixed-seed search on a busy
+// machine. Do not reintroduce a clock reading, a deadline, or any other stop condition
+// that a second run could evaluate differently; bound the cost with the counts below.
+//
+// The counts have to carry the cost bound alone, so they are set from the measured tail
+// rather than from what looks generous (docs/66 §3, bench_simplify). Matching is
+// superlinear in the class count, so the previous e-node cap of 10000 had a heavy tail —
+// 615 ms on the worst of 2000 random 60-node trees, which the 10 ms net was silently
+// truncating. Cutting it to 2000 bounds the worst case at ~23 ms, a 27x improvement, and
+// costs almost nothing: Layer-2 adoption is unchanged at 30 and 60 nodes and drops 0.6
+// percentage points at 120. The two caps are NOT interchangeable here — tightening
+// max_iterations instead (to 6) buys less and costs ~2.6 points of adoption, because the
+// tail is driven by e-matching over the class count, not by the iteration count.
+// Display simplification runs once per Pareto member at finalisation, so the ceiling that
+// matters is (front size) x this.
 struct EGraphLimits {
-    int max_iterations = 10;   // equality-saturation iterations
-    int max_enodes = 10000;    // e-graph size cap (distinct canonical e-nodes)
-    double max_millis = 10.0;  // wall-clock safety net per expression
+    int max_iterations = 10;  // equality-saturation iterations
+    int max_enodes = 2000;    // e-graph size cap (distinct canonical e-nodes)
 };
 
 struct EGraphResult {

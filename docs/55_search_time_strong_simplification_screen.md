@@ -39,22 +39,27 @@ default OFF; see §6).
   and exercised by the standalone bit-identity gate (§1b).
 
   **Deterministic budget.** The in-loop `display_simplify()` call uses a fixed
-  candidate-limit triple `{max_iterations, max_enodes, max_millis}` =
-  `{4, 1000, 1.0e9}` (`kSearchStrongSimplifyLimits` in `evolutionary_search.cpp`).
-  `max_millis` is neutralised with a huge sentinel so only `max_iterations` /
-  `max_enodes` can stop the e-graph saturation loop — the call never has a live
-  wall-clock budget of its own, keeping the search's timing behaviour governed
-  entirely by the outer `timeout_seconds`, if any.
+  candidate-limit pair `{max_iterations, max_enodes}` = `{4, 1000}`
+  (`kSearchStrongSimplifyLimits` in `evolutionary_search.cpp`). Both are counts, so the
+  e-graph saturation loop stops as a function of the candidate tree alone and the search's
+  timing behaviour stays governed entirely by the outer `timeout_seconds`, if any.
 
-  This triple was chosen from a micro-benchmark over 6000 random ~30-node trees
+  (Originally written as the triple `{4, 1000, 1.0e9}`, where the third element neutralised
+  the then-existing wall-clock cap with an 11.6-day sentinel. `EGraphLimits` no longer has
+  a wall-clock field at all — docs/66 removed it, for the same reproducibility reason this
+  arm was already sidestepping — so the sentinel is gone and the budget is the pair. This
+  is a spelling change: the ON-path search trajectory is bit-identical, verified by the
+  `strong_simplify` arm of `diag_search_digest`.)
+
+  This pair was chosen from a micro-benchmark over 6000 random ~30-node trees
   spanning the full operator set, timing `display_simplify` per call at three
   candidate-limit settings:
 
   | Candidate limits | p50 | p90 | max | shrink rate |
   |---|---|---|---|---|
-  | {10, 10000, 1e9} | 0.0068 ms | 5.25 ms | 74.6 ms | 51.2% (3074/6000) |
-  | {6, 2000, 1e9} | 0.0062 ms | 1.10 ms | 11.5 ms | 51.2% (3073/6000) |
-  | {4, 1000, 1e9} | 0.0062 ms | 0.41 ms | 1.59 ms | 51.1% (3069/6000) |
+  | {10, 10000} | 0.0068 ms | 5.25 ms | 74.6 ms | 51.2% (3074/6000) |
+  | {6, 2000} | 0.0062 ms | 1.10 ms | 11.5 ms | 51.2% (3073/6000) |
+  | {4, 1000} | 0.0062 ms | 0.41 ms | 1.59 ms | 51.1% (3069/6000) |
 
   `{4, 1000}` was chosen as the smallest candidate-limit setting with a sub-millisecond
   p90 and a shrink rate statistically indistinguishable from the two larger settings

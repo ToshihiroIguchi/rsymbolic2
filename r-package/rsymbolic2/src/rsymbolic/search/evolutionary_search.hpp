@@ -384,6 +384,8 @@ struct SearchResult {
     // on a COPY of `tree` at finalization time. Never fed back into the search, never
     // used by predict() (docs/48 D2 "frozen-expression rule": `expression` alone is the
     // evaluatable round-trip source) — purely a shorter/more-readable rendering.
+    // Reproducible: display_simplify() is a pure function of the tree (docs/66), so a
+    // fixed seed yields the same string on every run.
     std::string expression_simplified;
     std::vector<PopMember> pareto_front;
     // Index into pareto_front of the recommended ("best") accuracy/complexity trade-off

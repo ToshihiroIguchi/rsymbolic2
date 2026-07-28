@@ -258,7 +258,7 @@ Roughly 20-30% on this workload. Consistent with the prediction: the old code st
 - `pytest`: 65 passed (Windows), 56 passed / 9 skipped (Ubuntu).
 - WASM: builds under the pinned emsdk; `web/wasm/test/parity_test.cjs` passes.
 
-### Incidental finding: `expression_simplified` is not reproducible
+### Incidental finding: `expression_simplified` is not reproducible — **fixed, docs/66**
 
 The first digest diff flagged two `expression_simplified` strings. Re-running the **same
 unmodified binary** twice reproduced the difference, so it is pre-existing and unrelated:
@@ -269,8 +269,11 @@ This affects only the display string. `expression` is the frozen round-trip sour
 (docs/48 D2), the search never reads the simplified form, and `predict()` does not use it —
 so nothing computational is at risk. But a user re-running a fixed seed can see a different
 "simplified" rendering of the identical model. Worth fixing separately, by budgeting the
-e-graph in iterations/nodes rather than milliseconds. `diag_search_digest` excludes the
-field and says why.
+e-graph in iterations/nodes rather than milliseconds.
+
+**Done in docs/66**, by exactly that route: `max_millis` was deleted from `EGraphLimits`,
+and the e-node cap tightened to bound the cost it had been hiding. `diag_search_digest` no
+longer excludes the field — it digests it, and gained a `strong_simplify` arm.
 
 ## 7. Left undone, deliberately
 

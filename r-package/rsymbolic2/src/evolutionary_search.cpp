@@ -66,17 +66,16 @@ constexpr double kInf = std::numeric_limits<double>::infinity();
 #endif
 constexpr std::size_t kEvalCacheSlots = RSYMBOLIC2_EVAL_CACHE_SLOTS;
 
-// Deterministic Layer-2 budget for opt-in options.strong_simplify (docs/55), applied
-// per population member in optimize_and_simplify_population. max_millis is neutralised
-// with a huge sentinel so the ONLY stops are max_iterations/max_enodes — both fully
-// deterministic, required for same-seed and thread-count reproducibility (a wall-clock
-// stop would make the search non-reproducible, exactly like SearchOptions::timeout_seconds).
-// Chosen by micro-benchmark (docs/55): {4, 1000, huge} gave p90 ~= 0.4ms per call over
-// ~30-node random trees across the full operator set, with a shrink rate (51.1%)
-// statistically indistinguishable from the generous {10, 10000} reference (51.2%) —
-// the smallest cap tried whose p90 was comfortably sub-millisecond. Never exposed via
-// any public API.
-const EGraphLimits kSearchStrongSimplifyLimits{4, 1000, 1.0e9};
+// Layer-2 budget for opt-in options.strong_simplify (docs/55), applied per population
+// member in optimize_and_simplify_population. Tighter than the display default because
+// this one runs inside the evolution loop rather than once at finalisation. Chosen by
+// micro-benchmark (docs/55): {4, 1000} gave p90 ~= 0.4ms per call over ~30-node random
+// trees across the full operator set, with a shrink rate (51.1%) statistically
+// indistinguishable from the generous {10, 10000} reference (51.2%) — the smallest cap
+// tried whose p90 was comfortably sub-millisecond. Never exposed via any public API.
+// (Both fields are counts, so this budget is a function of the tree alone; EGraphLimits
+// carries no wall-clock stop, which is what keeps the ON-path search reproducible.)
+const EGraphLimits kSearchStrongSimplifyLimits{4, 1000};
 
 // True if every unary/binary operator node in `tree` is enabled in `space`'s operator
 // set. Used to gate opt-in options.strong_simplify adoption: display_simplify's
