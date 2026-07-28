@@ -9,14 +9,25 @@ import {
   parseTable, numericColumns, toMatrix, maxRowsForBrowser, sampleTable, strideIndices,
 } from "./data.js";
 import { EXAMPLES } from "./examples.js";
-import { drawPareto, drawPrediction, drawResidual, destroyPlots, destroyPrediction } from "./plots.js";
+import {
+  drawPareto, drawPrediction, drawResidual, destroyPlots, destroyPrediction,
+  paretoImage, fitImage, residualImage,
+} from "./plots.js";
 import { renderInto } from "./latex.js";
 import { renderTree, treeSvgStandalone } from "./tree.js";
 import { predict } from "./predict.js";
 import {
   copyText, pythonCall, rCall, paretoCsv, downloadText,
 } from "./export.js";
-import { fmt, fmtInt } from "./format.js";
+import { buildReport } from "./report.js";
+import { fmt, fmtInt, fmtComplexity } from "./format.js";
+
+// Printed on the report (docs/64) so a saved PDF says which build produced it. Must track
+// r-package/rsymbolic2/DESCRIPTION and python/pyproject.toml, which ship the same version:
+// the web GUI is a fourth binding over the same core, not a separately versioned product.
+// Stamping it at build time was rejected as disproportionate — it would have to work in the
+// GitHub Actions build and in web/serve.py, for one string.
+const APP_VERSION = "0.1.0";
 
 // Canonical unary order sent to the engine. The core picks operators by a random index into
 // this list (mutation.cpp: space.unary_ops[op(rng)]), so the list ORDER is part of the search
@@ -212,6 +223,13 @@ const state = {
   featureNames: null,
   targetName: null,
   sampling: null, // {fitted, total, seed} when the run used a sample; snapshotted at run time
+  dataSource: null, // {label, kind} of the loaded table — where the data came from
+  // Facts about the finished run that nothing on screen keeps: the report needs them, the
+  // live UI only ever turned them into status-chip text. Snapshotted at result time for the
+  // same reason as featureNames/targetName/sampling above — a displayed result describes the
+  // run that produced it, and controls the user can still move afterwards must not rewrite it.
+  run: null, // {startedAt, elapsed, stoppedEarly, epoch, totalEpochs, source}
+  runStartedAt: null, // Date the in-flight run was launched
   selectedIndex: null,
   treeSvg: null, // the rendered <svg> of the selected equation's tree, for the SVG download
   worker: null,
@@ -420,7 +438,7 @@ function buildExamples() {
     if (!ex) return;
     applyExampleOps(ex.ops);
     saveSearchSettingsSoon(); // ticked programmatically, so no change event fires on the boxes
-    loadTable(ex.make());
+    loadTable(ex.make(), { label: ex.label, kind: "example" });
   });
 }
 
@@ -448,7 +466,10 @@ function applyOpSelection(kind, ops) {
 }
 
 // --- Data intake ------------------------------------------------------------------
-function loadTable(table) {
+// `source` = {label, kind} identifying where the table came from ("file", "example",
+// "paste"). It exists for the report, which has to name the data it describes; the file name
+// used to be read only to compose an error message and then dropped.
+function loadTable(table, source = null) {
   // New data invalidates everything downstream of it, including a search still in flight:
   // its result would render against the table it can no longer be read as describing.
   if (document.body.classList.contains("running")) {
@@ -457,6 +478,7 @@ function loadTable(table) {
   }
   clearResults();
   state.sourceTable = table;
+  state.dataSource = source;
   state.table = table; // provisional; applyRowPolicy() below may replace it with a sample
   // Classify columns on the FULL table: a column holding text in a row that sampling happens
   // to drop is still not a numeric column, and this way the target/feature lists do not
@@ -493,8 +515,10 @@ function clearResults() {
   state.featureNames = null;
   state.targetName = null;
   state.sampling = null;
+  state.run = null;
   state.selectedIndex = null;
   state.treeSvg = null;
+  $("print-btn").disabled = true; // nothing left to report on
   $("results-area").classList.remove("has-result");
   $("pareto-card").classList.remove("live");
   $("pareto-table").querySelector("tbody").innerHTML = "";
@@ -518,17 +542,17 @@ function tooLarge(bytes) {
   return `That input is ${(bytes / 1048576).toFixed(0)} MB; the browser build accepts up to ` +
          `${MAX_INPUT_BYTES / 1048576} MB. Use fewer rows, or the R or Python package.`;
 }
-function loadTextAsTable(text) {
+function loadTextAsTable(text, source = null) {
   const problem = tooLarge(text.length);
   if (problem) { setStatus(problem); return; }
-  try { loadTable(parseTable(text)); }
+  try { loadTable(parseTable(text), source); }
   catch (err) { setStatus("parse error: " + err.message); }
 }
 function loadFile(file) {
   const problem = tooLarge(file.size);
   if (problem) { setStatus(problem); return; }
   const reader = new FileReader();
-  reader.onload = () => loadTextAsTable(reader.result);
+  reader.onload = () => loadTextAsTable(reader.result, { label: file.name, kind: "file" });
   reader.onerror = () => setStatus(
     `could not read ${file.name}: ${(reader.error && reader.error.message) || "read failed"}`);
   reader.readAsText(file);
@@ -1109,6 +1133,7 @@ function run() {
   state.epochMarks = [];
   document.body.classList.remove("determinate");
   $("progress-bar").style.setProperty("--progress", "0%");
+  state.runStartedAt = new Date(); // wall-clock start, for the report's run summary
   startTimer();
   setStatus("running…");
 
@@ -1175,6 +1200,16 @@ function onResult(result, elapsed) {
   // the progress snapshots is what actually ran, so say that instead when the two disagree.
   const gens = state.config ? state.config.generations : null;
   const early = state.totalEpochs > 0 && state.epoch < state.totalEpochs;
+  // Same three facts the chip is about to turn into a sentence, kept as values: the report
+  // states them too, and re-deriving them from chip text would be reading the UI back.
+  state.run = {
+    startedAt: state.runStartedAt || new Date(),
+    elapsed,
+    stoppedEarly: early,
+    epoch: state.epoch,
+    totalEpochs: state.totalEpochs,
+    source: state.dataSource,
+  };
   const el = $("status");
   if (early) {
     setStatus(`${elapsed.toFixed(2)}s | stopped early: epoch ${state.epoch}/${state.totalEpochs}`);
@@ -1322,6 +1357,7 @@ function renderResult() {
   drawParetoChart();
   selectEquation(res.best_index != null ? res.best_index : front.complexity.length - 1);
   renderEvalAccounting(res);
+  $("print-btn").disabled = false; // there is now a run to report on
 }
 
 // Re-pick the recommended equation for the current model_selection, in place (no re-run).
@@ -1337,17 +1373,6 @@ function applyModelSelection() {
     tr.classList.toggle("recommended", parseInt(tr.dataset.index, 10) === state.result.best_index);
   });
   selectEquation(state.result.best_index);
-}
-
-// The `complexity` column is the node count of the RAW tree the search archived (the hall of
-// fame keeps one member per raw complexity), while the equation shown is its display-simplified
-// form (docs/52). Two front members can therefore differ in complexity yet print the identical
-// expression. Rendering both counts ("10 → 7") explains that instead of leaving what looks like
-// a contradiction between the two columns.
-function fmtComplexity(front, i) {
-  const raw = front.complexity[i];
-  const simplified = front.complexity_simplified ? front.complexity_simplified[i] : null;
-  return simplified == null || simplified === raw ? String(raw) : `${raw} → ${simplified}`;
 }
 
 function renderTable(res, front) {
@@ -1476,6 +1501,128 @@ function wireExport() {
   });
 }
 
+// --- Printable report (docs/64) ---------------------------------------------------
+// Everything report.js needs, as plain data. Assembled here for the same reason export.js
+// takes a config object rather than reading the DOM: the report is then a function of the
+// run, not of the app's current layout, and neither module can drift into reading the other's
+// element ids.
+
+// Every search setting with the PySR-parity default it is measured against. DEFAULTS covers
+// the numeric dialog fields; the four below are the checkboxes and the results-side selector,
+// which live outside it. model_selection appears with PySR's "best" as its reference even
+// though the GUI ships "score" — that divergence is sanctioned (CLAUDE.md) but it decides
+// which equation the report calls the answer, so it is stated, not hidden.
+const EXTRA_SETTING_DEFAULTS = {
+  batching: false,
+  linear_scaling: false,
+  eval_cache: false,
+  model_selection: "best",
+};
+
+function reportSettingRows(cfg) {
+  const rows = Object.keys(DEFAULTS).map((id) => (
+    { name: id, value: cfg[id], fallback: DEFAULTS[id].value }));
+  Object.keys(EXTRA_SETTING_DEFAULTS).forEach((id) => {
+    rows.push({ name: id, value: cfg[id], fallback: EXTRA_SETTING_DEFAULTS[id] });
+  });
+  return rows;
+}
+
+function reportContext() {
+  const res = state.result;
+  const front = res.pareto_front;
+  const i = state.selectedIndex;
+  const residual = $("fit-view").value === "residual";
+  // The same bounded stride subset the on-screen fit chart draws, so the printed figure is
+  // the printed copy of what was on screen rather than a second, differently-sampled chart.
+  const idx = strideIndices(state.X.length, DISPLAY_POINT_CAP);
+  const Xd = idx ? idx.map((k) => state.X[k]) : state.X;
+  const yd = idx ? idx.map((k) => state.y[k]) : state.y;
+  let fit = null;
+  try {
+    const yhat = predict(front.expression[i], Xd);
+    fit = residual
+      ? residualImage(yd, yhat, { yLabel: state.targetName })
+      : fitImage(Xd, yd, yhat, { xLabel: state.featureNames[0], yLabel: state.targetName });
+  } catch (e) {
+    // Same failure the on-screen card handles by dropping its chart: the equation could not
+    // be evaluated on these inputs. The report keeps every other section.
+  }
+
+  return {
+    version: APP_VERSION,
+    generatedAt: new Date(),
+    source: state.run.source,
+    data: {
+      rows: state.X.length,
+      columns: state.featureNames.length + 1,
+      targetName: state.targetName,
+      featureNames: state.featureNames,
+    },
+    sampling: state.sampling,
+    front,
+    selectedIndex: i,
+    bestIndex: res.best_index,
+    modelSelection: state.config.model_selection,
+    charts: {
+      pareto: paretoImage(front, {
+        bestIndex: res.best_index,
+        logLoss: $("logloss").checked,
+        selectedIndex: i,
+      }),
+      // The on-screen chart is read with the legend printed above it; the figure is not, so
+      // the caption has to name the marks. It must also match what the figure actually draws:
+      // a point that is both selected and recommended is drawn ONLY in the selected colour
+      // (plots.js pointColors), so there is no second mark to point at.
+      paretoCaption: i === res.best_index
+        ? "Pareto front: loss against complexity. The highlighted point is the equation " +
+          "above, which is also the recommended one."
+        : "Pareto front: loss against complexity. Red is the equation above; green is the " +
+          "recommended equation.",
+      fit,
+      fitCaption: residual
+        ? "Residuals (actual − predicted) against predicted. Structure around the zero line " +
+          "means the equation is missing something a high R² can hide."
+        : "The selected equation against the data.",
+    },
+    fitNote: $("fit-note").textContent,
+    tree: state.treeSvg ? state.treeSvg.cloneNode(true) : null,
+    config: state.config,
+    settingRows: reportSettingRows(state.config),
+    run: state.run,
+    evalCounts: { n_evals: res.n_evals, ...(res.eval_counts || {}) },
+    snippets: {
+      python: pythonCall(state.config, state.sampling),
+      r: rCall(state.config, state.sampling),
+    },
+  };
+}
+
+// Build the report into its container and let the print stylesheet know there is one. The
+// body class is what gates the "hide the app, show the report" rules: a print started with no
+// result at all then falls back to printing the app, rather than a blank page.
+function buildPrintReport() {
+  if (!state.result || !state.run || state.selectedIndex == null) return false;
+  buildReport($("print-report"), reportContext());
+  document.body.classList.add("has-print-report");
+  return true;
+}
+
+function clearPrintReport() {
+  document.body.classList.remove("has-print-report");
+  $("print-report").textContent = "";
+}
+
+// The supported path. A data URI is not painted the instant its src is set, so printing
+// before the decode gives blank chart boxes — hence the await, and hence a button handler
+// that is async while beforeprint (which cannot await anything) stays a best-effort net.
+async function printReport() {
+  if (!buildPrintReport()) return;
+  await Promise.all([...$("print-report").querySelectorAll("img")].map(
+    (img) => (img.decode ? img.decode().catch(() => {}) : Promise.resolve())));
+  window.print();
+}
+
 // --- Column splitters -------------------------------------------------------------
 // Each `.gutter` sits in a dedicated grid track between two panes. Dragging it writes the
 // left pane's pixel width into the container's CSS variable (--col-config on .layout);
@@ -1559,6 +1706,14 @@ function init() {
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
       e.preventDefault();
       if (state.table && !document.body.classList.contains("running")) run();
+      return;
+    }
+    // Ctrl/Cmd+P is how most people start a print, so it takes the same guaranteed-complete
+    // path as the button rather than racing the browser to build the report (see printReport).
+    // Only claimed when there is a result to print; otherwise the browser's own print runs.
+    if ((e.ctrlKey || e.metaKey) && (e.key === "p" || e.key === "P") && state.result) {
+      e.preventDefault();
+      printReport();
     }
   });
   $("target-select").addEventListener("change", (e) => {
@@ -1606,12 +1761,12 @@ function init() {
     const text = e.clipboardData && e.clipboardData.getData("text");
     if (!text || !text.trim()) return;
     e.preventDefault();
-    loadTextAsTable(text);
+    loadTextAsTable(text, { label: "pasted table", kind: "paste" });
   });
 
   // Empty-state shortcut: one click loads the first example dataset and runs it.
   $("placeholder-run-example").addEventListener("click", () => {
-    loadTable(EXAMPLES[0].make());
+    loadTable(EXAMPLES[0].make(), { label: EXAMPLES[0].label, kind: "example" });
     run();
   });
 
@@ -1667,6 +1822,16 @@ function init() {
   });
 
   wireExport();
+
+  // Report printing. The button and Ctrl+P go through printReport(); `beforeprint` catches
+  // the browser's own menu, where there is nothing to await on — it builds synchronously and
+  // may miss the chart images on the first print of a session. `afterprint` drops the report
+  // again so the DOM (and the chart data URIs) do not linger.
+  $("print-btn").addEventListener("click", printReport);
+  window.addEventListener("beforeprint", () => {
+    if (!document.body.classList.contains("has-print-report")) buildPrintReport();
+  });
+  window.addEventListener("afterprint", clearPrintReport);
 }
 
 init();

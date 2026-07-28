@@ -568,6 +568,175 @@ body.running #results-area .card.live {
   opacity: 1;
   position: relative;
 }
+/* ==================================================================================
+   Printable report (docs/64)
+   ==================================================================================
+   The report is a SEPARATE DOM subtree built on demand (js/report.js), not the results
+   column restyled. The app's own layout cannot produce a usable page: the equation table is
+   a 320px scroll box, its equation column ellipsises, the tree box clips sideways, and the
+   charts are canvases drawn at the screen's pixel ratio. Half the report — the settings
+   table, the snippets, the run metadata — is not in the app's DOM at all.
+
+   The rules below are deliberately OUTSIDE @media print, except the page-level ones. The
+   container is display:none on screen, so they cost nothing there, and keeping them
+   unconditional means the report can be inspected on screen exactly as it will print. */
+
+/* Light palette for anything destined for paper, whatever the screen theme is. In dark mode
+   the app's --text is near-white, which prints as invisible text — so the report's own colors
+   are literal (below) and the two var-driven pieces it inherits are re-declared here: the
+   equation tree's node fills (consumed by the .tree-node rules above) and the Chart.js
+   palette (read by plots.js themeColors() from the element it is given). Carried by
+   #print-report and by the off-screen chart host. */
+.print-palette {
+  --chart-grid: rgba(0, 0, 0, 0.14);
+  --chart-text: #3d444f;
+  --chart-selected: #d62728;
+  --chart-recommended: #2ca02c;
+  --chart-data: #1f77b4;
+  --chart-line: rgba(120, 120, 120, 0.6);
+  --chart-refline: #888888;
+  --tree-op-bg: #eaeef4;
+  --tree-op-fg: #1c2430;
+  --tree-var-bg: #e8f0ff;
+  --tree-var-fg: #1d4ed8;
+  --tree-const-bg: #f4f5f7;
+  --tree-const-fg: #5b6472;
+  --tree-stroke: #cbd2db;
+  --tree-edge: #9aa4b2;
+}
+
+/* Where the print-resolution charts are rendered. Off-viewport rather than display:none:
+   Chart.js's responsive sizing reads the container's computed size, and a display:none
+   parent reports zero. Its own size is set in px by plots.js (PRINT_CHART). */
+.print-chart-host { position: absolute; left: -10000px; top: 0; }
+
+#print-report { display: none; }
+
+.report {
+  max-width: 186mm; /* A4 minus the @page margins; a no-op in print, a page column on screen */
+  margin: 0 auto;
+  background: #fff; color: #111;
+  font-size: 10pt; line-height: 1.45;
+  /* Table shading and tree fills are information here, not decoration, so they must survive
+     the browser's default "do not print backgrounds". */
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.report h1 { font-size: 15pt; margin: 0 0 1mm; }
+.report h2 {
+  font-size: 10.5pt; text-transform: uppercase; letter-spacing: 0.05em; color: #444;
+  margin: 0 0 2mm; padding-bottom: 1mm; border-bottom: 1px solid #c8ccd2;
+}
+.report h3 { font-size: 10pt; margin: 5mm 0 1.5mm; color: #222; }
+.report-head { border-bottom: 2px solid #333; padding-bottom: 2mm; margin-bottom: 4mm; }
+.report-meta, .report-muted { color: #555; }
+.report-meta { font-size: 8.5pt; }
+.report-block { margin-bottom: 5mm; }
+.report-note { color: #555; font-size: 8pt; margin: 1.5mm 0 0; }
+.report-sublabel {
+  font-size: 8pt; text-transform: uppercase; letter-spacing: 0.04em; color: #555;
+  margin: 3mm 0 1mm;
+}
+.report-mono, .report-expr { font-family: ui-monospace, Menlo, Consolas, monospace; }
+
+/* Data identity line: what was fitted, from what. */
+.report-dataline { font-size: 12pt; font-family: ui-monospace, Menlo, Consolas, monospace; }
+.report-subline { color: #555; font-size: 9pt; margin-top: 0.5mm; }
+/* A statement about what was fitted (a sample, not the file), so it is bordered and stays
+   put rather than reading as advice — same rule as the app's .data-notice.acted. */
+.report-flag {
+  margin-top: 2mm; padding: 1.5mm 2mm; font-size: 8.5pt;
+  background: #f6f7f9; border-left: 3px solid #888;
+}
+
+/* The answer, in the same order the hero card puts it: equation, string, numbers. */
+.report-eq {
+  border: 1px solid #d9dde3; border-radius: 2mm; background: #fbfcfe;
+  padding: 4mm 3mm; text-align: center; margin-bottom: 2mm;
+}
+.report-eq .katex { font-size: 1.5em; }
+.report-metrics { display: flex; flex-wrap: wrap; gap: 1mm 8mm; margin-top: 2mm; font-size: 9.5pt; }
+.report-metric .k { color: #555; margin-right: 1.5mm; }
+.report-metric .v { font-family: ui-monospace, Menlo, Consolas, monospace; }
+
+.report-code {
+  background: #f6f7f9; border: 1px solid #e2e5ea; border-radius: 1mm;
+  padding: 2mm 2.5mm; margin: 0 0 2mm;
+  font-size: 8.5pt; line-height: 1.4;
+  /* A long expression or a wide snippet line must wrap, not run off the page. */
+  white-space: pre-wrap; word-break: break-word;
+}
+.report-code code { font-family: ui-monospace, Menlo, Consolas, monospace; }
+
+.report-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
+.report-figure { margin: 0; }
+.report-figure img {
+  display: block; width: 100%; height: auto;
+  border: 1px solid #e2e5ea; border-radius: 1mm;
+}
+.report-figure figcaption { font-size: 8pt; color: #555; margin-top: 1.5mm; }
+.report-figure-missing {
+  border: 1px dashed #c8ccd2; padding: 8mm 2mm; text-align: center; color: #777; font-size: 8.5pt;
+}
+
+.report-table { border-collapse: collapse; width: 100%; font-size: 8.5pt; }
+.report-table th, .report-table td {
+  border-bottom: 1px solid #dfe3e8; padding: 1mm 2mm; text-align: right;
+  /* A number must never be split across two lines: "3.331e-" over "16" reads as two values.
+     The equation column is the only one that wraps (below). */
+  white-space: nowrap;
+}
+.report-table th { background: #f2f4f7; border-bottom: 1px solid #b9bfc7; }
+/* The equation column: left-aligned, and allowed to wrap. The on-screen table truncates it
+   with an ellipsis to avoid a sideways scroll; on paper there is nowhere to scroll to, so a
+   truncated equation would simply be lost. */
+.report-table td:last-child, .report-table th:last-child { text-align: left; white-space: normal; }
+.report-expr { word-break: break-word; }
+.report-table tr.recommended td { font-weight: 600; }
+.report-settings td:first-child, .report-settings th:first-child { text-align: left; }
+.report-settings tr.changed td { background: #f3f7ff; }
+
+.report-tree { text-align: center; }
+/* The renderer sizes the SVG in px and it can be far wider than the page; the viewBox lets
+   it scale down to fit instead of being clipped, as the on-screen scroll box allows. */
+.report-tree svg { max-width: 100%; height: auto; display: inline-block; }
+
+.report-defs { display: grid; grid-template-columns: max-content 1fr; gap: 0.8mm 4mm; margin: 0; }
+.report-defs dt { color: #555; font-size: 9pt; }
+.report-defs dd { margin: 0; font-size: 9pt; }
+.report-notes { margin: 1mm 0 0; padding-left: 5mm; font-size: 8.5pt; color: #333; }
+.report-notes li { margin-bottom: 1.5mm; }
+.report-footer {
+  margin-top: 6mm; padding-top: 2mm; border-top: 1px solid #c8ccd2;
+  font-size: 8pt; color: #555;
+}
+
+@media print {
+  /* Page headers, footers and page numbers come from the browser's own print settings — the
+     one thing this zero-dependency route gives up, and the same thing every "Print this page"
+     button gives up. */
+  @page { size: A4 portrait; margin: 14mm 12mm; }
+
+  /* Gated on the class the report builder adds, so a print started with NO result falls back
+     to printing the app rather than a blank page. */
+  body.has-print-report {
+    display: block; height: auto; overflow: visible;
+    background: #fff; color: #111;
+  }
+  body.has-print-report .app-header,
+  body.has-print-report .layout,
+  body.has-print-report dialog { display: none !important; }
+  body.has-print-report #print-report { display: block; }
+
+  /* A section is kept whole unless it is one that legitimately runs past a page — the
+     equation table and the appendix, which flow and repeat their table header instead. */
+  .report-block { break-inside: avoid; }
+  .report-block.report-flow { break-inside: auto; }
+  .report-newpage { break-before: page; }
+  .report-table thead { display: table-header-group; }
+  .report-table tr, .report-code, .report-figure { break-inside: avoid; }
+  .report h2, .report h3 { break-after: avoid; }
+}
+
 /* "live" affordance: a small badge on the Pareto card while it is receiving progress
    snapshots. Bottom-right (not top-right) so it never overlaps the card's own header
    controls (recommend/log-loss). Only shown mid-run (body.running); once the run

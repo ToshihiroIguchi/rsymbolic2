@@ -51,6 +51,20 @@
              messages (errors, data loaded, run finished, stopped). -->
         <span id="status-live" class="visually-hidden" role="status" aria-live="polite"></span>
         <button id="run-btn" class="btn primary" disabled title="Ctrl+Enter">&#9654; Run</button>
+        <!-- The printable report (docs/64). It belongs in the header, not in a result card:
+             it is a document-level action over the WHOLE run — the equation, the front, the
+             tree, the settings, the snippets — where every card-level download (CSV, SVG)
+             exports the one card it sits in. It is present-but-disabled from the first paint
+             rather than hidden until a result exists, so it never appears mid-session and
+             shifts the Run button sideways; #run-btn ships disabled for the same reason. -->
+        <button id="print-btn" class="btn small icon-btn" type="button" disabled
+                aria-label="Print the report as PDF"
+                title="Print the full report — choose &quot;Save as PDF&quot; in the print dialog (Ctrl+P)">
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none"
+               stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4.5 6V2.5h7V6" /><rect x="2.5" y="6" width="11" height="5" rx="1" /><path d="M4.5 10h7v3.5h-7z" />
+          </svg><span class="icon-tag">PDF</span>
+        </button>
         <button id="theme-toggle" class="btn small theme-toggle" type="button"
                 aria-label="Toggle dark mode" title="Toggle dark mode">&#127769;</button>
       </div>
@@ -479,6 +493,13 @@
                 title="Keep these settings. They take effect on the next run.">Apply</button>
       </div>
     </dialog>
+
+    <!-- The printable report (docs/64), built on demand by report.js and swapped in for the
+         app by the print stylesheet. Empty and display:none on screen; it carries
+         .print-palette so the equation tree inside it is drawn in the light colours whatever
+         theme the screen is in. aria-hidden because it is a second copy of what the results
+         column already exposes to a screen reader. -->
+    <div id="print-report" class="print-palette" aria-hidden="true"></div>
 
     <!-- Vendored libraries (same-origin, no CDN) -->
     <script src="vendor/katex.min.js"></script>

@@ -35,7 +35,8 @@ web/
   app/                      the static site (this is what gets deployed)
     index.html
     css/style.css
-    js/*.js                 UI (main, worker, predict, data, plots, latex, tree, export)
+    js/*.js                 UI (main, worker, predict, data, plots, latex, tree,
+                            export, report)
     vendor/                 KaTeX + Chart.js (vendored, MIT) + built rsymbolic2.{js,wasm}
     examples/ (inline)      example datasets live in js/examples.js
 ```
@@ -55,8 +56,8 @@ displayed, is not. Nothing else is stored — in particular:
 
 - **not your data.** It never leaves the browser, a real table does not fit in `localStorage`
   anyway, and auto-restoring one into the fixed 128 MB heap would make a reload a broken page.
-- **not the results.** They describe data that is gone. Use the Pareto CSV download, the copy
-  buttons, or the R/Python snippet, which reproduces the *run*.
+- **not the results.** They describe data that is gone. Use the PDF report, the Pareto CSV
+  download, the copy buttons, or the R/Python snippet, which reproduces the *run*.
 - **not the target/feature/sample choices**, which are statements about one table.
 - **not the results-view controls**, above all the model-selection rule — a fresh visit must
   recommend the shipped default, not a click from weeks ago.
@@ -119,6 +120,35 @@ expression, so its node count can be smaller than the `complexity` column, which
 raw tree the search archived. Unlike the Chart.js plots it takes its colours from the theme's
 CSS variables, so the light/dark toggle recolours it without a redraw. No plotting library is
 involved — Chart.js cannot draw trees, and nothing new was vendored.
+
+## Taking the result away
+
+Four exports, three of them scoped to one thing and one to the whole run:
+
+| control | where | what it gives you |
+|---|---|---|
+| Copy **LaTeX** / **Python code** / **R code** | Best formula card | the displayed equation, or a snippet reproducing the *run* in either package |
+| **CSV** | All equations card | one row per Pareto member, raw and display-simplified |
+| **SVG** | Equation tree card | the tree as a standalone vector file |
+| **PDF** | the header | the whole run as one printable document |
+
+The **PDF** button (docs/64) builds a report and opens the browser's own print dialog —
+choose "Save as PDF" there. Nothing is vendored to make it: a PDF writer would be a
+300–500 KB dependency and would have to re-implement the equation rendering and the tree in
+its own drawing API, so the browser does the writing and the site supplies a print
+stylesheet. The report is three sections, each on a fresh page: the answer (equation,
+metrics, Pareto and fit charts), the evidence (every equation in the front, untruncated, plus
+the tree), and a reproducibility appendix (operators and macros, every setting beside its
+PySR default with any divergence marked, the R and Python snippets, the run's timing and
+evaluation counts, and the notes a reader needs — above all that this build is not
+bit-identical to R/Python, so re-running the snippet can return a different but equally
+valid expression).
+
+It is a report *about the run*, not a screenshot of the page: the charts are re-rendered
+off-screen at roughly 380 dpi, the equation table drops the on-screen scroll cap and
+ellipsis, and the report prints black-on-white even in dark mode. Ctrl/Cmd+P takes the same
+path. Printing from the browser's own menu also works, but that path cannot wait for the
+chart images, so the button is the reliable one.
 
 ## How much data fits
 
