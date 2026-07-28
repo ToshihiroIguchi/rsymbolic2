@@ -40,6 +40,32 @@ web/
     examples/ (inline)      example datasets live in js/examples.js
 ```
 
+## What the browser stores
+
+Two `localStorage` keys, both small, both optional — the site works identically with storage
+disabled or full:
+
+| key | contents |
+|---|---|
+| `theme` | light/dark, when you have used the toggle |
+| `rsymbolic2.search-settings.v1` | the operator selection, the macros, the settings dialog's fields and the two high-accuracy opt-ins |
+
+What you set up **before** pressing Run is remembered; what the run produced, and how it is
+displayed, is not. Nothing else is stored — in particular:
+
+- **not your data.** It never leaves the browser, a real table does not fit in `localStorage`
+  anyway, and auto-restoring one into the fixed 128 MB heap would make a reload a broken page.
+- **not the results.** They describe data that is gone. Use the Pareto CSV download, the copy
+  buttons, or the R/Python snippet, which reproduces the *run*.
+- **not the target/feature/sample choices**, which are statements about one table.
+- **not the results-view controls**, above all the model-selection rule — a fresh visit must
+  recommend the shipped default, not a click from weeks ago.
+
+When the restored settings differ from the shipped ones, the Search card says so on arrival and
+offers **Use defaults**, which forgets them and resets operators, macros, opt-ins and fields
+together. A hand-edited or stale entry is discarded rather than half-applied. `docs/63` records
+the decision and the validation rules.
+
 ## Defaults that differ from PySR
 
 The **search** here is at PySR parity, exactly like the R and Python packages: same

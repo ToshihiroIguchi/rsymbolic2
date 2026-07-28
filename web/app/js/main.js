@@ -337,6 +337,7 @@ function addMacroRow(name = "", body = "", hint = "") {
   del.addEventListener("click", () => {
     row.remove();
     updateMacroSummary();
+    saveSearchSettingsSoon(); // a click, so the input/change funnel never sees this one
   });
   [nameInput, bodyInput].forEach((el) => el.addEventListener("input", updateMacroSummary));
   row.append(nameInput, bodyInput, del);
@@ -418,6 +419,7 @@ function buildExamples() {
     const ex = EXAMPLES[parseInt(sel.value, 10)];
     if (!ex) return;
     applyExampleOps(ex.ops);
+    saveSearchSettingsSoon(); // ticked programmatically, so no change event fires on the boxes
     loadTable(ex.make());
   });
 }
@@ -434,6 +436,15 @@ function applyExampleOps(ops) {
 function setOpChecked(kind, op) {
   const cb = document.querySelector(`input[data-kind="${kind}"][value="${op}"]`);
   if (cb) cb.checked = true;
+}
+// Restoring a saved selection is the one caller that must also be able to UNCHECK: setOpChecked
+// only ever turns a box on (an example may add operators, never drop one the user picked), which
+// cannot express "this default was deliberately switched off".
+function applyOpSelection(kind, ops) {
+  const want = new Set(ops);
+  document.querySelectorAll(`input[data-kind="${kind}"]`).forEach((cb) => {
+    cb.checked = want.has(cb.value);
+  });
 }
 
 // --- Data intake ------------------------------------------------------------------
@@ -871,6 +882,173 @@ function closeSettings(keep) {
   updateSettingsSummary();
   syncRowPolicyIfShapeChanged(); // Apply and every dismissal path can land on a new value
   $("settings-dialog").close();
+  // The commit point for the dialog's fields: nothing typed inside it is persisted until it
+  // closes, so Apply stores what was kept and every dismissal path stores the restored snapshot.
+  saveSearchSettings();
+}
+
+// --- Settings persistence ---------------------------------------------------------
+// What the user sets up BEFORE a run — operators, macros, the dialog's fields and the two
+// opt-ins — survives a reload. Nothing else does, and the exclusions are the point (docs/63):
+//   * the data, because it never leaves the browser today and that claim is worth more than the
+//     convenience, because a real table does not fit in localStorage (docs/59), and because
+//     auto-restoring one into the fixed 128 MB heap would make a reload a broken page;
+//   * the results, which describe data that is gone and already have export paths that survive
+//     a reload properly (Pareto CSV, and the R/Python snippets that reproduce the run);
+//   * the results-view controls, above all model_selection: it decides which equation the page
+//     RECOMMENDS, and a fresh visit must recommend the shipped default, not a weeks-old click.
+// The theme keeps its own older key; renaming it would silently reset every visitor's theme.
+const SETTINGS_KEY = "rsymbolic2.search-settings.v1";
+const MAX_STORED_CHARS = 64 * 1024; // a settings blob is well under 2 KB; larger is not ours
+const MAX_STORED_MACROS = 20;
+const MAX_MACRO_CHARS = 200;
+
+function readSearchSettings() {
+  const macros = readMacros();
+  return {
+    v: 1,
+    fields: readSettingsFields(),
+    binary_ops: checkedOps("bin"),
+    unary_ops: checkedOps("un"),
+    macros: macros.names.map((name, i) => ({ name, body: macros.bodies[i] })),
+    opt_ins: {
+      linear_scaling: $("linear_scaling").checked,
+      eval_cache: $("eval_cache").checked,
+    },
+  };
+}
+
+// Persistence is a convenience, never a requirement: private mode and a full quota both throw,
+// and the app must not notice. Same guard as toggleTheme().
+function saveSearchSettings() {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(readSearchSettings()));
+  } catch (e) { /* storage unavailable — the session simply is not remembered */ }
+}
+
+// One debounced funnel instead of a listener per control, so a control added later is covered
+// by construction. Events from things we do not store (the file input, the target select) only
+// cost a redundant identical write.
+let saveTimer = null;
+function saveSearchSettingsSoon() {
+  // The dialog is transactional — openSettings() snapshots and all four dismissal paths restore
+  // — so what is typed inside it is not committed state; closeSettings() saves the outcome.
+  if ($("settings-dialog").open) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveSearchSettings, 200);
+}
+
+// Storage is outside our control: a stale schema from an older deploy, a truncated write, or a
+// hand-edited value can all turn up here. Everything is whitelisted against the tables that
+// define the UI and anything unrecognised is dropped, so a bad blob costs the shipped defaults
+// rather than a broken panel. A section left out entirely (an older schema) returns null and
+// keeps the DOM's own defaults, which is why "invalid" and "absent" must not collapse together.
+function loadSearchSettings() {
+  let raw = null;
+  try { raw = localStorage.getItem(SETTINGS_KEY); } catch (e) { return null; }
+  if (!raw || raw.length > MAX_STORED_CHARS) return null;
+  let s = null;
+  try { s = JSON.parse(raw); } catch (e) { return null; }
+  if (!s || typeof s !== "object" || s.v !== 1) return null;
+  return {
+    fields: sanitizeFields(s.fields),
+    binary_ops: sanitizeOps(s.binary_ops, BINARY),
+    unary_ops: sanitizeOps(s.unary_ops, UNARY),
+    macros: sanitizeMacros(s.macros),
+    opt_ins: sanitizeOptIns(s.opt_ins),
+  };
+}
+function sanitizeFields(f) {
+  if (!f || typeof f !== "object") return null;
+  const out = {};
+  Object.keys(DEFAULTS).forEach((id) => {
+    const v = f[id];
+    // Stored as the string the input holds. A blank field is legal while typing but is not
+    // worth restoring — readConfig() would fall back to the default anyway.
+    if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))) out[id] = v;
+  });
+  Object.keys(CHECKBOX_DEFAULTS).forEach((id) => {
+    if (typeof f[id] === "boolean") out[id] = f[id];
+  });
+  return out;
+}
+// Filtering the canonical list (rather than the stored one) drops operators this build no
+// longer has and re-emits the rest in the order checkedOps() uses.
+function sanitizeOps(list, canonical) {
+  if (!Array.isArray(list)) return null;
+  return canonical.filter((op) => list.includes(op));
+}
+function sanitizeMacros(list) {
+  if (!Array.isArray(list)) return null;
+  return list
+    .filter((m) => m && typeof m.name === "string" && typeof m.body === "string")
+    .slice(0, MAX_STORED_MACROS)
+    .map((m) => ({
+      name: m.name.slice(0, MAX_MACRO_CHARS),
+      body: m.body.slice(0, MAX_MACRO_CHARS),
+    }));
+}
+function sanitizeOptIns(o) {
+  if (!o || typeof o !== "object") return null;
+  const out = {};
+  ["linear_scaling", "eval_cache"].forEach((id) => {
+    if (typeof o[id] === "boolean") out[id] = o[id];
+  });
+  return out;
+}
+
+function applySearchSettings(s) {
+  if (s.fields) writeSettingsFields(s.fields);
+  if (s.binary_ops) applyOpSelection("bin", s.binary_ops);
+  if (s.unary_ops) applyOpSelection("un", s.unary_ops);
+  if (s.macros) {
+    $("macro-list").textContent = "";
+    s.macros.forEach((m) => addMacroRow(m.name, m.body));
+    updateMacroSummary(); // addMacroRow does this too, but an empty saved list must clear it
+  }
+  if (s.opt_ins) {
+    Object.keys(s.opt_ins).forEach((id) => { $(id).checked = s.opt_ins[id]; });
+  }
+  syncBatchingDependants();
+}
+
+// Whether anything the user configures differs from what the page ships with. Only then is the
+// restore worth announcing — a browser that remembered the defaults has nothing to disclose.
+function opsAreDefault(picked, defaults) {
+  return picked.length === defaults.size && picked.every((op) => defaults.has(op));
+}
+function differsFromShippedDefaults() {
+  return settingsModified() ||
+    $("batching").checked ||
+    $("linear_scaling").checked ||
+    $("eval_cache").checked ||
+    readMacros().names.length > 0 ||
+    !opsAreDefault(checkedOps("bin"), BINARY_DEFAULT) ||
+    !opsAreDefault(checkedOps("un"), UNARY_DEFAULT);
+}
+
+function restoreSearchSettings() {
+  const saved = loadSearchSettings();
+  if (!saved) return;
+  applySearchSettings(saved);
+  $("settings-restored").hidden = !differsFromShippedDefaults();
+}
+
+// A wider reset than the dialog's own button, which stays field-only on purpose (see
+// CHECKBOX_DEFAULTS): this one lives in the rail, where every operator, macro and opt-in it
+// clears is on screen, and it also forgets what was stored.
+function useShippedDefaults() {
+  clearTimeout(saveTimer); // a write still in flight would put back what this is clearing
+  try { localStorage.removeItem(SETTINGS_KEY); } catch (e) { /* nothing to forget */ }
+  resetDefaults();
+  applyOpSelection("bin", [...BINARY_DEFAULT]);
+  applyOpSelection("un", [...UNARY_DEFAULT]);
+  $("macro-list").textContent = "";
+  updateMacroSummary();
+  $("linear_scaling").checked = false;
+  $("eval_cache").checked = false;
+  syncBatchingDependants();
+  $("settings-restored").hidden = true;
 }
 
 // --- Run --------------------------------------------------------------------------
@@ -915,6 +1093,11 @@ function run() {
     return;
   }
   state.config = config;
+
+  // The restore notice is an arrival disclosure: once a run is launched the user has seen the
+  // panel and committed to it. The Settings summary's "modified" marker carries on saying that
+  // something is off the shipped values.
+  $("settings-restored").hidden = true;
 
   setRunButton(true);
   document.body.classList.add("running"); // shows the header progress bar
@@ -1361,6 +1544,10 @@ function init() {
   buildMacroPresets();
   buildExamples();
   initSplitters();
+  // After the controls it writes into exist, and before annotateSettingsFields() /
+  // updateSettingsSummary() below, so the summary and the per-field "modified" marks are
+  // computed from the restored values on first paint rather than from the HTML defaults.
+  restoreSearchSettings();
 
   $("add-macro").addEventListener("click", () => addMacroRow());
 
@@ -1456,6 +1643,11 @@ function init() {
   // the policy instead of waiting for Run to refuse.
   $("n_populations").addEventListener("change", syncRowPolicyIfShapeChanged);
   $("reset-defaults").addEventListener("click", resetDefaults);
+  $("use-defaults").addEventListener("click", useShippedDefaults);
+  // One delegated funnel for everything persisted: typed fields, operator pills, macro rows and
+  // the opt-ins all reach it, and a control added later is covered without new wiring. The three
+  // paths it cannot see (dialog close, example operators, macro removal) call the saver directly.
+  ["input", "change"].forEach((t) => document.addEventListener(t, saveSearchSettingsSoon));
   annotateSettingsFields();
   updateSettingsSummary();
 

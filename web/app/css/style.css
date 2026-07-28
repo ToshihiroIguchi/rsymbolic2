@@ -269,6 +269,10 @@ body:not(.has-data) #change-data { display: none; }
 }
 .data-notice.warn { border-left-color: var(--accent); }
 .data-notice.acted { border-left-color: var(--danger); }
+/* The restored-settings notice states a fact and offers the way out of it, so the button sits
+   beside the sentence rather than below it. */
+#settings-restored { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+#settings-restored > span { flex: 1; min-width: 0; }
 .sample-control { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.35rem; }
 .sample-control input[type="number"] { width: 6rem; }
 

@@ -118,6 +118,16 @@
 
         <section class="card">
           <h2>Search</h2>
+          <!-- Shown on arrival when the settings restored from this browser differ from the
+               shipped ones. Restoring them silently is the one thing that persistence must not
+               do: "press Run and you get the PySR-parity search" is what the defaults promise,
+               and a visitor cannot see that a value moved weeks ago. The way back out is on the
+               same line, and it clears everything remembered — not just the dialog's fields. -->
+          <div id="settings-restored" class="data-notice" hidden>
+            <span>Restored the settings you last used here.</span>
+            <button id="use-defaults" class="btn small" type="button"
+                    title="Forget the remembered settings and return operators, macros, opt-ins and the search settings to their shipped defaults">Use defaults</button>
+          </div>
           <!-- Operators are always visible, not filed in a disclosure beside the parity
                constants: they are the shared PROBLEM INPUT (CLAUDE.md Benchmarking
                Requirements), and an unchecked box makes whole expressions unreachable no
