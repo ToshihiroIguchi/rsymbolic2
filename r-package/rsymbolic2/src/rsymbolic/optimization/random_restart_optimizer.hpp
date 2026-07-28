@@ -25,9 +25,11 @@ class RandomRestartOptimizer final : public ConstantOptimizer {
 public:
     explicit RandomRestartOptimizer(OptimizerConfig config = {});
 
+    // Derivative-free: keeps no large working storage, so `scratch` is ignored.
     OptimizationResult optimize(const OptimizationProblem& problem,
-                                const StopRequested& stop_requested) const override;
-    using ConstantOptimizer::optimize;  // keep the no-deadline convenience overload
+                                const StopRequested& stop_requested,
+                                OptimizerScratch& scratch) const override;
+    using ConstantOptimizer::optimize;  // keep the convenience overloads
     std::string name() const override;
 
 private:

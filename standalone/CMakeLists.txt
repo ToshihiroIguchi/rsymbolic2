@@ -140,6 +140,15 @@ if(RSYMBOLIC2_BUILD_BENCHMARKS)
         target_link_libraries(bench_profile PRIVATE psapi)
     endif()
 
+    # Peak working set of a full search (docs/65). Takes rows/features/populations
+    # explicitly because the O(rows) terms are multiplied by the ISLAND count, so a
+    # probe run at n_populations=1 understates the ceiling (docs/59 §3).
+    add_executable(bench_memory benchmarks/bench_memory.cpp)
+    target_link_libraries(bench_memory PRIVATE rsymbolic2_core)
+    if(WIN32)
+        target_link_libraries(bench_memory PRIVATE psapi)
+    endif()
+
     # SoA point-batched residual evaluator evidence micro-benchmark (docs/30 "SoA
     # point-batched evaluator"). Header-only; links core only for its include path.
     # For the -O2-vs-O3 / -march=native / -fopt-info-vec comparison, compile it directly
@@ -153,6 +162,12 @@ if(RSYMBOLIC2_BUILD_BENCHMARKS)
     # -O2-vs-O3 comparison compile it directly with the g++ command in the file header.
     add_executable(bench_opt_precision benchmarks/bench_opt_precision.cpp)
     target_link_libraries(bench_opt_precision PRIVATE rsymbolic2_core)
+
+    # Search-result digest (docs/65): diff-based external golden for refactors that must
+    # leave the search bit-identical. Not a ctest target — it is run on the parent commit
+    # and again after the change, and the two outputs are diffed.
+    add_executable(diag_search_digest benchmarks/diag_search_digest.cpp)
+    target_link_libraries(diag_search_digest PRIVATE rsymbolic2_bench)
 
     # Phase 0-C seed-expression oracle (docs/44): throwaway diagnostic driver
     # using the internal SearchOptions::seed_trees hook. Not a ctest target — it is run

@@ -108,7 +108,8 @@ SelfLMOptimizer::SelfLMOptimizer(OptimizerConfig config)
 std::string SelfLMOptimizer::name() const { return "SelfLMOptimizer"; }
 
 OptimizationResult SelfLMOptimizer::optimize(
-    const OptimizationProblem& problem, const StopRequested& stop_requested) const {
+    const OptimizationProblem& problem, const StopRequested& stop_requested,
+    OptimizerScratch& s) const {
     if (!problem.residuals) {
         throw std::invalid_argument(
             "SelfLMOptimizer: problem.residuals must not be null");
@@ -135,21 +136,25 @@ OptimizationResult SelfLMOptimizer::optimize(
         problem.aborted->store(false, std::memory_order_relaxed);
     }
 
-    // Size the reusable scratch. resize() only reallocates when capacity is
+    // Size the caller-owned scratch. resize() only reallocates when capacity is
     // insufficient, so after the first few fits these never reallocate — no per-fit
     // page faults to serialize island workers (docs/23 §4). Sized once here; every
     // start (start 0 + restarts) reuses these buffers.
     const std::size_t ku = static_cast<std::size_t>(k);
-    params_.resize(ku);
-    trial_.resize(ku);
-    rbuf_.resize(m);
-    trial_rbuf_.resize(m);
-    jbuf_.resize(m * ku);
-    ata_.resize(ku * ku);
-    aug_.resize(ku * ku);
-    g_.resize(ku);
-    delta_.resize(ku);
-    xt_.resize(ku);
+    s.params.resize(ku);
+    s.trial.resize(ku);
+    s.rbuf.resize(m);
+    s.trial_rbuf.resize(m);
+    // With an analytic Jacobian only one row block is materialised at a time and the
+    // normal equations are accumulated across blocks, so this is rows_per_block × k
+    // rather than m × k (docs/65). The finite-difference fallback builds the Jacobian
+    // column by column over all rows and still needs the full matrix.
+    s.jac.resize(problem.jacobian ? jacobian_block_rows(problem, m) * ku : m * ku);
+    s.ata.resize(ku * ku);
+    s.aug.resize(ku * ku);
+    s.g.resize(ku);
+    s.delta.resize(ku);
+    s.xt.resize(ku);
 
     // Multi-start (SR.jl _optimize_constants parity): start 0 runs LM from the tree's
     // current constants; each further start perturbs x0 multiplicatively by a Gaussian
@@ -161,7 +166,7 @@ OptimizationResult SelfLMOptimizer::optimize(
     const std::vector<double>& x0 = problem.initial_constants;
     std::size_t nfev = 0;
     std::size_t njev = 0;
-    OptimizationResult best = run_lm_from(problem, x0, stop_requested, nfev, njev);
+    OptimizationResult best = run_lm_from(problem, x0, stop_requested, s, nfev, njev);
 
     std::normal_distribution<double> gaussian(0.0, 1.0);
     const auto aborted = [&]() {
@@ -173,8 +178,9 @@ OptimizationResult SelfLMOptimizer::optimize(
         // xt[i] = x0[i] * (1 + perturbation_scale * N(0,1)), matching SR.jl's
         // xt = @. x0 * (1 + (1//2) * randn). A zero constant stays zero, as in SR.jl.
         for (std::size_t i = 0; i < ku; ++i)
-            xt_[i] = x0[i] * (1.0 + config_.perturbation_scale * gaussian(rng_));
-        OptimizationResult cand = run_lm_from(problem, xt_, stop_requested, nfev, njev);
+            s.xt[i] = x0[i] * (1.0 + config_.perturbation_scale * gaussian(rng_));
+        OptimizationResult cand =
+            run_lm_from(problem, s.xt, stop_requested, s, nfev, njev);
         if (cand.success && cand.loss < best.loss) best = std::move(cand);
     }
 
@@ -183,19 +189,19 @@ OptimizationResult SelfLMOptimizer::optimize(
     return best;
 }
 
-// One LM run from start point `x0`. Reuses the class scratch (already sized by optimize()).
-// Accumulates residual-function evaluations into `nfev` and Jacobian builds into `njev`;
-// the returned result carries the optimized constants and SSE but not the
+// One LM run from start point `x0`. Reuses the caller's scratch `s` (already sized by
+// optimize()). Accumulates residual-function evaluations into `nfev` and Jacobian builds
+// into `njev`; the returned result carries the optimized constants and SSE but not the
 // (caller-accumulated) evaluation counts.
 OptimizationResult SelfLMOptimizer::run_lm_from(
     const OptimizationProblem& problem, const std::vector<double>& x0,
-    const StopRequested& stop_requested, std::size_t& nfev,
+    const StopRequested& stop_requested, OptimizerScratch& s, std::size_t& nfev,
     std::size_t& njev) const {
     const int k = static_cast<int>(x0.size());
     const std::size_t m = problem.num_residuals;
     const std::size_t ku = static_cast<std::size_t>(k);
 
-    params_ = x0;
+    s.params = x0;
 
     const bool aborted_set = static_cast<bool>(problem.aborted);
     auto aborted = [&]() {
@@ -203,78 +209,111 @@ OptimizationResult SelfLMOptimizer::run_lm_from(
                problem.aborted->load(std::memory_order_relaxed);
     };
 
-    double sse = eval_sse(problem, params_, rbuf_, m);
+    double sse = eval_sse(problem, s.params, s.rbuf, m);
     ++nfev;
 
     const std::size_t max_iter =
         config_.max_iterations > 0 ? config_.max_iterations : 200;
     double lambda = -1.0;  // set from max diag(A) on the first iteration
 
+    // Rows per Jacobian block. The analytic path materialises one block at a time and
+    // accumulates the normal equations across blocks; the finite-difference path builds
+    // the whole matrix column by column and therefore uses a single all-rows block.
+    const std::size_t block_rows =
+        problem.jacobian ? jacobian_block_rows(problem, m) : m;
+
     for (std::size_t iter = 0; iter < max_iter && !aborted(); ++iter) {
         if (stop_requested()) break;
 
-        // --- Jacobian J (m×k, row-major), clamped to finite ---------------------
-        // One Jacobian build per LM iteration (either branch); counted for evaluation
-        // accounting only — never charged to the max_evals budget.
-        ++njev;
-        if (problem.jacobian) {
-            // Re-zero: the closure may early-return on abort, leaving entries unset,
-            // which must read as a defined 0.0 (matches AnalyticFunctor::df).
-            std::fill(jbuf_.begin(), jbuf_.end(), 0.0);
-            problem.jacobian(params_, jbuf_);
-            if (aborted()) break;
-            for (std::size_t e = 0; e < jbuf_.size(); ++e)
-                jbuf_[e] = clamp_finite(jbuf_[e]);
-        } else {
-            // Forward-difference fallback when no analytic Jacobian is supplied
-            // (standard sqrt(eps)-scaled finite differences). Reuses trial_ /
-            // trial_rbuf_ as perturbation scratch; both are rebuilt for the step below.
-            constexpr double kSqrtEps = 1.4901161193847656e-08;  // sqrt(DBL_EPSILON)
-            for (int a = 0; a < k; ++a) {
-                const double p0 = params_[static_cast<std::size_t>(a)];
-                const double h = kSqrtEps * std::max(std::fabs(p0), 1.0);
-                trial_ = params_;
-                trial_[static_cast<std::size_t>(a)] = p0 + h;
-                problem.residuals(trial_, trial_rbuf_);
-                ++nfev;
-                for (std::size_t i = 0; i < m; ++i) {
-                    const double rp = clamp_finite(trial_rbuf_[i]);
-                    jbuf_[i * ku + static_cast<std::size_t>(a)] =
-                        (rp - rbuf_[i]) / h;
-                }
-            }
-            if (aborted()) break;
+        // --- Normal equations: A = JᵀJ (k×k), g = Jᵀr (k) -----------------------
+        //
+        // The Jacobian is never materialised as an m×k matrix. It is produced one row
+        // block at a time and reduced immediately, because A and g are the only things
+        // the step needs. This is what keeps the LM working set O(block_rows × k)
+        // instead of O(m × k) per worker (docs/65).
+        //
+        // BIT-EXACTNESS (load-bearing). Every accumulator below — g[a] and the upper
+        // triangle of ata[a][b] — is a single scalar that receives its products in
+        // strictly increasing row order, exactly as the previous whole-matrix reduction
+        // did. Blocking interleaves *different* accumulators but never reassociates any
+        // one of them, so each entry's floating-point summation sequence is unchanged and
+        // the result is bit-identical for ANY block size. test_self_lm_optimizer asserts
+        // this directly by sweeping the block size.
+        for (std::size_t a = 0; a < ku; ++a) {
+            s.g[a] = 0.0;
+            for (std::size_t b = a; b < ku; ++b) s.ata[a * ku + b] = 0.0;
         }
 
-        // --- Normal equations: A = JᵀJ (k×k), g = Jᵀr (k) -----------------------
-        for (int a = 0; a < k; ++a) {
-            double ga = 0.0;
-            for (std::size_t i = 0; i < m; ++i)
-                ga += jbuf_[i * ku + static_cast<std::size_t>(a)] * rbuf_[i];
-            g_[static_cast<std::size_t>(a)] = ga;
-            for (int b = a; b < k; ++b) {
-                double s = 0.0;
-                for (std::size_t i = 0; i < m; ++i) {
-                    s += jbuf_[i * ku + static_cast<std::size_t>(a)] *
-                         jbuf_[i * ku + static_cast<std::size_t>(b)];
+        // One Jacobian build per LM iteration (either branch, however many blocks it
+        // takes); counted for evaluation accounting only — never charged to the
+        // max_evals budget.
+        ++njev;
+        bool abort_now = false;
+
+        for (std::size_t lo = 0; lo < m; lo += block_rows) {
+            const std::size_t rows = std::min(block_rows, m - lo);
+
+            if (problem.jacobian) {
+                // Re-zero: the closure may early-return on abort, leaving entries unset,
+                // which must read as a defined 0.0 (matches AnalyticFunctor::df).
+                std::fill(s.jac.begin(), s.jac.begin() + static_cast<std::ptrdiff_t>(rows * ku),
+                          0.0);
+                problem.jacobian(s.params, lo, rows, s.jac);
+                if (aborted()) { abort_now = true; break; }
+                for (std::size_t e = 0; e < rows * ku; ++e)
+                    s.jac[e] = clamp_finite(s.jac[e]);
+            } else {
+                // Forward-difference fallback when no analytic Jacobian is supplied
+                // (standard sqrt(eps)-scaled finite differences). Reuses trial /
+                // trial_rbuf as perturbation scratch; both are rebuilt for the step
+                // below. block_rows == m here, so this runs once and fills the whole
+                // matrix, exactly as before.
+                constexpr double kSqrtEps = 1.4901161193847656e-08;  // sqrt(DBL_EPSILON)
+                for (std::size_t a = 0; a < ku; ++a) {
+                    const double p0 = s.params[a];
+                    const double h = kSqrtEps * std::max(std::fabs(p0), 1.0);
+                    s.trial = s.params;
+                    s.trial[a] = p0 + h;
+                    problem.residuals(s.trial, s.trial_rbuf);
+                    ++nfev;
+                    for (std::size_t i = 0; i < m; ++i) {
+                        const double rp = clamp_finite(s.trial_rbuf[i]);
+                        s.jac[i * ku + a] = (rp - s.rbuf[i]) / h;
+                    }
                 }
-                ata_[static_cast<std::size_t>(a) * ku + static_cast<std::size_t>(b)] = s;
-                ata_[static_cast<std::size_t>(b) * ku + static_cast<std::size_t>(a)] = s;
+                if (aborted()) { abort_now = true; break; }
+            }
+
+            for (std::size_t a = 0; a < ku; ++a) {
+                double ga = s.g[a];
+                for (std::size_t i = 0; i < rows; ++i)
+                    ga += s.jac[i * ku + a] * s.rbuf[lo + i];
+                s.g[a] = ga;
+                for (std::size_t b = a; b < ku; ++b) {
+                    double acc = s.ata[a * ku + b];
+                    for (std::size_t i = 0; i < rows; ++i)
+                        acc += s.jac[i * ku + a] * s.jac[i * ku + b];
+                    s.ata[a * ku + b] = acc;
+                }
             }
         }
+        if (abort_now) break;
+
+        // Mirror the accumulated upper triangle into the lower one.
+        for (std::size_t a = 0; a < ku; ++a)
+            for (std::size_t b = a + 1; b < ku; ++b)
+                s.ata[b * ku + a] = s.ata[a * ku + b];
 
         // Gradient convergence (g = Jᵀr is the gradient of ½·SSE).
         double gmax = 0.0;
-        for (int a = 0; a < k; ++a)
-            gmax = std::max(gmax, std::fabs(g_[static_cast<std::size_t>(a)]));
+        for (std::size_t a = 0; a < ku; ++a)
+            gmax = std::max(gmax, std::fabs(s.g[a]));
         if (gmax <= kGTol) break;
 
         if (lambda < 0.0) {
             double maxdiag = 0.0;
-            for (int a = 0; a < k; ++a)
-                maxdiag = std::max(
-                    maxdiag, ata_[static_cast<std::size_t>(a) * ku +
-                                  static_cast<std::size_t>(a)]);
+            for (std::size_t a = 0; a < ku; ++a)
+                maxdiag = std::max(maxdiag, s.ata[a * ku + a]);
             lambda = kLambdaInit * (maxdiag > 0.0 ? maxdiag : 1.0);
         }
 
@@ -286,40 +325,30 @@ OptimizationResult SelfLMOptimizer::run_lm_from(
 
             // aug = A + lambda·diag(A). Floor the per-column scale with 1.0 so a null
             // column (A[a][a] == 0) still yields a positive-definite diagonal.
-            for (int a = 0; a < k; ++a) {
-                for (int b = 0; b < k; ++b) {
-                    aug_[static_cast<std::size_t>(a) * ku +
-                         static_cast<std::size_t>(b)] =
-                        ata_[static_cast<std::size_t>(a) * ku +
-                             static_cast<std::size_t>(b)];
-                }
-                const double d = ata_[static_cast<std::size_t>(a) * ku +
-                                      static_cast<std::size_t>(a)];
-                aug_[static_cast<std::size_t>(a) * ku + static_cast<std::size_t>(a)] +=
-                    lambda * (d > 0.0 ? d : 1.0);
+            for (std::size_t a = 0; a < ku; ++a) {
+                for (std::size_t b = 0; b < ku; ++b)
+                    s.aug[a * ku + b] = s.ata[a * ku + b];
+                const double d = s.ata[a * ku + a];
+                s.aug[a * ku + a] += lambda * (d > 0.0 ? d : 1.0);
             }
 
             // delta solves (A + λ·diag(A)) δ = -g (rhs = -g, solved in place).
-            for (int a = 0; a < k; ++a)
-                delta_[static_cast<std::size_t>(a)] =
-                    -g_[static_cast<std::size_t>(a)];
-            if (!solve_spd(aug_, delta_, k)) {
+            for (std::size_t a = 0; a < ku; ++a) s.delta[a] = -s.g[a];
+            if (!solve_spd(s.aug, s.delta, k)) {
                 lambda *= kLambdaUp;
                 continue;
             }
 
-            for (int a = 0; a < k; ++a)
-                trial_[static_cast<std::size_t>(a)] =
-                    params_[static_cast<std::size_t>(a)] +
-                    delta_[static_cast<std::size_t>(a)];
+            for (std::size_t a = 0; a < ku; ++a)
+                s.trial[a] = s.params[a] + s.delta[a];
 
-            const double sse_trial = eval_sse(problem, trial_, trial_rbuf_, m);
+            const double sse_trial = eval_sse(problem, s.trial, s.trial_rbuf, m);
             ++nfev;
             if (aborted()) break;
 
             if (sse_trial < sse) {
-                std::swap(params_, trial_);
-                std::swap(rbuf_, trial_rbuf_);
+                std::swap(s.params, s.trial);
+                std::swap(s.rbuf, s.trial_rbuf);
                 sse = sse_trial;
                 lambda *= kLambdaDown;
                 accepted = true;
@@ -336,17 +365,15 @@ OptimizationResult SelfLMOptimizer::run_lm_from(
         // Step-size convergence: ‖δ‖ small relative to ‖p‖.
         double dnorm = 0.0;
         double pnorm = 0.0;
-        for (int a = 0; a < k; ++a) {
-            dnorm += delta_[static_cast<std::size_t>(a)] *
-                     delta_[static_cast<std::size_t>(a)];
-            pnorm += params_[static_cast<std::size_t>(a)] *
-                     params_[static_cast<std::size_t>(a)];
+        for (std::size_t a = 0; a < ku; ++a) {
+            dnorm += s.delta[a] * s.delta[a];
+            pnorm += s.params[a] * s.params[a];
         }
         if (std::sqrt(dnorm) <= kXTol * (std::sqrt(pnorm) + kXTol)) break;
     }
 
     OptimizationResult res;
-    res.constants = params_;
+    res.constants = s.params;
     res.loss = sse;
     res.success = std::isfinite(sse);
     // res.evaluations / res.jacobian_evaluations left 0: the caller (optimize)

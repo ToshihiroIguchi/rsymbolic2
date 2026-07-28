@@ -123,7 +123,7 @@ std::vector<double> production_jacobian(const Tree& tree,
     const std::vector<double> y(X.size(), 0.0);  // derivatives do not depend on y
     auto problem = make_least_squares_problem(tree, X, y, params);
     std::vector<double> jac(X.size() * params.size(), 0.0);
-    problem.jacobian(params, jac);
+    problem.jacobian(params, 0, X.size(), jac);  // one block covering every row
     return jac;
 }
 

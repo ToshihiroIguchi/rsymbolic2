@@ -263,6 +263,69 @@ void test_fit_linear_analytic() {
     CHECK(res.loss < 1e-6);
 }
 
+// The Jacobian block size must not be observable (docs/65).
+//
+// The LM never materialises the m×k Jacobian: it asks the problem for one row block at a
+// time and folds each block straight into JᵀJ and Jᵀr. That is only sound because every
+// accumulator is a single scalar that receives its products in strictly increasing row
+// order regardless of how the rows are grouped — no reassociation, so the floating-point
+// summation sequence is identical for any block size. This gate asserts exactly that, on
+// a nonlinear problem with several constants (so the k×k reduction is non-trivial) and
+// with block sizes that divide the row count evenly, unevenly, and not at all.
+//
+// If someone ever "optimises" the reduction into per-block partial sums, this fails.
+void test_jacobian_block_size_invariance() {
+    const std::size_t m = 257;  // prime: no block size below it divides evenly
+    std::vector<std::vector<double>> X;
+    std::vector<double> y;
+    for (std::size_t i = 0; i < m; ++i) {
+        const double x = -3.0 + 6.0 * static_cast<double>(i) / static_cast<double>(m - 1);
+        X.push_back({x});
+        y.push_back(2.0 * std::exp(0.3 * x) + 0.25 * x);
+    }
+    // a*exp(b*x) + c*x — three constants, so JᵀJ has six distinct entries to accumulate.
+    const Tree tree = {
+        constant_node(0, 1.0), constant_node(1, 0.1), variable_node(0),
+        binary_node(BinaryOp::Mul), unary_node(UnaryOp::Exp), binary_node(BinaryOp::Mul),
+        constant_node(2, 0.5), variable_node(0), binary_node(BinaryOp::Mul),
+        binary_node(BinaryOp::Add)};
+    const std::vector<double> init = {1.0, 0.1, 0.5};
+
+    std::vector<double> reference;
+    double reference_loss = 0.0;
+    std::size_t reference_nfev = 0, reference_njev = 0;
+
+    for (const std::size_t block : {std::size_t{0}, std::size_t{1}, std::size_t{7},
+                                    std::size_t{64}, std::size_t{256}, std::size_t{257},
+                                    std::size_t{4096}}) {
+        OptimizationProblem problem =
+            make_least_squares_problem(tree, X, y, init);
+        problem.jacobian_rows_per_block = block;  // 0 = one block covering every row
+
+        SelfLMOptimizer opt;
+        const OptimizationResult res = opt.optimize(problem);
+        CHECK(res.success);
+
+        if (reference.empty()) {
+            reference      = res.constants;
+            reference_loss = res.loss;
+            reference_nfev = res.evaluations;
+            reference_njev = res.jacobian_evaluations;
+            CHECK(res.loss < 1e-12);  // the problem is exactly representable
+            continue;
+        }
+        // Bit-identical, not merely close: == on doubles is the assertion being made.
+        CHECK(res.constants.size() == reference.size());
+        for (std::size_t i = 0; i < reference.size(); ++i)
+            CHECK(res.constants[i] == reference[i]);
+        CHECK(res.loss == reference_loss);
+        // The evaluation accounting must be block-size independent too: a Jacobian build
+        // is counted once per LM iteration, however many blocks it takes.
+        CHECK(res.evaluations == reference_nfev);
+        CHECK(res.jacobian_evaluations == reference_njev);
+    }
+}
+
 // Recover a = 2.0, b = 0.3 from y = a*exp(b*x) (nonlinear; tests conditioning).
 void test_fit_exponential() {
     const double true_a = 2.0;
@@ -323,6 +386,7 @@ int main() {
     test_immediate_stop_returns_valid();
     test_fit_linear_analytic();
     test_fit_exponential();
+    test_jacobian_block_size_invariance();
     test_analytic_vs_numerical_jacobian();
     test_multistart_escapes_local_min();
     test_single_start_backward_compat();

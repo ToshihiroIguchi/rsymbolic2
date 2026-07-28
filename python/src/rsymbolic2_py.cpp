@@ -138,11 +138,14 @@ py::dict symbolic_regression_cpp(
         throw std::invalid_argument("X must have at least one row.");
 
     auto Xv = X.unchecked<2>();
-    std::vector<std::vector<double>> X_cpp(n);
-    for (std::size_t i = 0; i < n; ++i) {
-        X_cpp[i].resize(p);
-        for (std::size_t j = 0; j < p; ++j)
-            X_cpp[i][j] = Xv(i, j);
+    // Column-major, the engine's native layout: it MOVES these columns into its Dataset,
+    // so the process holds the inputs twice (numpy's array and this copy) rather than four
+    // times, and allocates p vectors instead of n (docs/65).
+    rsymbolic::FeatureColumns X_cpp;
+    X_cpp.columns.assign(p, std::vector<double>(n));
+    for (std::size_t j = 0; j < p; ++j) {
+        std::vector<double>& col = X_cpp.columns[j];
+        for (std::size_t i = 0; i < n; ++i) col[i] = Xv(i, j);
     }
     auto yv = y.unchecked<1>();
     std::vector<double> y_cpp(n);
@@ -254,7 +257,9 @@ py::dict symbolic_regression_cpp(
     SearchResult res;
     {
         py::gil_scoped_release release;
-        res = run_evolution(X_cpp, y_cpp, opts);
+        // Hand the columns over rather than copying them; y is copied because the
+        // weighted SST for R^2 is computed from it below.
+        res = run_evolution(std::move(X_cpp), y_cpp, opts);
     }
 
     // Weighted total sum of squares about the weighted mean (unit weights when

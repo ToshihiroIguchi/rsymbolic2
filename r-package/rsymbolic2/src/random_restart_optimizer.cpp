@@ -46,7 +46,9 @@ std::string RandomRestartOptimizer::name() const {
 }
 
 OptimizationResult RandomRestartOptimizer::optimize(
-    const OptimizationProblem& problem, const StopRequested& stop_requested) const {
+    const OptimizationProblem& problem, const StopRequested& stop_requested,
+    OptimizerScratch& unused_scratch) const {
+    (void)unused_scratch;  // derivative-free: no large working storage to reuse
     if (!problem.residuals) {
         throw std::invalid_argument(
             "RandomRestartOptimizer: problem.residuals must not be null");

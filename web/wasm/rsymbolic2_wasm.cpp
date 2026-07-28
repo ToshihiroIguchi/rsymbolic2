@@ -140,14 +140,17 @@ val run(val opts) {
         if (y.size() != n)
             throw std::invalid_argument("y length must equal nrow.");
 
-        // Flat row-major -> row vectors (the core takes X[row][col]).
-        std::vector<std::vector<double>> X(n, std::vector<double>(p));
+        // Flat row-major -> the engine's column-major layout (columns[col][row]).
+        rsymbolic::FeatureColumns X;
+        X.columns.assign(p, std::vector<double>(n));
         for (std::size_t i = 0; i < n; ++i)
             for (std::size_t j = 0; j < p; ++j)
-                X[i][j] = Xflat[i * p + j];
-        // Release the flat copy immediately: run_evolution() copies X again into its shared
-        // Dataset, so all three would otherwise be live at once on a heap that is fixed at
-        // 128 MB and aborts (never returns null) when it runs out. See docs/59.
+                X.columns[j][i] = Xflat[i * p + j];
+        // Release the flat copy immediately, so only these columns are live. run_evolution()
+        // now MOVES them into its Dataset rather than copying, so this is the single copy of
+        // the inputs the run holds — on a heap fixed at 128 MB that aborts (never returns
+        // null) when exhausted, that is the difference between three copies and one.
+        // See docs/59, docs/65.
         std::vector<double>().swap(Xflat);
 
         // --- SearchSpace ------------------------------------------------------------
@@ -281,7 +284,9 @@ val run(val opts) {
         }
 
         // --- Run --------------------------------------------------------------------
-        SearchResult res = run_evolution(X, y, o);
+        // Hand the columns over rather than copying them; y is copied because the weighted
+        // SST for R^2 is computed from it below.
+        SearchResult res = run_evolution(std::move(X), y, o);
 
         // Weighted total sum of squares about the (weighted) mean, for R^2 = 1 - loss/sst.
         double wsum = 0.0, wysum = 0.0;

@@ -72,6 +72,17 @@ At the default 31 populations:
 | 120,000 x 1 / 100,000 x 5 / 100,000 x 10 | OK |
 | 300,000 x 1 / 200,000 x 5 / 200,000 x 10 | `Aborted(OOM)` |
 
+> **Superseded as a description of the engine (docs/65).** Every term below was reduced or
+> removed: the input is now held once rather than three times and in `p` column
+> allocations rather than `n` row allocations (so `24p + 80` becomes `~8p`), and the
+> per-island optimiser scratch became per-**worker** with its Jacobian buffer eliminated
+> (so `16·n_populations` becomes `16·n_threads`). Measured effect on the native build:
+> 5.5x lower peak at 100,000 x 5. The formula and the ceiling it drives are therefore
+> **conservative, not wrong** — they still bound the real usage, by a wide margin. Raising
+> the ceiling requires its own WASM OOM sweep, because over-estimating aborts the module
+> instead of degrading (§3 below); that has not been done. The model is kept here as the
+> record of what was measured at the time.
+
 A model consistent with all ten points:
 
 ```

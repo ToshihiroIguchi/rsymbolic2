@@ -78,9 +78,9 @@ int main() {
 
         const OptimizationProblem prob = make_least_squares_problem(tree, X, y, c0_vals);
 
-        // AD Jacobian
+        // AD Jacobian (one block covering every row).
         std::vector<double> jac_ad(X.size() * 1);
-        prob.jacobian(c0_vals, jac_ad);
+        prob.jacobian(c0_vals, 0, X.size(), jac_ad);
 
         // Finite-difference Jacobian
         const double h = 1e-5;

@@ -31,13 +31,21 @@ using ResidualFunction =
     std::function<void(const std::vector<double>& params,
                        std::vector<double>& residuals)>;
 
-// Optional analytic Jacobian: given the constants, fill `jacobian` (size m*k) in
-// row-major order with d r_i / d c_j at jacobian[i*k + j]. When supplied (e.g. from
-// forward-mode dual numbers), a least-squares backend can use it instead of numerical
-// differentiation. When left null, backends fall back to numerical differentiation.
+// Optional analytic Jacobian, supplied ONE ROW BLOCK AT A TIME: given the constants and
+// a row range [row_lo, row_lo + rows), fill `jac_block` in row-major order so that
+// d r_(row_lo + i) / d c_j lands at jac_block[i*k + j], for i in [0, rows). When supplied
+// (e.g. from forward-mode dual numbers), a least-squares backend can use it instead of
+// numerical differentiation. When left null, backends fall back to numerical
+// differentiation.
+//
+// Blocked rather than whole-matrix because the normal-equations backends only ever reduce
+// the Jacobian into JᵀJ (k×k) and Jᵀr (k); materialising the full m×k matrix made the
+// working set O(rows × constants) per island, which dominated the process (docs/65). The
+// caller sizes `jac_block` to at least rows*k; entries beyond `rows*k` must not be touched.
 using JacobianFunction =
     std::function<void(const std::vector<double>& params,
-                       std::vector<double>& jacobian)>;
+                       std::size_t row_lo, std::size_t rows,
+                       std::vector<double>& jac_block)>;
 
 // A constant-optimization problem. `num_residuals` (m) is the number of residuals the
 // function fills; `initial_constants` size (k) defines the dimensionality. k == 0 is
@@ -56,7 +64,24 @@ struct OptimizationProblem {
     // (meaning the closures never abort early). Created by make_least_squares_problem
     // when a stop predicate is supplied; left null otherwise.
     std::shared_ptr<std::atomic<bool>> aborted;
+    // How many rows the `jacobian` closure is asked for per call. Purely an
+    // implementation knob: the normal equations accumulate across blocks with per-entry
+    // running accumulators, so every block size produces bit-identical results (asserted
+    // by test_self_lm_optimizer). make_least_squares_problem sets it to the evaluator's
+    // own tile width so the block boundary and the stop-poll boundary coincide. 0 means
+    // "one block covering every row", i.e. the pre-blocking behaviour.
+    std::size_t jacobian_rows_per_block = 0;
 };
+
+// Rows per Jacobian block for a problem with `m` residuals: the problem's request,
+// clamped to [1, m]; 0 (the default) means a single block covering all rows.
+inline std::size_t jacobian_block_rows(const OptimizationProblem& problem,
+                                       std::size_t m) {
+    const std::size_t requested =
+        problem.jacobian_rows_per_block == 0 ? m : problem.jacobian_rows_per_block;
+    if (requested > m) return m;
+    return requested < 1 ? 1 : requested;
+}
 
 // Outcome of an optimization run.
 struct OptimizationResult {
@@ -104,6 +129,40 @@ inline double sum_of_squared_residuals(const OptimizationProblem& problem,
     return sse;
 }
 
+// Reusable working storage for a constant-optimization backend, owned by the CALLER.
+//
+// Why the caller owns it (docs/65): the search creates one optimizer per island, but only
+// as many islands run at once as there are OpenMP workers. Buffers that live on the
+// optimizer are therefore allocated `n_populations` times while at most `n_threads` of
+// them are ever in use — and the big ones are O(rows), so at the default 31 populations
+// they dominate the whole process working set. Hoisting them here lets the search keep one
+// scratch per WORKER and hand the right one to each fit.
+//
+// This carries no information between calls: every buffer is written before it is read
+// within a single optimize(). That is what makes sharing one scratch across islands sound
+// — which worker picks up which island is not observable in any result, so determinism
+// under a dynamically scheduled island loop is unaffected. Backend RNG state is
+// deliberately NOT here; it stays on the per-island optimizer object.
+//
+// Buffers are sized on first use and never shrink, so a fit performs no heap allocation
+// once a worker has seen its first problem of a given size.
+struct OptimizerScratch {
+    std::vector<double> params;      // k: current parameters
+    std::vector<double> trial;       // k: trial parameters p + delta
+    std::vector<double> xt;          // k: perturbed restart start point
+    std::vector<double> rbuf;        // m: residuals at params
+    std::vector<double> trial_rbuf;  // m: residuals at trial
+    // Jacobian working storage. With an analytic Jacobian this holds ONE row block
+    // (rows_per_block × k, see OptimizationProblem::jacobian_rows_per_block), not the
+    // whole m×k matrix — the normal equations are accumulated block by block (docs/65).
+    // The finite-difference fallback still needs the full m×k and sizes it accordingly.
+    std::vector<double> jac;
+    std::vector<double> ata;         // k*k: A = JᵀJ
+    std::vector<double> aug;         // k*k: A + λ·diag(A) (Cholesky in place)
+    std::vector<double> g;           // k: g = Jᵀr
+    std::vector<double> delta;       // k: LM step
+};
+
 // Strategy interface. All constant-optimization backends implement this. The search
 // loop depends only on this interface, never on a concrete optimizer, so backends
 // (RandomRestart, SelfLM now; Ceres TinySolver, full Ceres later) are interchangeable.
@@ -119,12 +178,22 @@ public:
     // returns true they stop early and return the best result found so far (`success`
     // reflects whether that result is finite). The overshoot past the first true poll
     // is bounded by one unit of inner work (one residual evaluation / one LM step).
+    //
+    // `scratch` is caller-owned working storage (see OptimizerScratch). It must not be
+    // shared between concurrent optimize() calls; the caller keeps one per worker
+    // thread. Backends that need no scratch ignore it.
     virtual OptimizationResult optimize(const OptimizationProblem& problem,
-                                        const StopRequested& stop_requested) const = 0;
+                                        const StopRequested& stop_requested,
+                                        OptimizerScratch& scratch) const = 0;
 
-    // Convenience overload: no deadline. Used by tests and any caller that does not
-    // impose a time limit. Non-virtual; forwards with an always-false predicate, so
-    // every existing call site that passes no predicate is unchanged.
+    // Convenience overloads for callers that do not manage scratch or a deadline (tests,
+    // one-off fits). Each forwards to the full form with a locally owned scratch, so the
+    // only cost of not managing one is the allocation this call makes and frees.
+    OptimizationResult optimize(const OptimizationProblem& problem,
+                                const StopRequested& stop_requested) const {
+        OptimizerScratch scratch;
+        return optimize(problem, stop_requested, scratch);
+    }
     OptimizationResult optimize(const OptimizationProblem& problem) const {
         return optimize(problem, [] { return false; });
     }

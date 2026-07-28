@@ -255,6 +255,14 @@ struct RunningSearchStatistics {
 struct Island {
     std::vector<PopMember>              population;
     HallOfFame                          hof;
+    // Working storage for this island's constant-optimisation fits, borrowed from the
+    // per-WORKER pool in run_evolution rather than owned here (docs/65). The optimizer
+    // object stays per island because it carries the restart RNG, but its buffers are
+    // O(rows) and stateless across fits, so allocating one set per island — 31 by default
+    // — while only n_threads are ever live wasted the bulk of the process working set.
+    // Set at the top of every island-parallel loop body, before any fit can run; the
+    // pool outlives every island, so the pointer cannot dangle.
+    OptimizerScratch*                   lm_scratch = nullptr;
     std::mt19937_64                     rng;
     // Dedicated RNG for PySR batching's row subsampling (options.batching). Kept separate
     // from the evolution `rng` so the batch index stream is reproducible and does not
@@ -604,12 +612,16 @@ std::shared_ptr<const Dataset> make_batch(const Dataset& full, std::size_t batch
     const std::size_t bs = std::min(std::max<std::size_t>(1, batch_size), n);
     const double scale   = static_cast<double>(n) / static_cast<double>(bs);
     const bool weighted  = !full.sqrt_weights.empty();
-    std::vector<std::vector<double>> Xb(bs);
+    const std::size_t nf = full.num_features();
+    // Gathered column-major, straight into the layout the Dataset stores (docs/65). The
+    // sampled values and their order are exactly those the previous row-major gather
+    // produced — only the destination layout differs.
+    std::vector<std::vector<double>> Xb(nf, std::vector<double>(bs));
     std::vector<double> yb(bs), wb(bs);
     std::uniform_int_distribution<std::size_t> pick(0, n - 1);
     for (std::size_t i = 0; i < bs; ++i) {
         const std::size_t idx = pick(rng);
-        Xb[i] = full.X[idx];
+        for (std::size_t j = 0; j < nf; ++j) Xb[j][i] = full.Xcol[j][idx];
         yb[i] = full.y[idx];
         // The Dataset ctor takes raw weights (it sqrt's them); recover the original weight
         // w = sqrt_weights^2 (1 when unweighted) and scale it. With replacement, a repeated
@@ -657,7 +669,8 @@ double fit(Tree& tree, const std::shared_ptr<const Dataset>& data,
     // copy that was the dominant heap-contention source (docs/23 §4).
     OptimizationProblem problem = make_least_squares_problem(tree, data, init,
                                                              stop_requested);
-    const OptimizationResult result = optimizer.optimize(problem, stop_requested);
+    const OptimizationResult result =
+        optimizer.optimize(problem, stop_requested, *isl.lm_scratch);
     // Evaluation accounting (also the max_evals budget unit, PySR): charge the
     // optimiser's reported residual evaluations (at least 1 even on failure — work was
     // still done). Jacobian builds are reported only, never charged to eval_count.
@@ -1215,8 +1228,8 @@ void migrate_hof(std::vector<Island>& islands, double frac, std::mt19937_64& rng
 
 }  // namespace
 
-SearchResult run_evolution(const std::vector<std::vector<double>>& X,
-                           const std::vector<double>& y,
+SearchResult run_evolution(FeatureColumns X,
+                           std::vector<double> y,
                            const SearchOptions& options) {
     const std::size_t n = std::max<std::size_t>(1, options.n_populations);
 
@@ -1231,16 +1244,20 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
         return has_deadline && elapsed_sec(t_start) >= deadline_sec;
     };
 
-    // Copy the dataset once into shared, immutable storage. Every island's fit()
-    // references this single Dataset instead of copying X/y per evaluation, which was
-    // the dominant multi-island heap-contention source (docs/23 §4). Read-only and
-    // shared by const pointer, so concurrent island workers never write to it.
-    const auto data = std::make_shared<const Dataset>(Dataset{X, y, options.weights});
+    // Move the caller's data into shared, immutable storage — one copy for the whole run.
+    // Every island's fit() references this single Dataset instead of copying X/y per
+    // evaluation, which was the dominant multi-island heap-contention source (docs/23 §4).
+    // Read-only and shared by const pointer, so concurrent island workers never write to
+    // it. Taking X/y by value and moving here means a binding that built the columns
+    // itself hands over its only copy rather than paying for a second one (docs/65); read
+    // y back through `data` below, since the local has been moved from.
+    const auto data = std::make_shared<const Dataset>(
+        Dataset{std::move(X.columns), std::move(y), options.weights});
 
     // Opt-in dimensional-analysis context (docs/46). Disabled unless X_units/y_units were
     // declared, in which case every add_dim_penalty call below is a no-op and the search is
     // byte-identical to the units-off PySR-parity default. Built once and shared read-only.
-    const DimAnalysis dim_analysis = build_dim_analysis(options, y);
+    const DimAnalysis dim_analysis = build_dim_analysis(options, data->y);
 
     // Build islands. Island 0 always uses options.seed so that n_populations=1
     // produces exactly the same RNG sequence as the pre-island implementation.
@@ -1256,12 +1273,43 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
     // deterministically before its (independent) initialisation, so the result is
     // identical regardless of thread count or completion order.
     std::vector<Island> islands(n);
+
+    // Per-worker constant-optimiser scratch (docs/65). One entry per OpenMP worker, not
+    // per island: the buffers are O(rows) and carry nothing between fits, so the island
+    // that happens to be running on a worker can borrow that worker's set. This is what
+    // makes the LM working set scale with the thread count instead of n_populations.
+    //
+    // Sized by omp_get_max_threads(), which bounds omp_get_thread_num() for any
+    // non-nested region, so the index is always in range even though the two parallel
+    // regions below request a (smaller) capped team. Over-sizing is free: an unused entry
+    // is a handful of empty vectors and never allocates.
+    //
+    // Deliberately NOT `thread_local`: per-thread storage is unreliable for libgomp
+    // worker threads inside a loaded DLL on Windows/MinGW (two islands once shared one
+    // buffer and corrupted the heap). An explicit pool indexed by omp_get_thread_num()
+    // is the same "owner hands its scratch down" shape used for the SoA pools above.
+    std::vector<OptimizerScratch> lm_scratch(
+#ifdef _OPENMP
+        static_cast<std::size_t>(std::max(1, omp_get_max_threads()))
+#else
+        1
+#endif
+    );
+    const auto worker_scratch = [&lm_scratch]() -> OptimizerScratch* {
+#ifdef _OPENMP
+        return &lm_scratch[static_cast<std::size_t>(omp_get_thread_num())];
+#else
+        return &lm_scratch[0];
+#endif
+    };
+
 #ifdef _OPENMP
     const int init_threads = resolve_team_size(n, options.n_threads, omp_get_max_threads());
 #   pragma omp parallel for schedule(dynamic) num_threads(init_threads) if(n > 1)
 #endif
     for (std::int64_t i = 0; i < static_cast<std::int64_t>(n); ++i) {
         const std::size_t idx = static_cast<std::size_t>(i);
+        islands[idx].lm_scratch = worker_scratch();
         islands[idx].rng.seed(idx == 0
             ? options.seed
             : options.seed + idx * UINT64_C(0x9e3779b97f4a7c15));
@@ -1295,7 +1343,7 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
     }
 
     const std::size_t interval = std::max<std::size_t>(1, options.migration_interval);
-    const double      y_norm    = compute_y_norm(y, options.weights);  // selection-cost denominator
+    const double      y_norm    = compute_y_norm(data->y, options.weights);  // selection-cost denominator
 
     // Effective early-stop threshold (target_loss or the looser early_stop_condition).
     const double      target    = std::max(options.target_loss, options.early_stop_condition);
@@ -1360,6 +1408,10 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
 #endif
         for (std::int64_t i = 0; i < static_cast<std::int64_t>(n); ++i) {
             Island& isl = islands[static_cast<std::size_t>(i)];
+            // Re-borrow this epoch: with schedule(dynamic) an island can land on a
+            // different worker each epoch. The scratch is stateless, so which one it gets
+            // is not observable (docs/65).
+            isl.lm_scratch = worker_scratch();
             const StopRequested opt_stop = [&] {
                 return has_deadline && elapsed_sec(t_start) >= deadline_sec;
             };
@@ -1675,6 +1727,17 @@ SearchResult run_evolution(const std::vector<std::vector<double>>& X,
     result.n_evals         += finalize_forward_evals;
     result.n_forward_evals += finalize_forward_evals;
     return result;
+}
+
+// Row-major convenience form. Transposes into the engine's column-major layout, which
+// costs one extra full copy of X — acceptable for the small matrices the tests and
+// benchmark problems build, which is who this overload is for. Callers with real data
+// (the R, Python and WASM bindings) build FeatureColumns directly and use the overload
+// above (docs/65).
+SearchResult run_evolution(const std::vector<std::vector<double>>& X,
+                           const std::vector<double>& y,
+                           const SearchOptions& options) {
+    return run_evolution(FeatureColumns{columns_from_rows(X)}, y, options);
 }
 
 }  // namespace rsymbolic

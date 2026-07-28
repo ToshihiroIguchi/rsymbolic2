@@ -412,8 +412,31 @@ struct SearchResult {
     std::uint64_t n_strong_simplify_attempts = 0, n_strong_simplify_adopted = 0;
 };
 
+// The engine's input matrix in its native COLUMN-major layout: `columns[j][i]` is
+// feature j of point i, so `columns.size()` is the feature count and each inner vector
+// has one entry per data point.
+//
+// A wrapper struct rather than a bare vector<vector<double>> on purpose: row-major and
+// column-major are the same C++ type, so nothing but a distinct type can make the
+// compiler reject a matrix passed in the wrong layout — and a silent transposition would
+// be a data corruption bug, not a compile error (docs/65).
+struct FeatureColumns {
+    std::vector<std::vector<double>> columns;
+};
+
 // Run the search to fit y from X by discovering an expression structure and optimizing
 // its constants. Deterministic for a fixed seed.
+//
+// Column-major form: takes ownership of `X` and `y`, so a caller that can produce columns
+// directly (all three language bindings — an R matrix is already column-major) hands its
+// only copy of the data to the engine. Prefer this whenever the data is large.
+SearchResult run_evolution(FeatureColumns X,
+                           std::vector<double> y,
+                           const SearchOptions& options);
+
+// Row-major convenience form: `X[i][j]` is feature j of point i. Transposes into the
+// column-major form above, which costs a full extra copy — fine for the small matrices
+// the tests and benchmark problems build, wrong for a real dataset.
 SearchResult run_evolution(const std::vector<std::vector<double>>& X,
                            const std::vector<double>& y,
                            const SearchOptions& options);

@@ -73,9 +73,12 @@ static constexpr double kLargeResidualSentinel = 1.0e10;
 // tree copy, not a full dataset copy — the dataset copy was ~m heap allocations per
 // fit() and the dominant source of multi-island heap-lock contention (docs/23 §4).
 struct Dataset {
-    std::vector<std::vector<double>> X;     // X[i] is the feature vector for point i (row-major)
-    std::vector<double> y;                  // y[i] corresponds to X[i]
-    std::vector<std::vector<double>> Xcol;  // column-major view: Xcol[j][i] = X[i][j]
+    std::vector<double> y;                  // y[i] is the target for point i
+    // Inputs, column-major: Xcol[j][i] is feature j of point i. This is the ONLY copy of
+    // the inputs the engine keeps. A row-major twin used to live alongside it; it had a
+    // single reader (batch row gathering) and cost a second full copy plus one heap block
+    // per row, so it was removed in favour of gathering from the columns (docs/65).
+    std::vector<std::vector<double>> Xcol;
     // Per-point sqrt(weight). Empty => unweighted (every point counts equally); the hot
     // paths skip the multiply entirely in that case. When non-empty (size m), the
     // residual r_i and its Jacobian row are scaled by sqrt_weights[i], so the optimiser's
@@ -85,27 +88,41 @@ struct Dataset {
     std::vector<double> sqrt_weights;
 
     Dataset() = default;
-    // Build the column-major view once at construction; the Dataset is shared immutably
-    // across islands afterwards, so the transpose is computed exactly once per search.
-    // Xcol is what the SoA point-batched residual/Jacobian evaluators consume
-    // (soa_eval.hpp); row-major X is kept for the scalar callers (final prediction etc.).
+    // Takes the inputs ALREADY column-major (Xcol_[j][i] = feature j of point i), which is
+    // the layout the SoA point-batched residual/Jacobian evaluators consume (soa_eval.hpp)
+    // and, not coincidentally, the layout an R matrix already has. Callers holding
+    // row-major data use dataset_from_rows() below.
+    //
     // `w_` are per-point weights (empty => unweighted); sqrt(w_i) is precomputed into
-    // sqrt_weights once, here, for the same once-per-search reason as the transpose.
-    Dataset(std::vector<std::vector<double>> X_, std::vector<double> y_,
+    // sqrt_weights once, here, because the Dataset is shared immutably across islands and
+    // the hot-path evaluators should multiply rather than call sqrt per point.
+    Dataset(std::vector<std::vector<double>> Xcol_, std::vector<double> y_,
             std::vector<double> w_ = {})
-        : X(std::move(X_)), y(std::move(y_)) {
-        const std::size_t m = X.size();
-        const std::size_t nf = m ? X[0].size() : 0;
-        Xcol.assign(nf, std::vector<double>(m));
-        for (std::size_t i = 0; i < m; ++i)
-            for (std::size_t j = 0; j < nf; ++j) Xcol[j][i] = X[i][j];
+        : y(std::move(y_)), Xcol(std::move(Xcol_)) {
         if (!w_.empty()) {
             sqrt_weights.resize(w_.size());
             for (std::size_t i = 0; i < w_.size(); ++i)
                 sqrt_weights[i] = std::sqrt(w_[i]);
         }
     }
+
+    std::size_t num_points() const { return y.size(); }
+    std::size_t num_features() const { return Xcol.size(); }
 };
+
+// Transpose row-major inputs (X_rows[i][j] = feature j of point i) into the column-major
+// layout Dataset stores. For callers that genuinely hold rows — the standalone tests and
+// benchmark problems, where the matrices are small. The bindings do not use this: they
+// build the columns directly from their caller's buffer (docs/65).
+inline std::vector<std::vector<double>> columns_from_rows(
+    const std::vector<std::vector<double>>& X_rows) {
+    const std::size_t m = X_rows.size();
+    const std::size_t nf = m ? X_rows[0].size() : 0;
+    std::vector<std::vector<double>> cols(nf, std::vector<double>(m));
+    for (std::size_t i = 0; i < m; ++i)
+        for (std::size_t j = 0; j < nf; ++j) cols[j][i] = X_rows[i][j];
+    return cols;
+}
 
 // Builds a least-squares OptimizationProblem from an expression tree and a dataset.
 //
@@ -202,13 +219,24 @@ inline OptimizationProblem make_least_squares_problem(
         }
     };
 
+    // Rows per Jacobian block: the evaluator's own tile width, so a block boundary and a
+    // stop-poll boundary coincide and the poll cadence is exactly what it was before
+    // blocking (docs/22 §5.1, docs/65).
+    problem.jacobian_rows_per_block = kStride;
+
     problem.jacobian = [model, stop, aborted](const std::vector<double>& params,
+                                             std::size_t row_lo, std::size_t rows,
                                              std::vector<double>& jacobian) {
         RSYM_CLOSURE_TIMER(g_jac_ns, g_jac_calls);
         constexpr int N = kJacobianBlockWidth;
         const int k = model->k;
         const Dataset& d = *model->data;
-        const std::size_t m = d.y.size();
+        // Rows [row_lo, row_end) of the full Jacobian, written to rows [0, rows) of the
+        // caller's block buffer. The nested loop shape below is unchanged from the
+        // whole-matrix version — only its row bounds and the output row offset differ —
+        // so every entry is computed by exactly the same operations as before, for any
+        // block size (docs/65).
+        const std::size_t row_end = row_lo + rows;
         // SoA vector-mode AD (soa_eval.hpp): differentiate N constant directions per pass
         // AND batch a tile of points per node. ceil(k/N) passes (the redundant-recompute
         // saving of docs/30 Optimization 1), now with the point loop inside each node so
@@ -223,17 +251,16 @@ inline OptimizationProblem make_least_squares_problem(
         const double* sw = d.sqrt_weights.empty() ? nullptr : d.sqrt_weights.data();
         for (int block = 0; block < k; block += N) {
             const int w = std::min(N, k - block);  // active columns in this block
-            for (std::size_t lo = 0; lo < m; lo += kStride) {
+            for (std::size_t lo = row_lo; lo < row_end; lo += kStride) {
                 // Poll stop predicate at each tile boundary (docs/22 §5.1 step 3).
                 if (aborted && stop && stop()) {
                     aborted->store(true, std::memory_order_relaxed);
-                    // The caller (AnalyticFunctor::df) initialises the jac vector
-                    // to 0.0, so unfilled entries are already defined. Just return;
-                    // the abort flag causes df() to return -1 and Eigen discards
-                    // the (partial, untrustworthy) matrix.
+                    // The caller zeroes the block before every call, so unfilled entries
+                    // are already defined. Just return; the abort flag makes the caller
+                    // discard the (partial, untrustworthy) block.
                     return;
                 }
-                const std::size_t P = std::min(kStride, m - lo);
+                const std::size_t P = std::min(kStride, row_end - lo);
                 const double* seg = evaluate_soa_jacobian<N>(
                     model->tree, d.Xcol, params.data(), k, block, lo, P, pool, stk, coeff);
                 // d r_i / d c_(block+c) == d prediction_i / d c_(block+c) (y_i constant).
@@ -242,7 +269,7 @@ inline OptimizationProblem make_least_squares_problem(
                     for (std::size_t p = 0; p < P; ++p) {
                         double v = gc[p];
                         if (sw) v *= sw[lo + p];
-                        jacobian[(lo + p) * static_cast<std::size_t>(k) +
+                        jacobian[(lo + p - row_lo) * static_cast<std::size_t>(k) +
                                  static_cast<std::size_t>(block + c)] = v;
                     }
                 }
@@ -253,19 +280,19 @@ inline OptimizationProblem make_least_squares_problem(
     return problem;
 }
 
-// Value-copy overload (tests and other non-search callers). Copies X and y once into
-// a shared Dataset and delegates to the shared-dataset overload above, preserving the
-// original contract that the returned closures own their data independently of the
-// caller's X/y.
+// Value-copy overload taking ROW-major X (tests and other non-search callers). Transposes
+// and copies into a shared Dataset and delegates to the shared-dataset overload above,
+// preserving the original contract that the returned closures own their data
+// independently of the caller's X/y.
 inline OptimizationProblem make_least_squares_problem(
     Tree tree,
-    std::vector<std::vector<double>> X,
+    const std::vector<std::vector<double>>& X,
     std::vector<double> y,
     std::vector<double> initial = {},
     StopRequested stop = {},
     std::vector<double> weights = {}) {
     auto data = std::make_shared<const Dataset>(
-        Dataset{std::move(X), std::move(y), std::move(weights)});
+        Dataset{columns_from_rows(X), std::move(y), std::move(weights)});
     return make_least_squares_problem(std::move(tree), std::move(data),
                                       std::move(initial), std::move(stop));
 }

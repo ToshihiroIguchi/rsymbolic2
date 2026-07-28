@@ -120,16 +120,22 @@ cpp11::writable::list symbolic_regression_cpp(
     cpp11::strings  macro_names,
     cpp11::strings  macro_bodies
 ) {
-    // Convert R matrix → vector<vector<double>> (row-major)
+    // Convert the R matrix straight into the engine's column-major layout. R matrices are
+    // already column-major, so this is a per-column copy in memory order and there is no
+    // row-major intermediate: the engine then MOVES these columns into its Dataset, so the
+    // process holds the inputs twice (R's own SEXP and this copy) instead of four times
+    // (docs/65). p allocations instead of n also removes the per-row vector overhead,
+    // which at large n exceeded the data itself.
     const int n = X.nrow();
     const int p = X.ncol();
-    std::vector<std::vector<double>> X_cpp(static_cast<std::size_t>(n));
-    for (int i = 0; i < n; ++i) {
-        X_cpp[static_cast<std::size_t>(i)].resize(static_cast<std::size_t>(p));
-        for (int j = 0; j < p; ++j)
-            X_cpp[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)] = X(i, j);
+    rsymbolic::FeatureColumns X_cpp;
+    X_cpp.columns.assign(static_cast<std::size_t>(p),
+                         std::vector<double>(static_cast<std::size_t>(n)));
+    for (int j = 0; j < p; ++j) {
+        std::vector<double>& col = X_cpp.columns[static_cast<std::size_t>(j)];
+        for (int i = 0; i < n; ++i) col[static_cast<std::size_t>(i)] = X(i, j);
     }
-    const std::vector<double> y_cpp(y.begin(), y.end());
+    std::vector<double> y_cpp(y.begin(), y.end());
 
     // Build SearchSpace from R arguments
     SearchSpace space;
@@ -234,7 +240,9 @@ cpp11::writable::list symbolic_regression_cpp(
         opts.weights.assign(weights.begin(), weights.end());
     }
 
-    const SearchResult res = run_evolution(X_cpp, y_cpp, opts);
+    // Hand the columns over rather than copying them; y is copied because the weighted
+    // SST for R^2 is computed from it below.
+    const SearchResult res = run_evolution(std::move(X_cpp), y_cpp, opts);
 
     // Weighted total sum of squares about the weighted mean (unit weights when
     // unweighted), for downstream fit statistics: R^2 = 1 - loss / sst is consistent

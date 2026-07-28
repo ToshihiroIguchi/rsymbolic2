@@ -53,8 +53,9 @@ public:
     explicit SelfLMOptimizer(OptimizerConfig config = {});
 
     OptimizationResult optimize(const OptimizationProblem& problem,
-                                const StopRequested& stop_requested) const override;
-    using ConstantOptimizer::optimize;  // keep the no-deadline convenience overload
+                                const StopRequested& stop_requested,
+                                OptimizerScratch& scratch) const override;
+    using ConstantOptimizer::optimize;  // keep the convenience overloads
     std::string name() const override;
 
 private:
@@ -62,34 +63,21 @@ private:
 
     // RNG for the restart perturbations only (the LM loop is RNG-free). Seeded from
     // config_.seed in the constructor; the search seeds each island's optimizer
-    // deterministically so results are reproducible and thread-count independent.
+    // deterministically so results are reproducible and thread-count independent. This
+    // is the ONLY state on the optimizer, and the reason the optimizer stays per island
+    // while its working buffers move to a per-worker OptimizerScratch (docs/65).
     mutable std::mt19937_64 rng_;
 
     // Run the LM loop from a given start point `x0`, returning the optimized constants and
     // SSE and accumulating residual-function evaluations into `nfev` and Jacobian builds
     // into `njev`. Used once per start by optimize() (start 0 + n_restarts perturbed
-    // starts). All scratch below is reused.
+    // starts). All working storage comes from `s`, which the caller owns and reuses.
     OptimizationResult run_lm_from(const OptimizationProblem& problem,
                                    const std::vector<double>& x0,
                                    const StopRequested& stop_requested,
+                                   OptimizerScratch& s,
                                    std::size_t& nfev,
                                    std::size_t& njev) const;
-
-    // Scratch buffers reused across optimize() calls so a fit performs no heap
-    // allocation once these are sized (m is fixed for a search; k grows to the largest
-    // tree seen, then stays). `mutable` because optimize() is const; thread-safe because
-    // each island owns its own optimizer instance and never calls optimize()
-    // concurrently on it. See docs/23 §4.
-    mutable std::vector<double> params_;      // size k: current parameters
-    mutable std::vector<double> trial_;       // size k: trial parameters p + delta
-    mutable std::vector<double> rbuf_;        // size m: residuals at params_
-    mutable std::vector<double> trial_rbuf_;  // size m: residuals at trial_
-    mutable std::vector<double> jbuf_;        // size m*k: row-major Jacobian
-    mutable std::vector<double> ata_;         // size k*k: A = JᵀJ
-    mutable std::vector<double> aug_;         // size k*k: A + λ·diag(A) (Cholesky in place)
-    mutable std::vector<double> g_;           // size k: g = Jᵀr
-    mutable std::vector<double> delta_;       // size k: LM step
-    mutable std::vector<double> xt_;          // size k: perturbed restart start point
 };
 
 }  // namespace rsymbolic
