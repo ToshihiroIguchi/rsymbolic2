@@ -156,6 +156,11 @@ if(RSYMBOLIC2_BUILD_BENCHMARKS)
     add_executable(bench_soa_eval benchmarks/bench_soa_eval.cpp)
     target_link_libraries(bench_soa_eval PRIVATE rsymbolic2_core)
 
+    # Per-platform libm cost, and what a given accuracy buys (docs/67). Self
+    # contained — it deliberately links nothing, because its whole purpose is to
+    # compare the same source against two C libraries.
+    add_executable(bench_libm benchmarks/bench_libm.cpp)
+
     # BFGS vs self-LM and Float32 vs Float64 constant-optimizer evidence harness
     # (docs/36). Header-only templated LM/BFGS driven by the production evaluate<T>;
     # links core only for its include path. As with bench_soa_eval, for the

@@ -563,6 +563,14 @@ cost table (§7.6), and re-runnable harnesses for all of it.
   moves from "dismissed" to "candidate if Phases 2-4 disappoint" (§6).
 - **Confirmed closed:** allocator-contention levers (§7.2).
 
+**Follow-up, 2026-07-29 (`docs/67`).** This plan measured everything on Windows and read
+"libm-bound" as a statement about the workload. It is also a statement about the platform:
+the same source on the same machine runs `exp` 10.5x and `log` 6.4x slower under
+Rtools/MinGW than under glibc, and the full search is ~2.4-2.7x slower on Windows. `docs/67`
+records the measurement, the isolation that attributes it to libm (pure-arithmetic trees
+show *no* gap), and why reduced precision — the obvious reading of §7.7 — turns out to be
+the smaller half of the opportunity.
+
 **Raw logs:** not committed (scratchpad); the commands in §3 reproduce them.
 
 ## 8. Deliverables
