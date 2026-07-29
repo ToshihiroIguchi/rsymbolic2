@@ -96,21 +96,50 @@ export function toMatrix({ rows }, targetIndex, featureIndices) {
 // over-allocation into a module-wide abort ("Aborted(OOM)") rather than a recoverable
 // error. So the row limit has to be predicted BEFORE the run, not discovered during it.
 //
-// Peak heap is three O(n) copies of the data plus per-island optimiser scratch:
-//   Xflat (n*p*8) + X as vector<vector> (n*p*8 + ~40 B/row, rsymbolic2_wasm.cpp)
-//   + the Dataset copy run_evolution() makes (evolutionary_search.cpp: make_shared<Dataset>)
-//   + self-LM scratch held by EACH island, which is why the wall moves with n_populations:
+// The formula below inverts the model fitted to ten OK/OOM points in docs/59:
 //
 //       peak bytes ~= n * (24*p + 80 + 16*n_populations)
 //
-// Measured against the 128 MB heap (docs/59); the island term dominates at the default
-// 31 populations:
 //   OK   120,000x1 | 100,000x5 | 100,000x10  (31 populations)
 //        300,000x1 at 4 and 8 populations
 //   OOM  300,000x1 | 200,000x5 | 200,000x10  (31 populations)
 //        300,000x1 at 16 populations
-// BUDGET_BYTES stays well inside the smallest measured OOM point: an abort costs the user
-// the whole run, while a slightly conservative cap only samples a few more rows away.
+//
+// *** THIS FORMULA NO LONGER DESCRIBES THE ENGINE. It is kept deliberately. ***
+//
+// docs/65 changed the shape of the memory usage, not just its size, so do not read the
+// terms above as an account of what the engine does today:
+//   - `24p + 80` described three live O(n) copies held as row vectors. The bridge now
+//     builds ONE column-major copy and moves it into the search (rsymbolic2_wasm.cpp),
+//     so the per-row allocation overhead (`+80`) is gone entirely.
+//   - `16 * n_populations` described self-LM scratch held per ISLAND. It is now held per
+//     OpenMP WORKER, and this build is single-threaded — so the real term is `16 * 1` and
+//     the ceiling has no physical dependence on n_populations at all.
+//   - The term that actually dominates now is not in the model: the intake transpose
+//     holds `Xflat` and the column copy simultaneously (~16*p*n) before swapping Xflat
+//     away. That transient peaks BEFORE the search starts.
+// Modelled that way the true capacity is roughly 5-19x what this returns (~80 B/row at
+// p=5 against the 696 B/row below). That is an estimate from reading the code, NOT a
+// measurement — the measured points above are all pre-docs/65.
+//
+// It is not raised, and raising it is not a pending task (docs/66 §6). The binding
+// constraint on browser row count is TIME, not memory, and this ceiling already sits at
+// that wall: a default-budget run at the current p=5 limit (~96,000 rows) takes ~5.7 min
+// with batching on and ~2 h with it off (docs/59 §1-2). Lifting the ceiling to the
+// modelled ~839,000 rows would only let a user start a ~48 min run in a browser tab, so
+// the ceiling is doing double duty as a guard against unusable run lengths. Correcting it
+// would also cost a fresh WASM OOM sweep, because over-estimating aborts the module rather
+// than degrading (docs/59 §3) — real risk, no user benefit.
+//
+// Known cosmetic consequence, accepted: because the spurious n_populations term is still
+// here, raising the population count above the default shrinks the ceiling and can force
+// sampling that the engine does not actually require. That costs the user rows in the
+// sample, never a failed run, and fixing it means raising a ceiling — which needs the
+// sweep above to be safe.
+//
+// If you do change this: the row limit has to be PREDICTED, never discovered, and the
+// budget must stay well inside the smallest measured OOM point. An abort costs the user
+// the whole run; a conservative cap only samples a few more rows away.
 const BUDGET_BYTES = 64 * 1024 * 1024;
 
 export function maxRowsForBrowser(ncol, nPopulations) {

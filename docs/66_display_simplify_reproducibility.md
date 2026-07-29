@@ -143,8 +143,35 @@ processes, 1500 trees × 120 nodes each:
 - Standalone suite 29/29; R `testthat` 327 passed / 0 failed; `pytest` 66 passed; WASM
   builds under the pinned emsdk and `parity_test.cjs` passes. Windows and Ubuntu (WSL).
 
-## 6. Left undone
+## 6. The browser row ceiling: closed, not deferred
 
-- **The browser row ceiling** (`docs/65` §7) is untouched and still conservative. Raising it
-  needs its own WASM OOM sweep at the shipped `n_populations = 31`.
+`docs/65` §7 left `web/app/js/data.js: maxRowsForBrowser()` as an open item — its fitted
+formula no longer describes the engine, so the shipped ceiling is conservative. Examined
+here and **deliberately left at its current value**; it is not a pending task.
+
+Reading the current code, the drift is in the *shape*, not just the size:
+
+| model term (docs/59) | today |
+|---|---|
+| `24p + 80` — three row-major copies | one column-major copy, moved not copied; the `+80` per-row overhead is gone |
+| `16·n_populations` — per-island LM scratch | per-**worker**, and this build is single-threaded: `16·1`. No physical dependence on `n_populations` remains |
+| — | the dominant term is now unmodelled: the intake transpose holds `Xflat` and the column copy at once (`~16pn`), peaking *before* the search starts |
+
+That puts true capacity roughly 5-19x above what the function returns (~80 B/row at `p=5`
+against 696). **It is still not raised**, because docs/59 §1 already settled the question:
+the binding constraint on browser row count is time, not memory, and the current ceiling
+sits at that wall. A default-budget run at the present `p=5` limit (~96,000 rows) takes
+~5.7 min batched and ~2 h unbatched; the modelled ceiling of ~839,000 rows corresponds to
+~48 min batched. Raising it would let users start runs nobody waits for, while costing a
+fresh WASM OOM sweep — over-estimating aborts the module rather than degrading (docs/59
+§3). Negative benefit at real risk, so the work done here is limited to correcting the
+stale explanation at the call site and in docs/59.
+
+Accepted consequence: the now-spurious `n_populations` term still shrinks the ceiling when
+the user raises the population count, forcing sampling the engine does not require. It
+costs rows in the sample, never a failed run, and removing it would mean raising a ceiling
+— which needs the sweep this section declines.
+
+## 7. Left undone
+
 - **The residual buffers** (`docs/65` §3) are still the largest remaining `O(m)` term.

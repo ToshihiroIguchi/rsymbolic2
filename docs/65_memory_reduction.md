@@ -283,5 +283,9 @@ longer excludes the field — it digests it, and gained a `strong_simplify` arm.
   gone, and the input is held once instead of three times. Raising the ceiling needs its
   own WASM OOM sweep, because over-estimating it aborts the module rather than degrading
   (docs/59 §3). Not attempted here; the current limit is safe, just pessimistic.
+
+  **Resolved in docs/66 §6 — the ceiling stays where it is, as a decision rather than a
+  pending task.** The browser's binding constraint is time, not memory, and the present
+  ceiling already sits at that wall; raising it would only permit runs nobody waits for.
 - **The residual buffers** (`16m` per worker) are the largest remaining `O(m)` term. See
   §3 for why tiling them was deferred.

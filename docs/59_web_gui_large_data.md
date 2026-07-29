@@ -76,12 +76,26 @@ At the default 31 populations:
 > removed: the input is now held once rather than three times and in `p` column
 > allocations rather than `n` row allocations (so `24p + 80` becomes `~8p`), and the
 > per-island optimiser scratch became per-**worker** with its Jacobian buffer eliminated
-> (so `16·n_populations` becomes `16·n_threads`). Measured effect on the native build:
-> 5.5x lower peak at 100,000 x 5. The formula and the ceiling it drives are therefore
-> **conservative, not wrong** — they still bound the real usage, by a wide margin. Raising
-> the ceiling requires its own WASM OOM sweep, because over-estimating aborts the module
-> instead of degrading (§3 below); that has not been done. The model is kept here as the
-> record of what was measured at the time.
+> (so `16·n_populations` becomes `16·n_threads`, and this build is single-threaded — so
+> `16·1`). A term the model never had now dominates: the intake transpose holds `Xflat`
+> and the column copy at once (`~16pn`) before releasing `Xflat`. Measured effect on the
+> native build: 5.5x lower peak at 100,000 x 5.
+>
+> **Decision (docs/66 §6): the ceiling stays as it is.** Modelling the current code puts
+> the true capacity 5-19x above what `maxRowsForBrowser()` returns (~80 B/row at `p=5`
+> against 696). It is not raised, because §1 of this document is the answer: the binding
+> constraint is *time*, and the present ceiling already sits at that wall. A default-budget
+> run at the current `p=5` limit (~96,000 rows) is ~5.7 min batched and ~2 h unbatched;
+> raising it to the modelled ~839,000 rows would only let a user start a ~48 min run in a
+> browser tab. The ceiling is therefore doing double duty as a guard against unusable run
+> lengths, and lifting it would cost a fresh WASM OOM sweep (over-estimating aborts the
+> module rather than degrading, §3) for negative user benefit. The model is kept below as
+> the record of what was measured at the time, and `data.js` says the same thing at the
+> call site so nobody re-derives it from the stale terms.
+>
+> One accepted cosmetic consequence: the spurious `n_populations` term still shrinks the
+> ceiling when the user raises the population count, which can force sampling the engine
+> does not require. That costs rows in the sample, never a failed run.
 
 A model consistent with all ten points:
 
