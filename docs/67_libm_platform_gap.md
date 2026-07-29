@@ -1,8 +1,9 @@
 # 67. The libm platform gap: Windows is ~2.5x slower than Linux, and it is not precision
 
-**Date:** 2026-07-29
+**Date:** 2026-07-29 (WASM arm added the same day, §3.5)
 **Status:** measurement record. **No code change proposed here is implemented**; §6 lists
-candidates and §7 the open questions that gate them.
+candidates and §7 the open questions that gate them. §7's question 2 is now answered
+(§3.5) and it closes the strongest argument for acting — see §6.
 **Supersedes nothing.** Extends `docs/60` §7.7 (the forward path is libm-bound) with the
 cross-platform half of that finding, which `docs/60` never measured.
 
@@ -24,6 +25,13 @@ So the honest answer to the question as asked is **no, but the measurement found
 larger**: a ~2.5x end-to-end penalty on a mandatory platform, available without giving up
 any precision at all.
 
+**And then the third platform decided what to do about it.** Measuring the WASM arm (§3.5)
+was supposed to size the prize; instead it removed the reason to claim it. The web GUI — the
+only component where wall-clock actually binds — turned out to be on the *fast* side, so the
+one urgent case for a replacement evaporated. §6 records the decision to leave the 2.4-2.7x
+on the table, and why that is the right call under the Project Priorities rather than a
+failure of nerve.
+
 ## 2. Setup
 
 Same physical machine throughout: Intel Core 7 150U, Windows 11.
@@ -32,15 +40,24 @@ Same physical machine throughout: Intel Core 7 150U, Windows 11.
 |---|---|---|
 | Windows | Rtools45 g++ 14.3.0 (MinGW/UCRT) | mingw-w64 |
 | Linux | Ubuntu 24.04.4 LTS under WSL2 (kernel 6.6.114.1), g++ 13.3.0 | glibc 2.39 |
+| WASM | emsdk 6.0.2 (clang), run under Node 22.16.0 / V8 | emscripten (musl-derived) |
 
-Both arms: identical sources at `e5a5f1f`, CMake `Release` (`-O3 -DNDEBUG`), no extra flags,
-`OMP_NUM_THREADS=4`. The 4-thread cap is `docs/60` §7.2's comparison point, where island
-granularity (31 islands over 4 workers) puts the efficiency ceiling at 97 %.
+All arms: identical sources at `e5a5f1f`, `-O3 -DNDEBUG`, no extra flags. The native arms use
+CMake `Release` and `OMP_NUM_THREADS=4` — the 4-thread cap is `docs/60` §7.2's comparison
+point, where island granularity (31 islands over 4 workers) puts the efficiency ceiling at
+97 %. The WASM arm is single-threaded by construction (`web/wasm/CMakeLists.txt` ships no
+pthreads so the site needs no COOP/COEP headers), and only the two single-threaded
+micro-benchmarks were run on it; §3.3's end-to-end search was not.
 
-Parallel health was checked on both arms before drawing any conclusion, per the standing
-requirement that wall-clock numbers are void if the CPU is starved: **Windows `cpu/wall`
-3.49-3.79, Linux 3.83-3.94** at the 4-thread cap. Both healthy; Linux marginally better,
-which accounts for a few points of the end-to-end gap and is noted again in §3.3.
+Parallel health was checked on both native arms before drawing any conclusion, per the
+standing requirement that wall-clock numbers are void if the CPU is starved: **Windows
+`cpu/wall` 3.49-3.79, Linux 3.83-3.94** at the 4-thread cap. Both healthy; Linux marginally
+better, which accounts for a few points of the end-to-end gap and is noted again in §3.3.
+
+**Repetition counts differ by arm and the tables say which.** The native numbers in §3.1-§3.4
+are n = 1. The WASM numbers in §3.5 are **medians of 5**, because run-to-run spread under V8
+reached 17 % — larger than on either native arm, and large enough that a single run would not
+have supported the comparison.
 
 ## 3. Results
 
@@ -172,6 +189,100 @@ but only 1.24-1.27x under Windows. `soa_eval.hpp`'s stated purpose — batch poi
 so the tile loop can be optimised — is substantially unrealised on Windows, because the
 tile loop is stalled on serialised libm calls. Not investigated further here.
 
+### 3.5 The third platform: WASM is on the fast side
+
+This is §7's question 2, and it was measured first because it is the cheapest and because the
+web GUI is the one component where `docs/66` §6 found time to be the binding constraint.
+`bench_libm.cpp` and `bench_soa_eval.cpp` both build under emsdk unmodified, as intended.
+
+**Raw libm, net ns/elem, medians of 5 (native columns repeated from §3.1, n = 1):**
+
+| op | Windows | Linux | WASM | WASM / Linux | Windows / WASM |
+|---|---:|---:|---:|---:|---:|
+| `std::exp` | 27.63 | 2.64 | 8.27 | 3.13x | **3.34x** |
+| `std::log` | 16.13 | 2.51 | 9.36 | 3.73x | 1.72x |
+| `std::sin` | 28.03 | 4.91 | 9.44 | 1.92x | 2.97x |
+| `std::pow` | 53.47 | 7.77 | 11.17 | 1.44x | **4.79x** |
+| `std::sqrt` | 1.02 | 1.11 | 1.12 | 1.01x | — |
+| `mul` | 0.036 | 0.012 | 0.61 | ~50x | — |
+
+Read naively this puts WASM in the middle, 1.4-3.7x behind Linux. **That reading is wrong**,
+and the reason is the same control that made §3.1 attributable in the first place.
+
+**The codegen tax — the correct normaliser.** §3.2's load-bearing observation was that our own
+replacements cost the *same* on Windows and Linux (3.51 vs 3.55), which is what isolated libm
+as the variable. That symmetry does not survive the third platform:
+
+| replacement (our code, not libm) | Linux | WASM | WASM / native |
+|---|---:|---:|---:|
+| `exp` deg10 | 3.55 | 5.91 | 1.66x |
+| `exp` deg10, guarded | 3.73 | 7.98 | 2.14x |
+| `log` s17 | 3.35 | 5.12 | 1.53x |
+| `log` s17, guarded | 3.63 | 6.19 | 1.71x |
+| `pow` acc | 11.68 | 15.07 | 1.29x |
+| `pow` fast | 7.61 | 10.92 | 1.43x |
+
+**WASM runs our own scalar floating-point code ~1.6x slower than native (median).** That is a
+flat platform tax with nothing to do with libm. Dividing it out, emscripten's libm sits at
+**0.9-2.3x** of glibc's quality — `pow` is actually better than glibc scaled — i.e. the same
+class. MinGW is 5.7-10.5x off *with no such excuse available*, because native codegen is
+identical on both native arms.
+
+(The `log s11` / `log s5` cells remain untrustworthy on this arm too: WASM reports s11 at 6.67,
+slower than the higher-degree s17 at 5.12. Three toolchains now disagree about these two rows
+in three different directions, which confirms §3.2's diagnosis that they are codegen artefacts
+of the shared `log_split` and not measurements of anything.)
+
+**Production evaluator (`bench_soa_eval`), batch ns per 1000-point pass** — no search
+stochasticity, identical work, the same fixed trees as §3.4:
+
+| tree | Windows | Linux | WASM | WASM / Linux | WASM / Windows |
+|---|---:|---:|---:|---:|---:|
+| poly (pure arithmetic) | 1344 | 1348 | 3187 | **2.36x** | 2.37x |
+| rel_mass (1 sqrt + div) | 5732 | 3962 | 4410 | 1.11x | 0.77x |
+| trig (sin*cos) | 58208 | 11794 | 18221 | 1.55x | **0.31x** |
+| transc (exp+log+sin) | 76126 | 12056 | 17663 | 1.47x | **0.23x** |
+
+**This is the mirror image of §3.4 and it is the load-bearing result.** There, the gap *grew*
+with transcendental content (1.00x → 6.31x), which is what convicted libm. Here the gap
+*shrinks* with transcendental content (2.36x → 1.47x): WASM is at its worst on pure
+arithmetic and better than its own average tax once transcendentals dominate. libm is not the
+culprit on this platform — the flat codegen tax is, and the transcendental rows are where WASM
+does *best* relative to Linux.
+
+And against the platform that has the problem, **WASM is 3.2-4.3x faster than Windows** on
+transcendental trees.
+
+**Would a replacement help WASM? No.** Comparing `std::` against our guarded replacements
+*within* the WASM arm: `log` 9.36 → 6.19 (1.51x faster), `exp` 8.27 → 7.98 (1.04x, noise),
+`pow` 11.17 → 15.07 (**0.74x, slower**). Net ≈ zero, and that is with expedient replacements
+measured against a real libm; a vendored implementation chosen to match glibc rather than beat
+it would land in the same place. On Linux the replacements already lose (§4, point 4).
+
+**Side finding, third data point.** §3.4 noted the SoA design's benefit is platform-dependent.
+The batch/scalar speedup on transcendental trees is 1.24-1.27x on Windows, 2.66-3.30x on
+Linux, and **3.81-3.84x on WASM** — the highest of the three. `soa_eval.hpp`'s stated purpose
+is realised best exactly where it was never measured.
+
+**A new lever appeared, and it is not libm.** The poly row above (WASM 2.36x slower than *both*
+natives, on code containing no libm call at all) points at missing vectorisation rather than
+missing precision, so `-msimd128` was tested:
+
+| tree | WASM | WASM `-msimd128` | gain |
+|---|---:|---:|---:|
+| poly | 3187 | 2419 | 1.32x |
+| rel_mass | 4410 | 2781 | **1.59x** |
+| trig | 18221 | 17257 | 1.06x |
+| transc | 17663 | 15617 | 1.13x |
+
+Exactly the shape the whole document predicts: elementwise `+-*/` and `sqrt` vectorise,
+libm calls do not. **On the realistic transcendental-heavy workload it is worth 1.06-1.13x** —
+real, cheap, and small. Carried to §6 as candidate D. Two things are *not* established about
+it: the driver's `bit-exact` column verifies batch against scalar *within one build*, and says
+nothing about whether a SIMD build agrees with a non-SIMD one (elementwise IEEE operations
+should, since no reassociation is licensed without `-ffast-math`, but that is an argument, not
+a measurement); and browser engines were not tested, only Node.
+
 ## 4. What is established
 
 1. Windows/MinGW's `exp`, `log`, `sin` and `pow` are **5.7x-10.5x slower** than glibc's, for
@@ -186,6 +297,13 @@ tile loop is stalled on serialised libm calls. Not investigated further here.
    our accurate replacements are *slower* than glibc's `exp` (3.73 vs 2.64) and `log`
    (3.63 vs 2.51). Any Linux-side gain would have to come from reduced precision or
    vectorisation, both separately blocked (§5, `docs/37`).
+5. **WASM is on the fast side, and it is the platform that mattered most** (§3.5). Emscripten's
+   libm is glibc-class once WASM's flat ~1.6x scalar-codegen tax is divided out; the production
+   evaluator's WASM/Linux gap *shrinks* from 2.36x to 1.47x as transcendental content rises,
+   the opposite of the Windows signature. Replacing libm there would gain nothing (`log` 1.51x,
+   `exp` 1.04x, `pow` 0.74x — net ≈ zero). **Windows is alone in having this problem.**
+6. **The web GUI's residual WASM tax is vectorisation, not precision** (§3.5). It is worth
+   1.06-1.13x on transcendental-heavy trees via `-msimd128`, and 1.32-1.59x on arithmetic ones.
 
 ## 5. What is NOT established
 
@@ -204,13 +322,23 @@ tile loop is stalled on serialised libm calls. Not investigated further here.
   licence has **not** been verified in this session, and no build integration was attempted.
 - **That this reopens SLEEF.** SLEEF was rejected twice (`docs/30`, `docs/37`) on three
   grounds: PySR's `turbo=False`, Rtools/MinGW dependency cost with a mandatory serial
-  fallback, and non-bit-identity. This work weakens none of them. A *scalar* replacement is
-  a different proposition with a much lower dependency cost, and is what §6 proposes.
+  fallback, and non-bit-identity. This work weakens none of them. A *scalar* replacement
+  would be a different proposition with a much lower dependency cost — that is candidate A,
+  which §6 declines on its own merits, not by inheriting SLEEF's reasons.
+- **That `-msimd128` preserves bit-identity** (candidate D, §3.5). The argument is that only
+  elementwise IEEE operations are available to vectorise and no reassociation is licensed
+  without `-ffast-math`, so results should be unchanged. That is reasoning, not a measurement;
+  the driver's `bit-exact` column compares batch against scalar *within* one build and cannot
+  answer it. Nor were browser engines tested — the WASM arm is Node/V8 only.
 
-## 6. Candidates
+## 6. Candidates, and the decision
 
-Listed, not adopted. All of them break bit-identity with the current build, which is the
-gate they have to clear (§7).
+**Decision after §3.5: C — do nothing, for now.** A is not refuted, but its case has shrunk
+to the point where it no longer clears the Dependency Policy's bar. The reasoning is in §6.1
+below, after the candidates it refers to. A is demoted rather than rejected: see §6.2.
+
+All of A/B/D break bit-identity with the current build, which is the gate they have to clear
+(§7, question 3).
 
 **A. Vendor a scalar transcendental implementation and use it on all three platforms.**
 The preferred shape, for a reason that only appears once both arms are measured: using
@@ -229,8 +357,47 @@ Strictly worse than A unless A's licence or integration cost turns out to be pro
 **C. Do nothing.** The status quo is not indefensible: `docs/35` records that every gate
 problem completes its full generation budget in 20-30 % of the time limit, so wall-clock is
 not currently a binding constraint on the library. The one place it *is* binding is the web
-GUI (`docs/66` §6: the browser row ceiling sits at a time wall, not a memory wall), and that
-is a WASM build whose libm was not measured here (§7).
+GUI (`docs/66` §6: the browser row ceiling sits at a time wall, not a memory wall) — and
+§3.5 now shows that build is on the fast side, so A would deliver it nothing.
+
+**D. Build the WASM target with `-msimd128`** (new, from §3.5). Not a libm change at all: it
+addresses the *other* thing §3.5 found, WASM's flat vectorisation tax. One line in
+`web/wasm/CMakeLists.txt`, no dependency, aimed squarely at the one binding constraint.
+Measured 1.06-1.13x on transcendental-heavy trees and 1.32-1.59x on arithmetic ones — real
+but small; it moves `docs/66`'s browser row ceiling by ~10 %, not by a factor. Before it could
+be adopted it needs the SIMD-vs-non-SIMD bit-identity question settled by measurement rather
+than by argument (§3.5), and a check on browser engines rather than Node alone. Recorded as
+the cheapest live option, not proposed for implementation here.
+
+### 6.1 Why C, and what changed
+
+§6C used to carry an escape hatch: wall-clock does not bind the library, *but* it binds the
+web GUI, and that arm was unmeasured. §3.5 closed that hatch in the negative. The web GUI is
+on the fast side — 3.2-4.3x faster than Windows on transcendental trees — so the single
+component with a real time constraint gains nothing from A.
+
+What is left of A's case is (i) Windows-only speed, which `docs/35` says is not binding, and
+(ii) cross-platform bit-identity, which is a **reproducibility** benefit, not a performance
+one. Against that stands: a vendored dependency, where the Dependency Policy's default answer
+is no and the burden of proof is on adopting; an unverified licence; a one-time bit-identity
+break; and regenerating every `docs/65` §6 baseline plus rebasing the WASM parity gate.
+
+The trade-off being made explicit, per Project Priorities: this leaves a **measured 2.4-2.7x
+on a mandatory platform unclaimed**. That is deliberate. Performance ranks last, the gain is
+not needed by any current constraint, and the cost lands on Portability and Simplicity, which
+rank above it. If Windows wall-clock ever becomes binding — a much larger default `maxsize`,
+a substantially bigger dataset, or a Windows-hosted service — this document is the evidence
+that the lever exists and is worth ~2.5x, and the decision should be revisited then.
+
+### 6.2 A is demoted, not rejected
+
+A's surviving benefit is that Windows, Linux and WASM would produce identical results for the
+first time. That is a genuine defect being lived with — five of six cells in §3.3 diverged,
+and `docs/51` records WASM differing from native by libm ULP. But it should be judged **as a
+reproducibility project, on reproducibility's merits and costs**, not smuggled in on a
+performance argument that §3.5 has just weakened. Filed accordingly; no work proposed.
+
+B is unchanged and remains strictly worse than A.
 
 ## 7. Open questions, in the order they gate a decision
 
@@ -238,24 +405,44 @@ is a WASM build whose libm was not measured here (§7).
    Policy the default answer is no, and the burden of proof is on adopting. What it must
    show: permissive licence compatible with Apache-2.0, no build-system requirements beyond
    adding source files, and a named fallback (here: a compile flag reverting to `std::exp`).
-2. **What is emscripten's libm?** Unmeasured, and it decides whether the web GUI — the one
-   component where time is the binding constraint — is on the fast side of this gap or the
-   slow side. `bench_libm.cpp` is self-contained and should build under emsdk unchanged.
-   **This is the cheapest remaining measurement and it should come first.**
-3. **Does bit-identity have to break?** It does, once, against today's build. That is an
-   auditable one-time event, not ongoing nondeterminism, and `diag_search_digest` exists to
-   characterise it. But every baseline captured under `docs/65` §6 would need regenerating,
-   and the WASM parity gate would need rebasing.
-4. **Only then**: implement, and measure end to end against `docs/60` §2's pre-registered
-   bars, on both platforms, with medians over ≥ 5 runs.
+   **Not investigated** — §6.1 decided against A before this became worth the effort. It
+   reopens only if A is revived.
+2. ~~**What is emscripten's libm?**~~ **ANSWERED (§3.5): the fast side.** It is glibc-class
+   once WASM's flat ~1.6x scalar-codegen tax is divided out, and the production evaluator's
+   WASM/Linux gap *shrinks* as transcendental content rises rather than growing. Windows is
+   alone in having this problem. This answer is what decided §6 against A.
+3. **Does bit-identity have to break?** It does, once, against today's build — for A, B *or*
+   D. That is an auditable one-time event, not ongoing nondeterminism, and
+   `diag_search_digest` exists to characterise it. But every baseline captured under
+   `docs/65` §6 would need regenerating, and the WASM parity gate would need rebasing.
+   Still open, and now gating D rather than A. D is the cheap case to settle first: if a
+   `-msimd128` build turns out to be bit-identical to a non-SIMD one (§3.5 argues it should
+   be, having only elementwise IEEE operations to vectorise), D costs nothing here at all.
+4. **Only if A or B is revived**: implement, and measure end to end against `docs/60` §2's
+   pre-registered bars, on both platforms, with medians over ≥ 5 runs.
 
 ## 8. Reproduction
+
+Native (both arms, same commands):
 
 ```
 cmake -S . -B build-win  && cmake --build build-win --target bench_libm bench_soa_eval bench_profile
 ./build-win/standalone/bench_libm.exe
 ./build-win/standalone/bench_soa_eval.exe
 OMP_NUM_THREADS=4 ./build-win/standalone/bench_profile.exe rel_mass 300 1
+```
+
+WASM (§3.5). Both drivers build under emsdk unmodified — `bench_libm.cpp` links nothing by
+design, and `bench_soa_eval.cpp` needs only the core include path. `-fexceptions` matches
+`web/wasm/CMakeLists.txt`; add `-msimd128` for candidate D's rows. Report medians of 5: V8's
+run-to-run spread reaches 17 %.
+
+```
+em++ -std=c++17 -O3 -DNDEBUG standalone/benchmarks/bench_libm.cpp \
+     -o bench_libm.js -sENVIRONMENT=node
+em++ -std=c++17 -O3 -DNDEBUG -fexceptions -I r-package/rsymbolic2/src \
+     standalone/benchmarks/bench_soa_eval.cpp -o bench_soa.js -sENVIRONMENT=node
+node bench_libm.js && node bench_soa.js
 ```
 
 `bench_libm.cpp` is committed rather than left in a scratchpad deliberately: `docs/60` §7.6
