@@ -12,10 +12,16 @@
 // the trap the Float32 attempt fell into, so we measure BEFORE committing.
 //
 // This driver compares, for several representative trees:
-//   scalar : the production evaluate<double>() called once per point (current code path)
-//   batch  : a hand-written SoA evaluator, switch hoisted out of a tight per-point loop
+//   scalar : the production evaluate<double>() called once per point
+//   batch  : the production evaluate_soa_residual() over all P points at once
 // Both compute bit-identical residuals (same ops, same order, no -ffast-math), which the
 // driver verifies. It reports ns per full m-point pass and the batch/scalar speedup.
+//
+// The batch arm was originally a local prototype of the SoA evaluator, written to price
+// the design before committing to it. It has called the shipped evaluator since the
+// UCRT-libm redirect (docs/68), which the prototype did not pick up: the resulting
+// `bit-exact NO` was the driver correctly reporting that its own copy had drifted from
+// production. Measure the code that ships, or the number means nothing.
 //
 // Build (compile at BOTH -O2 (R ships -O2) and -O3 (standalone Release); add
 // -fopt-info-vec-optimized to see which loops actually vectorised):
@@ -34,88 +40,12 @@
 #include <vector>
 
 #include "rsymbolic/expression/node.hpp"
+#include "rsymbolic/expression/soa_eval.hpp"
 #include "rsymbolic/expression/tree.hpp"
 
 using namespace rsymbolic;
 
 namespace {
-
-// ---------------------------------------------------------------------------------
-// SoA batched residual evaluator.
-//
-// Stack of length-P segments carved from one reused pool. Each Variable/Constant node
-// copies into a fresh owned segment so later in-place unary/binary writes never corrupt
-// the shared input columns. The switch on node kind/op is OUTSIDE the per-point loop, so
-// each loop body is a single scalar op over P contiguous doubles — the form the compiler
-// can vectorise (for +-*/) and the form it CANNOT vectorise for libm transcendentals
-// without a vector-math library. Every op matches tree.hpp/dual.hpp exactly (bit-for-bit).
-// ---------------------------------------------------------------------------------
-
-void batch_unary(UnaryOp op, double* a, std::size_t P) {
-    switch (op) {
-        case UnaryOp::Neg:    for (std::size_t p = 0; p < P; ++p) a[p] = -a[p]; break;
-        case UnaryOp::Exp:    for (std::size_t p = 0; p < P; ++p) a[p] = std::exp(a[p]); break;
-        case UnaryOp::Log:    for (std::size_t p = 0; p < P; ++p) a[p] = std::log(a[p]); break;
-        case UnaryOp::Sin:    for (std::size_t p = 0; p < P; ++p) a[p] = std::sin(a[p]); break;
-        case UnaryOp::Cos:    for (std::size_t p = 0; p < P; ++p) a[p] = std::cos(a[p]); break;
-        case UnaryOp::Sqrt:   for (std::size_t p = 0; p < P; ++p) a[p] = std::sqrt(a[p]); break;
-        case UnaryOp::Tanh:   for (std::size_t p = 0; p < P; ++p) a[p] = std::tanh(a[p]); break;
-        case UnaryOp::Abs:    for (std::size_t p = 0; p < P; ++p) a[p] = std::abs(a[p]); break;
-        case UnaryOp::Square: for (std::size_t p = 0; p < P; ++p) a[p] = a[p] * a[p]; break;
-    }
-}
-
-void batch_binary(BinaryOp op, double* a, const double* b, std::size_t P) {
-    switch (op) {
-        case BinaryOp::Add: for (std::size_t p = 0; p < P; ++p) a[p] = a[p] + b[p]; break;
-        case BinaryOp::Sub: for (std::size_t p = 0; p < P; ++p) a[p] = a[p] - b[p]; break;
-        case BinaryOp::Mul: for (std::size_t p = 0; p < P; ++p) a[p] = a[p] * b[p]; break;
-        case BinaryOp::Div: for (std::size_t p = 0; p < P; ++p) a[p] = a[p] / b[p]; break;
-        // safe pow (rsymbolic::pow): per-element branches; cannot vectorise (representative).
-        case BinaryOp::Pow: for (std::size_t p = 0; p < P; ++p) a[p] = rsymbolic::pow(a[p], b[p]); break;
-    }
-}
-
-// cols[j] points to the length-P column of variable j (struct-of-arrays input layout).
-// Returns a pointer to the length-P result column. pool/stk are reused scratch (no
-// per-call allocation).
-double* evaluate_batch(const Tree& tree, const std::vector<const double*>& cols,
-                       const double* constants, std::size_t P,
-                       std::vector<double>& pool, std::vector<double*>& stk) {
-    pool.resize(tree.size() * P);
-    stk.clear();
-    std::size_t next_seg = 0;
-    auto seg = [&]() -> double* { return pool.data() + (next_seg++) * P; };
-    for (const Node& node : tree) {
-        switch (node.kind) {
-            case NodeKind::Constant: {
-                double* s = seg();
-                const double v = constants[node.index];
-                for (std::size_t p = 0; p < P; ++p) s[p] = v;
-                stk.push_back(s);
-                break;
-            }
-            case NodeKind::Variable: {
-                double* s = seg();
-                const double* src = cols[static_cast<std::size_t>(node.index)];
-                std::memcpy(s, src, P * sizeof(double));
-                stk.push_back(s);
-                break;
-            }
-            case NodeKind::Unary: {
-                batch_unary(node.uop, stk.back(), P);
-                break;
-            }
-            case NodeKind::Binary: {
-                double* b = stk.back(); stk.pop_back();
-                double* a = stk.back();
-                batch_binary(node.bop, a, b, P);
-                break;
-            }
-        }
-    }
-    return stk.back();
-}
 
 // ---------------------------------------------------------------------------------
 // Representative trees, ordered by transcendental density.
@@ -194,8 +124,6 @@ int main(int argc, char* argv[]) {
     std::vector<std::vector<double>> colsv(nf, std::vector<double>(P));
     for (std::size_t p = 0; p < P; ++p)
         for (int j = 0; j < nf; ++j) { double v = u(rng); rows[p][j] = v; colsv[j][p] = v; }
-    std::vector<const double*> cols(nf);
-    for (int j = 0; j < nf; ++j) cols[j] = colsv[j].data();
 
     std::vector<Case> cases = {make_poly(), make_rel_mass(), make_trig(), make_transc()};
 
@@ -214,7 +142,8 @@ int main(int argc, char* argv[]) {
             out_scalar[p] = evaluate<double>(c.tree, rows[p].data(), c.consts.data(),
                                              scalar_stack);
         {
-            const double* res = evaluate_batch(c.tree, cols, c.consts.data(), P, pool, stk);
+            const double* res =
+                evaluate_soa_residual(c.tree, colsv, c.consts.data(), 0, P, pool, stk);
             for (std::size_t p = 0; p < P; ++p) out_batch[p] = res[p];
         }
         bool exact = true;
@@ -237,7 +166,8 @@ int main(int argc, char* argv[]) {
         // Time batch: one SoA pass over all P points, reps full passes.
         t0 = std::chrono::steady_clock::now();
         for (int r = 0; r < reps; ++r) {
-            const double* res = evaluate_batch(c.tree, cols, c.consts.data(), P, pool, stk);
+            const double* res =
+                evaluate_soa_residual(c.tree, colsv, c.consts.data(), 0, P, pool, stk);
             double s = 0.0;
             for (std::size_t p = 0; p < P; ++p) s += res[p];
             sink = sink + s;

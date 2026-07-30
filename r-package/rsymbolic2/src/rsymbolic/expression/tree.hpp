@@ -13,6 +13,7 @@
 
 #include "rsymbolic/expression/dual.hpp"
 #include "rsymbolic/expression/node.hpp"
+#include "rsymbolic/platform/libm.hpp"
 
 namespace rsymbolic {
 
@@ -23,13 +24,15 @@ namespace detail {
 
 template <typename T>
 T apply_unary(UnaryOp op, const T& a) {
+    // The redirected six come from libm:: rather than std:: (rsymbolic/platform/libm.hpp);
+    // off MinGW they ARE std::. Dual/MultiDual overloads still win via ADL for those types.
+    using libm::cos;
+    using libm::erf;
+    using libm::exp;
+    using libm::log;
+    using libm::sin;
     using std::abs;
-    using std::cos;
     using std::cosh;
-    using std::erf;
-    using std::exp;
-    using std::log;
-    using std::sin;
     using std::sinh;
     using std::sqrt;
     using std::tanh;

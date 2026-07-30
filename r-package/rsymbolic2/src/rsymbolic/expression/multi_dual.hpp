@@ -107,7 +107,7 @@ inline MultiDual<N> operator/(const MultiDual<N>& a, const MultiDual<N>& b) {
 
 template <int N>
 inline MultiDual<N> exp(const MultiDual<N>& a) {
-    const double e = std::exp(a.value);
+    const double e = libm::exp(a.value);
     MultiDual<N> r;
     r.value = e;
     for (int c = 0; c < N; ++c) r.grad[c] = a.grad[c] * e;
@@ -117,7 +117,7 @@ inline MultiDual<N> exp(const MultiDual<N>& a) {
 template <int N>
 inline MultiDual<N> log(const MultiDual<N>& a) {
     MultiDual<N> r;
-    r.value = std::log(a.value);
+    r.value = libm::log(a.value);
     // dual.hpp uses division (a.deriv / a.value); keep division to match bit-for-bit.
     for (int c = 0; c < N; ++c) r.grad[c] = a.grad[c] / a.value;
     return r;
@@ -125,18 +125,18 @@ inline MultiDual<N> log(const MultiDual<N>& a) {
 
 template <int N>
 inline MultiDual<N> sin(const MultiDual<N>& a) {
-    const double cosv = std::cos(a.value);
+    const double cosv = libm::cos(a.value);
     MultiDual<N> r;
-    r.value = std::sin(a.value);
+    r.value = libm::sin(a.value);
     for (int c = 0; c < N; ++c) r.grad[c] = a.grad[c] * cosv;
     return r;
 }
 
 template <int N>
 inline MultiDual<N> cos(const MultiDual<N>& a) {
-    const double msinv = -std::sin(a.value);
+    const double msinv = -libm::sin(a.value);
     MultiDual<N> r;
-    r.value = std::cos(a.value);
+    r.value = libm::cos(a.value);
     // dual.hpp: -a.deriv * sin(value); -grad*sin == grad*(-sin) bit-for-bit (exact sign).
     for (int c = 0; c < N; ++c) r.grad[c] = a.grad[c] * msinv;
     return r;
@@ -198,9 +198,9 @@ inline MultiDual<N> recip(const MultiDual<N>& a) {
 // erf(x); derivative (2/sqrt(pi)) * exp(-x^2). Unguarded (see dual.hpp::erf).
 template <int N>
 inline MultiDual<N> erf(const MultiDual<N>& a) {
-    const double d = kTwoOverSqrtPi * std::exp(-a.value * a.value);
+    const double d = kTwoOverSqrtPi * libm::exp(-a.value * a.value);
     MultiDual<N> r;
-    r.value = std::erf(a.value);
+    r.value = libm::erf(a.value);
     for (int c = 0; c < N; ++c) r.grad[c] = a.grad[c] * d;
     return r;
 }
@@ -235,14 +235,14 @@ inline MultiDual<N> pow(const MultiDual<N>& base, const MultiDual<N>& exp_arg) {
     double p;
     bool std_branch = false;  // true iff x > 0
     if (x > 0.0) {
-        p = std::exp(y * std::log(x));
+        p = libm::exp(y * libm::log(x));
         std_branch = true;
     } else if (x == 0.0 && y > 0.0) {
         p = 0.0;
     } else if (x < 0.0) {
         const double yr = std::round(y);
         if (std::fabs(y - yr) < 1e-6) {
-            p = std::pow(x, yr);
+            p = libm::pow(x, yr);
         } else {
             p = 0.0;
         }
@@ -253,8 +253,8 @@ inline MultiDual<N> pow(const MultiDual<N>& base, const MultiDual<N>& exp_arg) {
     MultiDual<N> r;
     r.value = p;
     if (std_branch) {
-        const double dpdx = y * std::exp((y - 1.0) * std::log(x));
-        const double dpdy = p * std::log(x);
+        const double dpdx = y * libm::exp((y - 1.0) * libm::log(x));
+        const double dpdy = p * libm::log(x);
         for (int c = 0; c < N; ++c)
             r.grad[c] = dpdx * base.grad[c] + dpdy * exp_arg.grad[c];
     }

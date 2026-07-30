@@ -14,6 +14,7 @@ set(BENCH_DIR "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks")
 # compiles via Makevars. No third-party C++ dependency: the constant optimizer is
 # the self-contained self-LM (pure C++/STL).
 add_library(rsymbolic2_core
+    ${CORE_SRC}/platform_libm.cpp
     ${CORE_SRC}/random_restart_optimizer.cpp
     ${CORE_SRC}/self_lm_optimizer.cpp
     ${CORE_SRC}/optimizer_factory.cpp

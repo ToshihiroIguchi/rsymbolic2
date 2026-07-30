@@ -13,7 +13,8 @@
 //                    identical C++ core with identical defaults, and each build is
 //                    deterministic on its own, but the evolutionary trajectory is sensitive
 //                    to last-bit floating-point differences between Emscripten's libm and
-//                    the native (MinGW) libm — so the two builds can converge to different
+//                    the native libm (UCRT on Windows since docs/68, glibc on Linux) — so
+//                    the two builds can converge to different
 //                    (equally valid) expressions. We therefore assert outcome equivalence
 //                    (both recover to loss < 1e-6), not string equality. Skipped with a note
 //                    if Python is unavailable.

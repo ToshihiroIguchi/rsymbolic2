@@ -37,6 +37,7 @@ find_package(pybind11 CONFIG REQUIRED)
 # self-LM (pure C++/STL), so there is no Eigen to find, fetch, or link.
 pybind11_add_module(_core
     src/rsymbolic2_py.cpp
+    ${CORE_SRC}/platform_libm.cpp
     ${CORE_SRC}/random_restart_optimizer.cpp
     ${CORE_SRC}/self_lm_optimizer.cpp
     ${CORE_SRC}/optimizer_factory.cpp

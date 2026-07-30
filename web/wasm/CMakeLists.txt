@@ -29,6 +29,7 @@ set(CORE_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../r-package/rsymbolic2/src")
 
 add_executable(rsymbolic2
     ${CMAKE_CURRENT_SOURCE_DIR}/rsymbolic2_wasm.cpp
+    ${CORE_SRC}/platform_libm.cpp
     ${CORE_SRC}/random_restart_optimizer.cpp
     ${CORE_SRC}/self_lm_optimizer.cpp
     ${CORE_SRC}/optimizer_factory.cpp
@@ -82,6 +83,7 @@ set_target_properties(rsymbolic2 PROPERTIES
 # identical results; this target exists only to run that check in CI/dev, not to ship.
 set(CORE_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/rsymbolic2_wasm.cpp
+    ${CORE_SRC}/platform_libm.cpp
     ${CORE_SRC}/random_restart_optimizer.cpp
     ${CORE_SRC}/self_lm_optimizer.cpp
     ${CORE_SRC}/optimizer_factory.cpp

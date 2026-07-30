@@ -49,17 +49,17 @@ namespace detail {
 inline void soa_res_unary(UnaryOp op, double* a, std::size_t P) {
     switch (op) {
         case UnaryOp::Neg:    for (std::size_t p = 0; p < P; ++p) a[p] = -a[p]; break;
-        case UnaryOp::Exp:    for (std::size_t p = 0; p < P; ++p) a[p] = std::exp(a[p]); break;
-        case UnaryOp::Log:    for (std::size_t p = 0; p < P; ++p) a[p] = std::log(a[p]); break;
-        case UnaryOp::Sin:    for (std::size_t p = 0; p < P; ++p) a[p] = std::sin(a[p]); break;
-        case UnaryOp::Cos:    for (std::size_t p = 0; p < P; ++p) a[p] = std::cos(a[p]); break;
+        case UnaryOp::Exp:    for (std::size_t p = 0; p < P; ++p) a[p] = libm::exp(a[p]); break;
+        case UnaryOp::Log:    for (std::size_t p = 0; p < P; ++p) a[p] = libm::log(a[p]); break;
+        case UnaryOp::Sin:    for (std::size_t p = 0; p < P; ++p) a[p] = libm::sin(a[p]); break;
+        case UnaryOp::Cos:    for (std::size_t p = 0; p < P; ++p) a[p] = libm::cos(a[p]); break;
         case UnaryOp::Sqrt:   for (std::size_t p = 0; p < P; ++p)
                                   a[p] = std::sqrt(a[p] > 0.0 ? a[p] : 0.0); break;  // safe, == dual.hpp
         case UnaryOp::Tanh:   for (std::size_t p = 0; p < P; ++p) a[p] = std::tanh(a[p]); break;
         case UnaryOp::Abs:    for (std::size_t p = 0; p < P; ++p) a[p] = std::abs(a[p]); break;
         case UnaryOp::Square: for (std::size_t p = 0; p < P; ++p) a[p] = a[p] * a[p]; break;
         case UnaryOp::Inv:    for (std::size_t p = 0; p < P; ++p) a[p] = 1.0 / a[p]; break;
-        case UnaryOp::Erf:    for (std::size_t p = 0; p < P; ++p) a[p] = std::erf(a[p]); break;
+        case UnaryOp::Erf:    for (std::size_t p = 0; p < P; ++p) a[p] = libm::erf(a[p]); break;
         case UnaryOp::Sinh:   for (std::size_t p = 0; p < P; ++p) a[p] = std::sinh(a[p]); break;
         case UnaryOp::Cosh:   for (std::size_t p = 0; p < P; ++p) a[p] = std::cosh(a[p]); break;
     }
@@ -140,23 +140,23 @@ inline void soa_jac_unary(UnaryOp op, double* s, std::size_t P, double* coeff) {
             for (std::size_t p = 0; p < P; ++p) val[p] = -val[p];
             break;
         case UnaryOp::Exp:
-            for (std::size_t p = 0; p < P; ++p) coeff[p] = std::exp(val[p]);
+            for (std::size_t p = 0; p < P; ++p) coeff[p] = libm::exp(val[p]);
             for (int c = 0; c < N; ++c) { double* gc = g(c); for (std::size_t p = 0; p < P; ++p) gc[p] = gc[p] * coeff[p]; }
             for (std::size_t p = 0; p < P; ++p) val[p] = coeff[p];
             break;
         case UnaryOp::Log:
             for (int c = 0; c < N; ++c) { double* gc = g(c); for (std::size_t p = 0; p < P; ++p) gc[p] = gc[p] / val[p]; }
-            for (std::size_t p = 0; p < P; ++p) val[p] = std::log(val[p]);
+            for (std::size_t p = 0; p < P; ++p) val[p] = libm::log(val[p]);
             break;
         case UnaryOp::Sin:
-            for (std::size_t p = 0; p < P; ++p) coeff[p] = std::cos(val[p]);
+            for (std::size_t p = 0; p < P; ++p) coeff[p] = libm::cos(val[p]);
             for (int c = 0; c < N; ++c) { double* gc = g(c); for (std::size_t p = 0; p < P; ++p) gc[p] = gc[p] * coeff[p]; }
-            for (std::size_t p = 0; p < P; ++p) val[p] = std::sin(val[p]);
+            for (std::size_t p = 0; p < P; ++p) val[p] = libm::sin(val[p]);
             break;
         case UnaryOp::Cos:
-            for (std::size_t p = 0; p < P; ++p) coeff[p] = -std::sin(val[p]);
+            for (std::size_t p = 0; p < P; ++p) coeff[p] = -libm::sin(val[p]);
             for (int c = 0; c < N; ++c) { double* gc = g(c); for (std::size_t p = 0; p < P; ++p) gc[p] = gc[p] * coeff[p]; }
-            for (std::size_t p = 0; p < P; ++p) val[p] = std::cos(val[p]);
+            for (std::size_t p = 0; p < P; ++p) val[p] = libm::cos(val[p]);
             break;
         case UnaryOp::Sqrt:
             for (std::size_t p = 0; p < P; ++p) coeff[p] = std::sqrt(val[p] > 0.0 ? val[p] : 0.0);
@@ -191,10 +191,10 @@ inline void soa_jac_unary(UnaryOp op, double* s, std::size_t P, double* coeff) {
         case UnaryOp::Erf:
             // multi_dual.hpp erf: d = kTwoOverSqrtPi * exp(-value*value); grad = grad * d.
             for (std::size_t p = 0; p < P; ++p)
-                coeff[p] = kTwoOverSqrtPi * std::exp(-val[p] * val[p]);
+                coeff[p] = kTwoOverSqrtPi * libm::exp(-val[p] * val[p]);
             for (int c = 0; c < N; ++c) { double* gc = g(c);
                 for (std::size_t p = 0; p < P; ++p) gc[p] = gc[p] * coeff[p]; }
-            for (std::size_t p = 0; p < P; ++p) val[p] = std::erf(val[p]);
+            for (std::size_t p = 0; p < P; ++p) val[p] = libm::erf(val[p]);
             break;
         case UnaryOp::Sinh:
             for (std::size_t p = 0; p < P; ++p) coeff[p] = std::cosh(val[p]);
@@ -253,14 +253,14 @@ inline void soa_jac_binary(BinaryOp op, double* a, const double* b, std::size_t 
                 const double y = bv[p];
                 double pval, dx = 0.0, dy = 0.0;
                 if (x > 0.0) {
-                    pval = std::exp(y * std::log(x));
-                    dx = y * std::exp((y - 1.0) * std::log(x));
-                    dy = pval * std::log(x);
+                    pval = libm::exp(y * libm::log(x));
+                    dx = y * libm::exp((y - 1.0) * libm::log(x));
+                    dy = pval * libm::log(x);
                 } else if (x == 0.0 && y > 0.0) {
                     pval = 0.0;
                 } else if (x < 0.0) {
                     const double yr = std::round(y);
-                    pval = (std::fabs(y - yr) < 1e-6) ? std::pow(x, yr) : 0.0;
+                    pval = (std::fabs(y - yr) < 1e-6) ? libm::pow(x, yr) : 0.0;
                 } else {
                     pval = 0.0;
                 }

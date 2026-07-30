@@ -1,9 +1,14 @@
 # 67. The libm platform gap: Windows is ~2.5x slower than Linux, and it is not precision
 
 **Date:** 2026-07-29 (WASM arm added the same day, §3.5)
-**Status:** measurement record. **No code change proposed here is implemented**; §6 lists
-candidates and §7 the open questions that gate them. §7's question 2 is now answered
-(§3.5) and it closes the strongest argument for acting — see §6.
+**Status:** **superseded by `docs/68`** (2026-07-30), which measured a fourth arm this
+document never tried — MSVC — found that the slow libm is mingw-w64's own rather than
+Windows', reached the UCRT's implementations from a MinGW build with no dependency at all,
+and implemented the redirect. `docs/68` §9 lists the three statements below that it
+corrects: the `bench_soa_eval` batch column (§3.4), the "bounded above by 2.4-2.7x"
+estimate (§4, §5), and the decision in §6.1. The measurements here are otherwise unchanged
+and still stand.
+Originally: measurement record; no code change proposed here was implemented.
 **Supersedes nothing.** Extends `docs/60` §7.7 (the forward path is libm-bound) with the
 cross-platform half of that finding, which `docs/60` never measured.
 

@@ -7,6 +7,8 @@
 
 #include <cmath>
 
+#include "rsymbolic/platform/libm.hpp"  // libm::exp/log/sin/cos/erf/pow == std:: off MinGW
+
 namespace rsymbolic {
 
 // Forward-mode automatic differentiation via a first-order dual number.
@@ -48,20 +50,20 @@ inline Dual operator/(const Dual& a, const Dual& b) {
 }
 
 inline Dual exp(const Dual& a) {
-    const double e = std::exp(a.value);
+    const double e = libm::exp(a.value);
     return {e, a.deriv * e};
 }
 
 inline Dual log(const Dual& a) {
-    return {std::log(a.value), a.deriv / a.value};
+    return {libm::log(a.value), a.deriv / a.value};
 }
 
 inline Dual sin(const Dual& a) {
-    return {std::sin(a.value), a.deriv * std::cos(a.value)};
+    return {libm::sin(a.value), a.deriv * libm::cos(a.value)};
 }
 
 inline Dual cos(const Dual& a) {
-    return {std::cos(a.value), -a.deriv * std::sin(a.value)};
+    return {libm::cos(a.value), -a.deriv * libm::sin(a.value)};
 }
 
 // safe: negative input → value=0, deriv=0 (prevents NaN from poisoning the LM solver)
@@ -105,8 +107,8 @@ inline constexpr double kTwoOverSqrtPi = 1.1283791670955125739;
 // erf(x): the Gauss error function. Unguarded because none is possible or needed — erf is
 // defined, smooth and bounded on all of R (SymbolicRegression.jl's `erf` is equally plain).
 inline Dual erf(const Dual& a) {
-    const double d = kTwoOverSqrtPi * std::exp(-a.value * a.value);
-    return {std::erf(a.value), a.deriv * d};
+    const double d = kTwoOverSqrtPi * libm::exp(-a.value * a.value);
+    return {libm::erf(a.value), a.deriv * d};
 }
 
 // sinh/cosh: unguarded like exp — a large argument overflows to +-Inf and the loss
@@ -124,11 +126,11 @@ inline Dual cosh(const Dual& a) {
 // path and the AD path always agree. Named pow() so ADL in apply_binary<double> picks
 // this instead of std::pow, giving both the same guarded semantics.
 inline double pow(double x, double y) {
-    if (x > 0.0) return std::exp(y * std::log(x));
+    if (x > 0.0) return libm::exp(y * libm::log(x));
     if (x == 0.0 && y > 0.0) return 0.0;
     if (x < 0.0) {
         const double yr = std::round(y);
-        if (std::fabs(y - yr) < 1e-6) return std::pow(x, yr);
+        if (std::fabs(y - yr) < 1e-6) return libm::pow(x, yr);
     }
     return 0.0;
 }
@@ -150,7 +152,7 @@ inline Dual pow(const Dual& base, const Dual& exp_arg) {
     double p;
     bool std_branch = false;  // true iff x > 0
     if (x > 0.0) {
-        p = std::exp(y * std::log(x));
+        p = libm::exp(y * libm::log(x));
         std_branch = true;
     } else if (x == 0.0 && y > 0.0) {
         p = 0.0;
@@ -158,7 +160,7 @@ inline Dual pow(const Dual& base, const Dual& exp_arg) {
         // Use the rounded exponent if it is close enough to an integer.
         const double yr = std::round(y);
         if (std::fabs(y - yr) < 1e-6) {
-            p = std::pow(x, yr);  // std::pow handles negative base with integer exp
+            p = libm::pow(x, yr);  // pow handles negative base with integer exp
         } else {
             p = 0.0;
         }
@@ -170,9 +172,9 @@ inline Dual pow(const Dual& base, const Dual& exp_arg) {
     double dp = 0.0;
     if (std_branch) {
         // dp/dx contribution: y * x^(y-1) * base.deriv
-        const double dpdx = y * std::exp((y - 1.0) * std::log(x));
+        const double dpdx = y * libm::exp((y - 1.0) * libm::log(x));
         // dp/dy contribution: x^y * log(x) * exp_arg.deriv
-        const double dpdy = p * std::log(x);
+        const double dpdy = p * libm::log(x);
         dp = dpdx * base.deriv + dpdy * exp_arg.deriv;
     }
     // On guarded branches: derivative is 0 (function is flat/undefined there).
