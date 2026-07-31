@@ -273,12 +273,50 @@ body:not(.has-data) #change-data { display: none; }
    beside the sentence rather than below it. */
 #settings-restored { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
 #settings-restored > span { flex: 1; min-width: 0; }
-.sample-control { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.35rem; }
-.sample-control input[type="number"] { width: 6rem; }
+.sample-control { margin-top: 0.35rem; }
+.sample-control .row { margin-bottom: 0; }
+.sample-control input[type="number"] { width: 5.5rem; }
+.unit-field { display: inline-flex; align-items: center; gap: 0.3rem; }
+/* The "All rows" / "Sample" pair. Same pill shape as the operator toggles, so a radio the
+   engine forces off reads as an unavailable OPTION rather than as a control that stopped
+   responding — which is what the disabled checkbox it replaces looked like. */
+.radio-pill {
+  position: relative; gap: 0; padding: 0.2rem 0.6rem;
+  border: 1px solid var(--border); border-radius: 999px;
+  font-size: 0.78rem; cursor: pointer; user-select: none;
+  background: var(--input-bg); transition: background 0.12s, border-color 0.12s;
+}
+.radio-pill:hover { background: var(--hover); }
+.radio-pill input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+.radio-pill:has(input:checked) { background: var(--mark); border-color: var(--accent); }
+.radio-pill::before {
+  content: "\2713"; visibility: hidden; margin-right: 0.25rem; font-size: 0.75em;
+}
+.radio-pill:has(input:checked)::before { visibility: visible; }
+.radio-pill:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* The heap can make "All rows" impossible; it must look impossible, not broken. */
+.radio-pill:has(input:disabled) { opacity: 0.5; cursor: not-allowed; }
+
+/* An action inside a notice: the notice tells the user to turn batching on, and this is
+   the turning on. Without it the instruction ended at "open Search settings and look for
+   the Large data section", which is three steps away from the sentence asking for it. */
+.data-notice .notice-action { margin-left: 0.35rem; vertical-align: baseline; }
 
 .group-label {
   display: block; font-size: 0.72rem; color: var(--muted);
   text-transform: uppercase; letter-spacing: 0.03em; margin: 0.5rem 0 0.15rem;
+}
+/* A label with its own small actions on the right (Features all/none, the operator reset).
+   Same "line of text, button pushed to the end" shape as .data-status above. */
+.label-row { display: flex; align-items: center; gap: 0.5rem; }
+.label-row > :first-child { flex: 1; min-width: 0; }
+.label-row .group-label { margin-bottom: 0; }
+.mini-actions { display: flex; gap: 0.25rem; }
+/* Explicit resets, because .btn only inherits `font`: .subhead (which hosts the operator
+   reset) sets uppercase/letter-spacing/600, all of which a button inherits normally. */
+.btn.tiny {
+  padding: 0.05rem 0.4rem; font-size: 0.7rem; line-height: 1.5;
+  text-transform: none; letter-spacing: normal; font-weight: 400;
 }
 .op-group { margin-bottom: 0.4rem; }
 .op-group > .op-group-label {
@@ -314,37 +352,52 @@ textarea { resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospa
 .check input { width: auto; }
 .check.small { font-size: 0.78rem; }
 
-/* Operator pills. The operator checkboxes in the Search card are rendered as toggle chips:
-   the raw checkbox is visually hidden and its label becomes a clickable pill that lights up
-   when checked. Scoped to the two operator containers (#binary-ops and each .op-group) so the
-   Features checkgrid keeps its plain checkbox layout. Purely presentational — checkedOps()
-   still reads the underlying input[data-kind]:checked, and loading an example (which toggles
-   input.checked) flips the pill automatically, so the search is unchanged. */
-#binary-ops.checkgrid, .op-group .checkgrid { display: flex; flex-wrap: wrap; gap: 0.3rem; }
-#binary-ops .check, .op-group .check {
+/* Selection pills. The operator checkboxes in the Search card and the feature checkboxes in
+   the Data card are rendered as toggle chips: the raw checkbox is visually hidden and its
+   label becomes a clickable pill that lights up when checked.
+
+   #feature-list is in this list because picking columns and picking operators are the same
+   decision — "which subset defines the search" — and they were two visual languages one card
+   apart. A feature label is arbitrary user text, unlike `+` or `x²`, so these pills also cap
+   their width and ellipsise; the full name stays in the label's title.
+
+   Purely presentational — checkedOps() and currentFeatureIndices() still read the underlying
+   inputs, and loading an example (which toggles input.checked) flips the pill automatically,
+   so the search is unchanged. */
+#binary-ops.checkgrid, .op-group .checkgrid, #feature-list.checkgrid { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+#binary-ops .check, .op-group .check, #feature-list .check {
   position: relative; gap: 0; padding: 0.22rem 0.65rem;
   border: 1px solid var(--border); border-radius: 999px;
   font-size: 0.8rem; cursor: pointer; user-select: none;
   background: var(--input-bg); transition: background 0.12s, border-color 0.12s;
 }
-#binary-ops .check:hover, .op-group .check:hover { background: var(--hover); }
-#binary-ops .check input, .op-group .check input {
+#binary-ops .check:hover, .op-group .check:hover, #feature-list .check:hover { background: var(--hover); }
+#binary-ops .check input, .op-group .check input, #feature-list .check input {
   position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none;
 }
-#binary-ops .check:has(input:checked), .op-group .check:has(input:checked) {
+#binary-ops .check:has(input:checked), .op-group .check:has(input:checked),
+#feature-list .check:has(input:checked) {
   background: var(--mark); border-color: var(--accent);
 }
 /* Checked state must not rest on colour alone (WCAG 1.4.1) — these pills ARE the operator
    set, the one problem input the search cannot work around. The tick is always in the layout
    and only toggles visibility, so switching an operator never reflows the pill row. */
-#binary-ops .check::before, .op-group .check::before {
+#binary-ops .check::before, .op-group .check::before, #feature-list .check::before {
   content: "✓"; visibility: hidden; margin-right: 0.25rem; font-size: 0.75em;
 }
 #binary-ops .check:has(input:checked)::before,
-.op-group .check:has(input:checked)::before { visibility: visible; }
+.op-group .check:has(input:checked)::before,
+#feature-list .check:has(input:checked)::before { visibility: visible; }
 /* The hidden checkbox's keyboard focus ring lands on the visible pill instead. */
-#binary-ops .check:has(input:focus-visible), .op-group .check:has(input:focus-visible) {
+#binary-ops .check:has(input:focus-visible), .op-group .check:has(input:focus-visible),
+#feature-list .check:has(input:focus-visible) {
   outline: 2px solid var(--accent); outline-offset: 1px;
+}
+/* A column name can be any length; the pill row must not force the sidebar to scroll
+   sideways. The name is still readable in full from the label's title. */
+#feature-list .check {
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: inline-block; line-height: 1.5;
 }
 
 /* One macro operator per row: fixed-width name, elastic body, remove button. */
@@ -542,6 +595,12 @@ label.modified > .field-hint { color: var(--accent); }
 .placeholder p { margin: 0 0 1rem; }
 /* The call-to-action sits on its own centered line below the note, not inline after it. */
 .placeholder .btn { display: flex; margin: 0.25rem auto 0; }
+
+/* The placeholder's two primary buttons are mutually exclusive: "Try an example" only
+   while there is nothing loaded, "Run" once there is. See index.html for why this is not
+   one button with a swapped label. */
+body:not(.has-data) #placeholder-run,
+body.has-data #placeholder-run-example { display: none; }
 
 /* Visibility: only the placeholder is shown until a run completes, then JS adds .has-result. */
 #results-area:not(.has-result) .card:not(.placeholder) { display: none; }

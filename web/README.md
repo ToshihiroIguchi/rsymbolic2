@@ -123,12 +123,12 @@ involved — Chart.js cannot draw trees, and nothing new was vendored.
 
 ## Taking the result away
 
-Four exports, three of them scoped to one thing and one to the whole run:
+Five exports, four of them scoped to one thing and one to the whole run:
 
 | control | where | what it gives you |
 |---|---|---|
-| Copy **LaTeX** / **Python code** / **R code** | Best formula card | the displayed equation, or a snippet reproducing the *run* in either package |
-| **CSV** | All equations card | one row per Pareto member, raw and display-simplified |
+| Copy **LaTeX** / **SymPy** / **Python code** / **R code** | Best formula card | the displayed equation as LaTeX or as Python, or a snippet reproducing the *run* in either package |
+| **CSV** | All equations card | one row per Pareto member: raw, display-simplified, and SymPy |
 | **SVG** | Equation tree card | the tree as a standalone vector file |
 | **PDF** | the header | the whole run as one printable document |
 
@@ -144,6 +144,15 @@ evaluation counts, and the notes a reader needs — above all that this build is
 bit-identical to R/Python, so re-running the snippet can return a different but equally
 valid expression).
 
+**SymPy** exists because the expression string beside it is not valid Python. `square()`,
+`inv()` and `neg()` are not SymPy functions, and `sympify()` turns each into an undefined
+applied function *without raising* — so pasting the displayed equation into SymPy gives
+something that simplifies and prints but means nothing. The SymPy button copies `a**2`,
+`1/a` and `-a` instead (docs/70). Note that the display simplifier can introduce `square()`
+on its own, from `x*x`, even when that operator is not in the library — so this applies to
+runs that never enabled it. The copied form is the *mathematical* expression: the engine's
+`sqrt`, `log` and `^` are domain-guarded and return NaN where SymPy returns a complex value.
+
 It is a report *about the run*, not a screenshot of the page: the charts are re-rendered
 off-screen at roughly 380 dpi, the equation table drops the on-screen scroll cap and
 ellipsis, and the report prints black-on-white even in dark mode. Ctrl/Cmd+P takes the same
@@ -157,11 +166,15 @@ decides both how long a run takes and whether it can run at all. Measured on the
 development machine (full default budget, 2,800 generations x 31 populations ~ 2.83M
 evaluations, each one O(rows); full detail and the memory model in `docs/59`):
 
-| rows | full default-budget run | what the GUI does |
+| rows x fitted columns | full default-budget run | what the GUI does |
 |------:|------------------------|-------------------|
-| up to ~5,000 | seconds to ~5 min | nothing — this is the comfortable range |
-| ~20,000 | tens of minutes | warns, and offers row sampling / batching |
-| above ~80,000–110,000 (shape-dependent) | would abort: past the heap ceiling | samples the table down automatically and says so |
+| up to ~10,000 cells | seconds to ~5 min | nothing — this is the comfortable range |
+| ~60,000 cells | tens of minutes | warns, and offers row sampling / batching in the notice itself |
+| above the heap ceiling (~80,000–110,000 rows, shape-dependent) | would abort | samples the table down automatically and says so |
+
+The warning threshold counts **cells**, not rows (docs/70 §3.6): every evaluation walks
+every fitted value, so 5,000 rows x 20 columns is an order of magnitude more work than the
+5,000 x 2 the figures above are measured on.
 
 Two levers, both visible in the UI:
 

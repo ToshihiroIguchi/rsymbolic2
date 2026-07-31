@@ -32,6 +32,7 @@
 #include "rsymbolic/evolution/mutation_weights.hpp"
 #include "rsymbolic/evolution/search_space.hpp"
 #include "rsymbolic/expression/latex.hpp"
+#include "rsymbolic/expression/sympy.hpp"
 #include "rsymbolic/expression/op_names.hpp"
 #include "rsymbolic/expression/tree.hpp"
 #include "rsymbolic/search/evolutionary_search.hpp"
@@ -307,8 +308,8 @@ val run(val opts) {
         const std::vector<double> scores = pareto_scores(res.pareto_front);
         std::vector<int>         pf_complexity;
         std::vector<double>      pf_loss, pf_score;
-        std::vector<std::string> pf_expr, pf_latex;
-        std::vector<std::string> pf_expr_simplified, pf_latex_simplified;
+        std::vector<std::string> pf_expr, pf_latex, pf_sympy;
+        std::vector<std::string> pf_expr_simplified, pf_latex_simplified, pf_sympy_simplified;
         std::vector<int>         pf_complexity_simplified;
         for (std::size_t i = 0; i < res.pareto_front.size(); ++i) {
             const auto& m = res.pareto_front[i];
@@ -317,10 +318,12 @@ val run(val opts) {
             pf_score.push_back(scores[i]);
             pf_expr.push_back(to_string(m.tree));
             pf_latex.push_back(to_latex(m.tree));
+            pf_sympy.push_back(to_sympy(m.tree));
             // Display-only companions (docs/52): computed on a COPY of m.tree.
             const Tree simplified = display_simplify(m.tree);
             pf_expr_simplified.push_back(to_string(simplified));
             pf_latex_simplified.push_back(to_latex(simplified));
+            pf_sympy_simplified.push_back(to_sympy(simplified));
             // Node count of the SIMPLIFIED tree. `complexity` above is the node count of
             // the raw tree the search actually archived (one member per complexity), so
             // two front members can differ in `complexity` yet print the same simplified
@@ -341,8 +344,10 @@ val run(val opts) {
         pareto.set("score",      to_js_array(pf_score));
         pareto.set("expression", to_js_array(pf_expr));
         pareto.set("latex",      to_js_array(pf_latex));
+        pareto.set("sympy",      to_js_array(pf_sympy));
         pareto.set("expression_simplified", to_js_array(pf_expr_simplified));
         pareto.set("latex_simplified",      to_js_array(pf_latex_simplified));
+        pareto.set("sympy_simplified",      to_js_array(pf_sympy_simplified));
         pareto.set("complexity_simplified", to_js_array(pf_complexity_simplified));
 
         val eval_counts = val::object();

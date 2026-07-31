@@ -59,6 +59,7 @@ if(RSYMBOLIC2_BUILD_TESTS)
     add_core_test(random_tree              tests/test_random_tree.cpp)
     add_core_test(hall_of_fame             tests/test_hall_of_fame.cpp)
     add_core_test(to_latex                 tests/test_to_latex.cpp)
+    add_core_test(to_sympy                 tests/test_to_sympy.cpp)
     add_core_test(evolutionary_search      tests/test_evolutionary_search.cpp)
     # Progress callback (docs/53): bit-identity with the callback unset/attached,
     # fire-count bound, and per-snapshot Pareto-front invariants.

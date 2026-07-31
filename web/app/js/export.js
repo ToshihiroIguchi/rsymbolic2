@@ -112,18 +112,22 @@ export function rCall(cfg, sampling = null) {
 // CSV of the Pareto front. `expression` is the evaluatable round-trip string;
 // `expression_simplified` is the display-only companion (docs/52), and
 // `complexity_simplified` is its node count — it can be smaller than `complexity`, which
-// counts the raw searched tree.
+// counts the raw searched tree. `sympy` is the same expression in Python syntax (docs/70):
+// the round-trip string is not valid Python, so a spreadsheet full of `square(x0)` cannot be
+// pasted into SymPy, NumPy or anything else that evaluates expressions.
 export function paretoCsv(front) {
-  const rows = ["complexity,complexity_simplified,loss,score,expression,expression_simplified"];
+  const q = (v) => `"${String(v).replace(/"/g, '""')}"`;
+  const pick = (arr, i, fallback) => (arr ? arr[i] : fallback);
+  const rows = [
+    "complexity,complexity_simplified,loss,score,expression,expression_simplified,sympy",
+  ];
   for (let i = 0; i < front.complexity.length; i++) {
-    const expr = String(front.expression[i]).replace(/"/g, '""');
-    const simplified = String(
-      front.expression_simplified ? front.expression_simplified[i] : front.expression[i]
-    ).replace(/"/g, '""');
-    const cxSimplified = front.complexity_simplified
-      ? front.complexity_simplified[i] : front.complexity[i];
+    const simplified = pick(front.expression_simplified, i, front.expression[i]);
+    const cxSimplified = pick(front.complexity_simplified, i, front.complexity[i]);
+    // The displayed (simplified) rendering, matching what the table shows.
+    const sympy = pick(front.sympy_simplified, i, pick(front.sympy, i, ""));
     rows.push(`${front.complexity[i]},${cxSimplified},${front.loss[i]},` +
-              `${front.score[i]},"${expr}","${simplified}"`);
+              `${front.score[i]},${q(front.expression[i])},${q(simplified)},${q(sympy)}`);
   }
   return rows.join("\n");
 }

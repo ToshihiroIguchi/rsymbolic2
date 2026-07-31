@@ -16,6 +16,7 @@
 #include "rsymbolic/evolution/search_space.hpp"
 #include "rsymbolic/search/evolutionary_search.hpp"
 #include "rsymbolic/expression/latex.hpp"
+#include "rsymbolic/expression/sympy.hpp"
 #include "rsymbolic/expression/op_names.hpp"
 #include "rsymbolic/expression/tree.hpp"
 #include "rsymbolic/simplification/display_simplify.hpp"
@@ -268,8 +269,10 @@ cpp11::writable::list symbolic_regression_cpp(
     cpp11::writable::doubles  pf_score;
     cpp11::writable::strings  pf_expr;
     cpp11::writable::strings  pf_latex;
+    cpp11::writable::strings  pf_sympy;
     cpp11::writable::strings  pf_expr_simplified;
     cpp11::writable::strings  pf_latex_simplified;
+    cpp11::writable::strings  pf_sympy_simplified;
     for (std::size_t i = 0; i < res.pareto_front.size(); ++i) {
         const auto& m = res.pareto_front[i];
         pf_complexity.push_back(m.complexity);
@@ -277,11 +280,13 @@ cpp11::writable::list symbolic_regression_cpp(
         pf_score.push_back(scores[i]);
         pf_expr.push_back(to_string(m.tree));
         pf_latex.push_back(to_latex(m.tree));
+        pf_sympy.push_back(to_sympy(m.tree));
         // Display-only companions (docs/52): computed on a COPY of m.tree via
         // display_simplify(); m.tree itself is never modified.
         const Tree simplified = display_simplify(m.tree);
         pf_expr_simplified.push_back(to_string(simplified));
         pf_latex_simplified.push_back(to_latex(simplified));
+        pf_sympy_simplified.push_back(to_sympy(simplified));
     }
 
     // Recommended ("best") accuracy/complexity trade-off from the Pareto front
@@ -303,8 +308,10 @@ cpp11::writable::list symbolic_regression_cpp(
         "score"_nm                 = pf_score,
         "expression"_nm            = pf_expr,
         "latex"_nm                 = pf_latex,
+        "sympy"_nm                 = pf_sympy,
         "expression_simplified"_nm = pf_expr_simplified,
-        "latex_simplified"_nm      = pf_latex_simplified
+        "latex_simplified"_nm      = pf_latex_simplified,
+        "sympy_simplified"_nm      = pf_sympy_simplified
     });
 
     // Evaluation accounting (reporting only): counts are exposed as doubles because R

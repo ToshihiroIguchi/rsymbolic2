@@ -267,6 +267,7 @@ print(result.recommended)    # Pareto "best" accuracy/complexity trade-off
 print(result)                # Pareto front table with per-member score, training
                              # R-squared, and a ">" marker on the recommended row
 print(result.latex())        # LaTeX of the recommended member (display-only)
+print(result.sympy())        # the same, as Python that SymPy's sympify() parses
 result.get_best()            # the recommended member as a dict (pass index= for others)
 ```
 
@@ -331,6 +332,7 @@ print(result)         # compact view: recommended, best, and the Pareto front
 summary(result)       # full front with per-member score and training R-squared
 as.data.frame(result) # the front as a tidy data frame (cf. Python .to_pandas())
 to_latex(result)      # LaTeX of the recommended member (display-only)
+to_sympy(result)      # the same, as Python that SymPy's sympify() parses
 ```
 
 **Step 4 — predict on new data.** `predict` evaluates the recommended formula by
@@ -633,7 +635,33 @@ dominated ones discarded. From this front, `model_selection` chooses what to rec
 - `"best"` (default) — that same knee, but only among members within 1.5× of the most
   accurate loss.
 
+Each front member carries a **`score`**: the drop in log-loss per unit of added
+complexity, measured against the next-simpler member (`0` for the simplest). It is what
+`"score"` and `"best"` rank by — a high score means that equation bought a lot of accuracy
+for the nodes it spent.
+
 The full front is always returned so you can apply your own judgement.
+
+### 6. Getting the formula out
+
+Three renderings of every member, all display-only — `predict()` always evaluates the
+frozen `expression` string:
+
+| field / call | form | for |
+|---|---|---|
+| `expression` | `((square(x0) * 2.5) - 1.3)` | the engine; round-trips through `predict()` |
+| `latex` / `to_latex()` / `.latex()` | `x_{0}^{2} \cdot 2.5 - 1.3` | papers, slides |
+| `sympy` / `to_sympy()` / `.sympy()` | `x0**2*2.5 - 1.3` | SymPy, NumPy, plain `eval()` |
+
+The `sympy` rendering exists because `expression` is **not** valid Python: `square()`,
+`inv()` and `neg()` are not SymPy functions, and `sympify()` turns each into an undefined
+applied function *without raising* — a silently wrong expression. SymPy is not a
+dependency; these are strings.
+
+> The SymPy form is the **mathematical** expression, not the engine's. rsymbolic2's
+> operators are domain-guarded (`docs/69`): `sqrt`, `log` and `^` return `NaN` outside
+> their domain, where SymPy gives a complex or symbolic value. Use `predict()` to
+> evaluate, and this to differentiate, simplify or typeset.
 
 > **Implementation vs. PySR.** Same *search and defaults*, different *engine*. The
 > allowed implementation divergences are listed in

@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import ast
 import math
+import re
+import warnings
 from typing import Mapping, Optional, Sequence, Union
 
 import numpy as np
@@ -37,6 +39,12 @@ __version__ = "0.1.0"
 _UNARY_OPS = {"neg", "exp", "log", "sin", "cos", "sqrt", "tanh", "abs", "square", "inv",
               "erf", "sinh", "cosh"}
 _BINARY_OPS = {"add", "sub", "mul", "div", "pow"}
+
+# Row count above which an unbatched run is worth warning about. Not a limit and not a
+# measured cliff: it is the figure the batching documentation already names ("for most
+# problems fewer than ~10,000 rows are enough without batching"), kept in one place so
+# the prose and the warning cannot drift apart.
+_LARGE_DATA_ROWS = 10000
 
 
 def _as_design_matrix(a, name: str) -> np.ndarray:
@@ -88,15 +96,18 @@ class SymbolicRegressionResult:
         ``None`` if the front is empty.
     pareto_front : list[dict]
         Non-dominated ``{"complexity", "loss", "score", "r_squared", "expression",
-        "latex", "expression_simplified", "latex_simplified"}`` trade-offs, sorted by
+        "latex", "sympy", "expression_simplified", "latex_simplified",
+        "sympy_simplified"}`` trade-offs, sorted by
         increasing complexity. ``score`` is the drop in log-loss per unit of added
         complexity relative to the next-simpler member — the value ``model_selection``
         ranks by; ``0.0`` for the simplest member. ``r_squared`` is the training
         ``1 - loss / sst`` (``None`` when the target is constant). ``latex`` is a
         display-only LaTeX rendering of the expression (variables as ``x_{i}``); see
-        :meth:`latex`. ``expression_simplified``/``latex_simplified`` are a further
-        algebraically-simplified (display-only) rewrite of ``expression``/``latex``
-        (docs/52) — never used by :meth:`predict`, which always evaluates the frozen
+        :meth:`latex`. ``sympy`` is display-only Python source that SymPy's
+        ``sympify()`` parses; see :meth:`sympy`. ``expression_simplified``/
+        ``latex_simplified``/``sympy_simplified`` are those three renderings of a
+        further algebraically-simplified (display-only) rewrite (docs/52) — never
+        used by :meth:`predict`, which always evaluates the frozen
         ``expression``/``recommended`` strings.
     n_obs : Optional[int]
         Number of training observations (rows of ``X``).
@@ -163,6 +174,10 @@ class SymbolicRegressionResult:
         n_pf = len(pf["complexity"])
         pf_expr_simplified = pf.get("expression_simplified", [None] * n_pf)
         pf_latex_simplified = pf.get("latex_simplified", [None] * n_pf)
+        # sympy/sympy_simplified are the same kind of display-only companion, added
+        # later; .get() keeps an older compiled extension loadable.
+        pf_sympy = pf.get("sympy", [None] * n_pf)
+        pf_sympy_simplified = pf.get("sympy_simplified", [None] * n_pf)
         self.pareto_front = [
             {
                 "complexity": c,
@@ -171,12 +186,15 @@ class SymbolicRegressionResult:
                 "r_squared": (1.0 - l / self.sst) if has_sst else None,
                 "expression": e,
                 "latex": t,
+                "sympy": y,
                 "expression_simplified": es,
                 "latex_simplified": ts,
+                "sympy_simplified": ys,
             }
-            for c, l, s, e, t, es, ts in zip(
+            for c, l, s, e, t, y, es, ts, ys in zip(
                 pf["complexity"], pf["loss"], pf["score"], pf["expression"],
-                pf["latex"], pf_expr_simplified, pf_latex_simplified,
+                pf["latex"], pf_sympy, pf_expr_simplified, pf_latex_simplified,
+                pf_sympy_simplified,
             )
         ]
         self.n_features: int = n_features
@@ -277,6 +295,83 @@ class SymbolicRegressionResult:
                 )
             for i, name in enumerate(names):
                 out = out.replace(f"x_{{{i}}}", str(name).replace("_", "\\_"))
+        return out
+
+    def sympy(
+        self,
+        index: Optional[int] = None,
+        variable_names: Optional[Sequence[str]] = None,
+    ) -> str:
+        """Return a Pareto-front member as Python source SymPy's ``sympify()`` parses.
+
+        The plain ``expression`` strings are *not* valid Python: ``square(a)``,
+        ``inv(a)`` and ``neg(a)`` have no SymPy function, and ``sympify()``
+        silently turns each into an undefined applied function rather than
+        raising. This rendering emits ``a**2``, ``1/a`` and ``-a`` instead; ``^``
+        also becomes ``**`` and every other operator already carries its Python
+        name, so the result is valid under plain ``eval()`` and NumPy as well as
+        ``sympify()``.
+
+        Display-only, like :meth:`latex`: :meth:`predict` keeps using the
+        ``expression`` strings. **This is the mathematical form, not the
+        engine's.** rsymbolic2's operators are domain-guarded — ``sqrt``, ``log``
+        and ``^`` return NaN outside their domain, where SymPy returns a complex
+        or symbolic value. Use :meth:`predict` to evaluate, and this to
+        differentiate, simplify or typeset.
+
+        SymPy is not a dependency of rsymbolic2; this returns a string.
+
+        Parameters
+        ----------
+        index : int, optional
+            0-based row of :attr:`pareto_front`. Defaults to :attr:`best_index`,
+            the member chosen by ``model_selection``.
+        variable_names : sequence of str, optional
+            Names substituted for the ``x0``, ``x1``, ... tokens. Defaults to
+            ``None``, which keeps them — unlike :meth:`latex`, feature names are
+            **not** substituted automatically, because a column name is free text
+            and ``"flow rate"`` is not a Python identifier. Names passed here must
+            be valid Python identifiers.
+
+        See Also
+        --------
+        The ``sympy_simplified`` key of :attr:`pareto_front`, for the same
+        rendering of the display-simplified form.
+
+        Examples
+        --------
+        >>> from sympy import sympify, diff, symbols   # doctest: +SKIP
+        >>> expr = sympify(res.sympy())                # doctest: +SKIP
+        >>> diff(expr, symbols("x0"))                  # doctest: +SKIP
+        """
+        member = self.get_best(index)
+        out = member["sympy"]
+        if out is None:
+            raise ValueError(
+                "this fit carries no 'sympy' rendering; it was produced by an "
+                "older compiled extension. Re-fit with the current version."
+            )
+        if variable_names is None:
+            return out
+        if len(variable_names) != self.n_features:
+            raise ValueError(
+                f"variable_names has {len(variable_names)} name(s) but the model "
+                f"was fitted on {self.n_features} feature(s)."
+            )
+        # A name that is not a Python identifier would produce a string SymPy cannot
+        # parse, which is the one thing this method exists to prevent. Rejecting it is
+        # better than emitting it: the caller still has the x0 form to fall back on.
+        bad = [n for n in variable_names if not str(n).isidentifier()]
+        if bad:
+            raise ValueError(
+                f"variable_names must be valid Python identifiers; rejected: {bad}"
+            )
+        # Two passes through a placeholder that cannot occur in the output, so a name
+        # that is itself a token (a swap such as ["x1", "x0"]) is not re-substituted.
+        for i in range(len(variable_names)):
+            out = re.sub(rf"\bx{i}\b", f"\x00{i}\x00", out)
+        for i, name in enumerate(variable_names):
+            out = out.replace(f"\x00{i}\x00", str(name))
         return out
 
     def __repr__(self) -> str:
@@ -871,7 +966,10 @@ def symbolic_regression(
         early-stop test and the reported result are always computed on the full
         dataset, so batching changes only which candidates are explored, never the
         accuracy attributed to a returned model. Rows are sampled with replacement and
-        re-sampled each iteration. Fewer than ~10,000 rows are usually enough without it.
+        re-sampled each iteration. Fewer than ~10,000 rows are usually enough without
+        it; above that, an unbatched call emits an advisory ``UserWarning`` pointing
+        here. The warning changes nothing about the search and the standard
+        ``warnings`` filters silence it.
     batch_size : int, default 50
         Rows sampled per iteration when ``batching`` is True (PySR ``batch_size``).
         Must be >= 1; values larger than ``len(y)`` are clamped to ``len(y)``. Ignored
@@ -1013,6 +1111,21 @@ def symbolic_regression(
 
     if int(batch_size) < 1:
         raise ValueError("batch_size must be a positive integer.")
+
+    # Advisory only. Every candidate evaluation is O(len(y)) and the default budget
+    # spends millions of them, so a large table turns a seconds-long run into an
+    # hours-long one with nothing on screen to say why. batching is the lever, and it
+    # is off by default because PySR's is (parity is not ours to trade) — so the next
+    # best thing is to say so. Warning changes no setting and no result; the standard
+    # warnings filters silence it.
+    if not batching and y_arr.shape[0] > _LARGE_DATA_ROWS:
+        warnings.warn(
+            f"Fitting {y_arr.shape[0]} rows. Every candidate evaluation is O(rows), "
+            f"so this run may take a long time. Consider batching=True (evaluates the "
+            f"search on {int(batch_size)} rows per iteration; the reported result is "
+            f"still computed on all rows), a smaller subsample, or timeout_seconds.",
+            stacklevel=2,
+        )
 
     if not np.isfinite(warmup_maxsize_by) or float(warmup_maxsize_by) < 0:
         raise ValueError("warmup_maxsize_by must be a finite number >= 0.")

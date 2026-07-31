@@ -112,20 +112,54 @@
                whole file), and the control below lets the user cut the table down on
                purpose. Sampling is off unless the file cannot fit at all. -->
           <div id="data-notice" class="data-notice" hidden></div>
+          <!-- Two radios, not one checkbox. When the table cannot fit the fixed heap at all,
+               sampling is not a preference and the control has to say so — as a checkbox that
+               meant ticking it and then DISABLING it, and a checkbox you cannot untick gives
+               the user no way to read why. Here the unavailable option is the one that is
+               disabled, and it is labelled with the thing that is unavailable ("All 300,000
+               rows"), so the state and its reason are the same object. #sample-rows keeps its
+               id: it is still "is sampling on", now as the second radio. -->
           <div id="sample-control" class="sample-control" hidden>
-            <label class="check small"
-                   title="Fit a random subset of the rows instead of the whole table. The draw is deterministic, so the same file and size give the same sample.">
-              <input id="sample-rows" type="checkbox" /> Sample</label>
-            <input id="sample-size" type="number" min="100" step="500" value="5000"
-                   title="How many rows to fit when Sample is on. Fewer rows run faster and use less memory." />
-            <span class="muted small">rows</span>
+            <span class="group-label">Rows to fit</span>
+            <div class="row wrap">
+              <label class="check small radio-pill"
+                     title="Fit every row in the file.">
+                <input id="sample-all" type="radio" name="row-policy" checked />
+                <span id="sample-all-label">All rows</span></label>
+              <label class="check small radio-pill"
+                     title="Fit a random subset instead. The draw is deterministic, so the same file and size give the same sample.">
+                <input id="sample-rows" type="radio" name="row-policy" /> Sample</label>
+              <!-- The count and its unit wrap as one item: on a narrow rail a bare "rows"
+                   otherwise drops to a line of its own, orphaned from the number it names. -->
+              <span class="unit-field">
+                <input id="sample-size" type="number" min="100" step="500" value="5000"
+                       title="How many rows to fit when Sample is on. Fewer rows run faster and use less memory." />
+                <span class="muted small">rows</span>
+              </span>
+            </div>
           </div>
 
           <div class="model-group">
             <div class="group-label">Target</div>
             <select id="target-select"
                     title="The column the search fits — the y in y = f(x). Every other column can be used as an input."></select>
-            <div class="group-label">Features</div>
+            <!-- Features are toggle pills, the same control the Operator library uses, for
+                 the same reason: both are "pick the subset that defines the search", and an
+                 unticked entry removes a column from the problem exactly as an unticked
+                 operator removes an expression shape. They were plain checkboxes while the
+                 operators were pills, which put two identical decisions in two visual
+                 languages one card apart. all/none is here and not on the operators because
+                 features are all-on by default and a wide table means one click per column;
+                 "none" is left reachable (Run reports it) rather than special-cased. -->
+            <div class="label-row">
+              <span class="group-label">Features</span>
+              <span class="mini-actions">
+                <button id="features-all" class="btn tiny" type="button"
+                        title="Use every numeric column as an input">all</button>
+                <button id="features-none" class="btn tiny" type="button"
+                        title="Clear every input column">none</button>
+              </span>
+            </div>
             <div id="feature-list" class="checkgrid"></div>
           </div>
         </section>
@@ -148,7 +182,22 @@
                matter how long the search runs. The numeric settings below are the opposite —
                PySR-parity defaults that should rarely be touched — so the rail shows only a
                one-line summary of them and the fields live in a modal. -->
-          <div class="subhead">Operator library</div>
+          <!-- The operator set is the one thing on this rail that also changes without the
+               user changing it: loading an example ticks the operators that dataset's formula
+               needs (examples.js `ops`). It only ever ADDS — an operator the user picked is
+               never dropped — but an operator deliberately switched off coming back is still
+               a change nobody made, and after two or three examples the selection is nobody's
+               in particular. Neither existing reset undid it: the settings dialog's button is
+               field-only by design, and the rail's "Use defaults" only appears when the
+               settings restored on arrival differ, which a mid-session edit never triggers.
+               Present-but-disabled rather than shown-on-change, matching #run-btn and
+               #print-btn: a control that appears and disappears cannot be found again, and the
+               disabled state doubles as "these are the shipped operators". -->
+          <div class="subhead label-row">
+            <span>Operator library</span>
+            <button id="reset-ops" class="btn tiny" type="button" disabled
+                    title="Put the binary and unary operators back to the shipped defaults. Leaves macros, the opt-ins and the search settings alone.">reset</button>
+          </div>
           <div class="group-label">Binary</div>
           <div id="binary-ops" class="checkgrid"></div>
           <div class="group-label">Unary</div>
@@ -234,12 +283,16 @@
           </details>
         </section>
 
-        <!-- One line, not three: "runs in your browser" is not news on a web page. The single
-             fact worth the rail space is the limit and where to go past it. -->
+        <!-- A link, not a performance claim. "Single-threaded here — for large or long
+             searches use the R or Python package" used to sit here permanently, but the same
+             sentence is already produced by #data-notice at the moment it applies, with the
+             row count and the measured cost in it (main.js renderDataNotice) — and for the
+             few-hundred-row table this page is mostly used with, it named a cost the visitor
+             never pays. What is worth the rail space every session is the other half: this is
+             a demo of a library, and the library is somewhere. -->
         <p class="sidebar-note muted small">
-          Single-threaded here — for large or long searches use the
-          <a href="https://github.com/ToshihiroIguchi/rsymbolic2" target="_blank" rel="noopener">R or Python package</a>,
-          which runs the same C++ engine in parallel.
+          Same C++ engine as the
+          <a href="https://github.com/ToshihiroIguchi/rsymbolic2" target="_blank" rel="noopener">R and Python packages</a>.
         </p>
       </aside>
 
@@ -251,12 +304,23 @@
       <section class="results" id="results-area" aria-label="Results">
         <!-- The empty state says only what this column is; it does NOT restate the steps
              ("load data", "press Run"), because the drop zone, the example picker and the
-             Run button are all on screen and already labelled. What is left is the one
-             action nothing else offers: load a dataset AND run it in a single click. -->
+             Run button are all on screen and already labelled.
+
+             TWO buttons, swapped by body.has-data (style.css), not one that changes label:
+             with only the example button here, the largest primary control on the screen
+             still said "Try an example" AFTER the user had dropped their own CSV — and its
+             handler unconditionally loads EXAMPLES[0] and runs, i.e. it silently discarded
+             the data they had just loaded. Splitting them also gives the sidebar's
+             top-to-bottom reading order the terminus it lacked: Run lives in the pinned
+             header (fixed position, never scrolls away), which is diagonally far from where
+             the eye leaves the configuration rail. Both buttons are the same actions the
+             header already offers, so nothing new can be reached from here. -->
         <div class="card placeholder" id="results-placeholder">
           <p>Results appear here after a run.</p>
           <button id="placeholder-run-example" class="btn primary"
                   title="Load the quadratic sample dataset and run the search on it right away">Try an example ▶</button>
+          <button id="placeholder-run" class="btn primary" type="button"
+                  title="Run the search on the data loaded above (Ctrl+Enter)">&#9654; Run</button>
         </div>
 
         <section class="card hero">
@@ -289,6 +353,14 @@
             <button id="copy-latex" class="btn small" type="button"
                     aria-label="Copy LaTeX"
                     title="Copy the displayed equation as LaTeX">LaTeX</button>
+            <!-- The expression string above is frozen (predict() parses it back), and it is
+                 not valid Python: square(), inv() and neg() are not SymPy functions, and
+                 sympify() turns each into an undefined applied function instead of raising —
+                 a silently wrong expression. This copies the same equation rewritten as
+                 a**2 / 1/a / -a, which sympify(), eval() and NumPy all accept. -->
+            <button id="copy-sympy" class="btn small" type="button"
+                    aria-label="Copy SymPy expression"
+                    title="Copy the displayed equation as Python that SymPy's sympify() parses. Variables stay x0, x1, …; the guarded operators (sqrt, log, ^) become their plain mathematical forms.">SymPy</button>
             <button id="copy-python" class="btn small" type="button"
                     aria-label="Copy Python code"
                     title="Copy a Python snippet that reproduces this run">Python code</button>
@@ -303,8 +375,11 @@
             <div class="results-head">
               <h2>Pareto front</h2>
               <div class="results-head-controls">
+                <!-- The score lines used to read "score = highest score overall", which
+                     tells a reader who does not already know what score is exactly nothing.
+                     The definition is the same sentence the R and Python docs carry. -->
                 <label class="inline-select"
-                       title="Which Pareto member is highlighted as recommended (★). Applies instantly, no re-run.&#10;score = highest score overall — the parsimony elbow (web default)&#10;best = highest score among equations within 1.5× of the lowest loss (PySR default)&#10;accuracy = lowest loss">
+                       title="Which Pareto member is highlighted as recommended (★). Applies instantly, no re-run.&#10;score = the drop in log-loss per unit of added complexity, against the next-simpler equation. Highest score overall — the parsimony elbow (web default).&#10;best = highest score among equations within 1.5× of the lowest loss (PySR default)&#10;accuracy = lowest loss">
                   recommend
                   <select id="model_selection">
                     <option value="score" selected>score (default)</option>
@@ -312,9 +387,17 @@
                     <option value="accuracy">accuracy</option>
                   </select>
                 </label>
-                <label class="check small"
-                       title="Plot the loss axis on a log scale. Losses span many orders of magnitude, so the linear view flattens the whole front against zero.">
-                  <input id="logloss" type="checkbox" checked /> log loss</label>
+                <!-- A select, not a checkbox: the two controls beside it are selects and all
+                     three do the same kind of thing (switch which view is drawn). A lone
+                     checkbox in that row read as a different class of control. -->
+                <label class="inline-select"
+                       title="Scale of the loss axis. Losses span many orders of magnitude, so the linear view flattens the whole front against zero.">
+                  loss axis
+                  <select id="logloss">
+                    <option value="log" selected>log</option>
+                    <option value="linear">linear</option>
+                  </select>
+                </label>
               </div>
             </div>
             <div class="pareto-legend muted small" aria-hidden="true">
@@ -366,7 +449,7 @@
           <div class="table-wrap">
             <table id="pareto-table">
               <thead>
-                <tr><th>#</th><th title="Node count of the searched expression. &quot;10 → 7&quot; means the equation shown is the simplified form and has fewer nodes than the tree the search archived.">complexity</th><th>loss</th><th>score</th><th>R²</th><th title="Simplified for display; hover a cell to see the raw searched expression.">equation</th></tr>
+                <tr><th>#</th><th title="Node count of the searched expression. &quot;10 → 7&quot; means the equation shown is the simplified form and has fewer nodes than the tree the search archived.">complexity</th><th title="Sum of squared errors on the training data.">loss</th><th title="The drop in log-loss per unit of added complexity, against the next-simpler equation on the front; 0 for the simplest member. This is what the &quot;recommend&quot; control ranks by — a high score means this equation bought a lot of accuracy for the nodes it spent.">score</th><th title="Training 1 - loss/SST. Not a held-out score.">R²</th><th title="Simplified for display; hover a cell to see the raw searched expression.">equation</th></tr>
               </thead>
               <tbody></tbody>
             </table>
@@ -484,8 +567,16 @@
         </div>
       </div>
       <div class="modal-foot">
+        <!-- "Reset to PySR defaults" was a promise this button does not keep: it rewrites
+             the fields in THIS dialog, and deliberately not the sidebar's high-accuracy
+             opt-ins (linear_scaling, eval_cache) — a button must not silently change state
+             the user cannot see from where they clicked, and those two are the PySR
+             divergences, so leaving them on while claiming parity was the misleading case.
+             The scope is now in the name. Operators have their own reset on the rail, the
+             opt-ins are two visible checkboxes, and the everything-including-storage reset
+             is the "Use defaults" button the Search card shows when settings were restored. -->
         <button id="reset-defaults" class="btn small" type="button"
-                title="Put every field back to its shipped PySR-parity default, discarding your edits">Reset to PySR defaults</button>
+                title="Put the fields in this dialog back to their shipped PySR-parity values, discarding your edits. Operators, macros and the high-accuracy opt-ins are not touched — they live in the sidebar and keep their own state.">Reset these fields</button>
         <span class="foot-spacer"></span>
         <button id="settings-cancel" class="btn small" type="button"
                 title="Discard the changes made in this panel">Cancel</button>

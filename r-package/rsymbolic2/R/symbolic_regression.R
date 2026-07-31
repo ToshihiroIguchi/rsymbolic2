@@ -128,7 +128,10 @@
 #'   reported result are \strong{always} computed on the full dataset, so batching
 #'   changes only which candidates are explored, never the accuracy attributed to a
 #'   returned model. Rows are sampled with replacement and re-sampled each iteration.
-#'   For most problems fewer than ~10,000 rows are enough without batching.
+#'   For most problems fewer than ~10,000 rows are enough without batching; above
+#'   that, an unbatched call emits an advisory \code{message()} pointing here.
+#'   The message changes nothing about the search and
+#'   \code{\link[base]{suppressMessages}} silences it.
 #' @param batch_size Number of rows sampled per iteration when \code{batching} is
 #'   \code{TRUE} (PySR \code{batch_size}; default 50). Must be a positive integer;
 #'   values larger than \code{nrow(X)} are clamped to \code{nrow(X)}. Ignored when
@@ -300,8 +303,12 @@
 #'       accuracy-vs-complexity Pareto front, with columns \code{complexity},
 #'       \code{loss}, \code{score} (log-loss drop per unit of added complexity,
 #'       the value \code{model_selection} ranks by; \code{0} for the simplest
-#'       member), \code{expression}, and \code{latex} (display-only LaTeX
-#'       rendering; see \code{\link{to_latex.rsymbolic2}}).}
+#'       member), \code{expression}, \code{latex} (display-only LaTeX
+#'       rendering; see \code{\link{to_latex.rsymbolic2}}) and \code{sympy}
+#'       (display-only Python source that SymPy's \code{sympify()} parses; see
+#'       \code{\link{to_sympy.rsymbolic2}}). \code{expression_simplified},
+#'       \code{latex_simplified} and \code{sympy_simplified} are the same three
+#'       renderings of the display-simplified form (docs/52).}
 #'     \item{n_obs}{Number of training observations (rows of \code{X}).}
 #'     \item{sst}{Total sum of squares of \code{y} about its (weighted) mean on
 #'       the training data; basis for the \code{r_squared} column reported by
@@ -357,6 +364,12 @@
 symbolic_regression <- function(X, ...) {
     UseMethod("symbolic_regression")
 }
+
+# Row count above which an unbatched run is worth warning about. Not a limit and not
+# a measured cliff: it is the figure the batching documentation already names ("for
+# most problems fewer than ~10,000 rows are enough without batching"), kept in one
+# place so the prose and the message cannot drift apart.
+LARGE_DATA_ROWS <- 10000L
 
 #' @rdname symbolic_regression
 #' @export
@@ -417,6 +430,19 @@ symbolic_regression.default <- function(
     batch_size <- as.integer(batch_size)
     if (is.na(batch_size) || batch_size < 1L)
         stop("batch_size must be a positive integer")
+
+    # Advisory only. Every candidate evaluation is O(nrow(X)) and the default budget
+    # spends millions of them, so a large table turns a seconds-long run into an
+    # hours-long one with nothing on screen to say why. batching is the lever, and it
+    # is off by default because PySR's is (parity is not ours to trade) — so the next
+    # best thing is to say so. Emitting a message changes no setting and no result;
+    # suppressMessages() silences it.
+    if (!batching && nrow(X) > LARGE_DATA_ROWS)
+        message("rsymbolic2: fitting ", nrow(X), " rows. Every candidate evaluation ",
+                "is O(rows), so this run may take a long time. Consider ",
+                "batching = TRUE (evaluates the search on ", batch_size,
+                " rows per iteration; the reported result is still computed on all ",
+                "rows), a smaller subsample, or timeout_seconds.")
 
     # Opt-in duplicate-evaluation cache (implementation-only; results are bit-identical
     # on/off and the core ignores it when batching is TRUE).

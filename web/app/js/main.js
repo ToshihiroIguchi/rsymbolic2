@@ -101,7 +101,12 @@ const OP_HINT = {
 // happen synchronously on the main thread, so an enormous file freezes the UI before any
 // of our checks could run — hence the byte cap, tested before the file is read.
 const MAX_INPUT_BYTES = 64 * 1024 * 1024;
-const ROW_WARN_THRESHOLD = 5000;   // above this a default-budget run is minutes, not seconds
+// Above this a default-budget run is minutes, not seconds. Counted in CELLS (rows x fitted
+// columns), not rows: an evaluation walks every fitted value, so 5,000 rows x 20 columns is
+// an order of magnitude worse than the 5,000 x 2 the old row-only threshold was calibrated
+// on and used to pass without a word. 10,000 keeps that calibration point exactly (the
+// docs/59 measurements are all 2-column) while making the wide case say something.
+const SLOW_CELL_THRESHOLD = 10000;
 const DEFAULT_SAMPLE_ROWS = 5000;  // what auto-sampling falls back to
 const SAMPLE_SEED = 1;             // fixed: the same table must always yield the same sample
 // Chart.js allocates an object per point and both charts are rebuilt on every equation
@@ -437,6 +442,7 @@ function buildExamples() {
     const ex = EXAMPLES[parseInt(sel.value, 10)];
     if (!ex) return;
     applyExampleOps(ex.ops);
+    syncOperatorReset();      // ... and no change event means no delegated listener either
     saveSearchSettingsSoon(); // ticked programmatically, so no change event fires on the boxes
     loadTable(ex.make(), { label: ex.label, kind: "example" });
   });
@@ -574,22 +580,35 @@ function applyRowPolicy(fresh) {
   state.rowLimit = maxRowsForBrowser(fittedWidth(), configuredPopulations());
   const over = n > state.rowLimit;
 
+  // The pair is exclusive, so only "sampling is on" has to be tracked; `over` decides
+  // whether the OTHER option is available. Disabling "All rows" — the thing that cannot be
+  // done — rather than the sampling toggle is the whole point of the radio pair: a disabled
+  // checkbox stuck in the ticked state said "this control is broken" where this says "that
+  // option is out", and it says which one in its own label.
   const box = $("sample-rows");
+  const allBox = $("sample-all");
   const sizeInput = $("sample-size");
   sizeInput.max = String(state.rowLimit);
   if (fresh) {
     box.checked = over;
     sizeInput.value = String(Math.min(DEFAULT_SAMPLE_ROWS, state.rowLimit));
   }
-  box.disabled = over;
   if (over) box.checked = true;
-  // Decided after the checkbox settles, because its final state is part of the condition:
+  allBox.checked = !box.checked;
+  allBox.disabled = over;
+  allBox.title = over
+    ? `${fmtInt(n)} rows do not fit the engine's heap for this shape, so the whole table ` +
+      `cannot be fitted here.`
+    : "Fit every row in the file.";
+  $("sample-all-label").textContent = `All ${fmtInt(n)} rows`;
+  sizeInput.disabled = !box.checked;
+  // Decided after the radios settle, because their final state is part of the condition:
   // visible whenever the row count is worth acting on, and ALWAYS while sampling is in effect
   // or forced. The notice tells the user to adjust the count, and a table being fitted on a
   // sample must keep the control that undoes it. (A small ceiling — many columns, or a raised
   // population count — can force sampling below the warning threshold, which used to hide the
   // control the notice pointed at; releasing the lock later must not hide it either.)
-  $("sample-control").hidden = !over && !box.checked && n <= ROW_WARN_THRESHOLD;
+  $("sample-control").hidden = !over && !box.checked && !isSlowShape(n);
 
   let k = parseInt(sizeInput.value, 10);
   if (!Number.isFinite(k) || k < 1) k = Math.min(DEFAULT_SAMPLE_ROWS, state.rowLimit);
@@ -663,9 +682,23 @@ function configuredPopulations() {
   return Number.isFinite(v) && v > 0 ? v : DEFAULTS.n_populations.value;
 }
 
+// Re-draw the data notice without touching what is fitted. Needed because the notice now
+// carries an "Enable batching" action, and batching can also be switched from the settings
+// dialog — leaving a notice that still offers to do what has just been done.
+function refreshDataNotice() {
+  if (!state.sourceTable) return;
+  renderDataNotice(state.sourceTable.rows.length > state.rowLimit);
+}
+
 // Is the displayed result fitted on fewer rows than the file holds?
 function isSampled() {
   return !!state.sourceTable && state.table.rows.length < state.sourceTable.rows.length;
+}
+
+// Is a default-budget run on this table going to take minutes? Cell count, not row count —
+// every evaluation walks every fitted value, so the width belongs in the test.
+function isSlowShape(rows) {
+  return rows * fittedWidth() > SLOW_CELL_THRESHOLD;
 }
 
 function renderDataNotice(over) {
@@ -673,27 +706,53 @@ function renderDataNotice(over) {
   const n = state.sourceTable.rows.length;
   const fitted = state.table.rows.length;
   el.classList.remove("warn", "acted");
+  el.textContent = "";
+  let text = null;
   if (over) {
     el.classList.add("acted");
-    el.textContent =
+    text =
       `${fmtInt(n)} rows exceed what the in-browser engine can hold — about ` +
       `${fmtInt(state.rowLimit)} rows for the ${fittedWidth()} columns being fitted at ` +
       `${configuredPopulations()} populations (fixed 128 MB heap). Fitting a ` +
       `${fmtInt(fitted)}-row sample instead; adjust the count below, or use the R or ` +
       `Python package for the full table.`;
-    el.hidden = false;
-  } else if (n > ROW_WARN_THRESHOLD) {
+  } else if (isSlowShape(n)) {
     el.classList.add("warn");
-    el.textContent =
-      `${fmtInt(n)} rows is a lot for the browser: the engine is single-threaded here and a ` +
-      `default-budget run evaluates every row ~2.8M times (10,000 rows takes on the order of ` +
-      `ten minutes). Sample the rows below, enable Batching in Search settings, or set a ` +
-      `Timeout — or run the R or Python package.`;
-    el.hidden = false;
-  } else {
-    el.hidden = true;
-    el.textContent = "";
+    text =
+      `${fmtInt(n)} rows x ${fittedWidth()} columns is a lot for the browser: the engine is ` +
+      `single-threaded here and a default-budget run evaluates every row ~2.8M times ` +
+      `(10,000 rows x 2 columns takes on the order of ten minutes). Sample the rows below, ` +
+      `set a Timeout, or run the R or Python package.`;
   }
+  if (text === null) {
+    el.hidden = true;
+    return;
+  }
+  el.appendChild(document.createTextNode(text));
+  // The notice used to end by telling the user to "enable Batching in Search settings" —
+  // an instruction three navigation steps from the sentence making it, in a modal section
+  // they have no reason to have opened. It is one click here instead. Absent once batching
+  // is on, so the notice never asks for something already done.
+  if (!$("batching").checked) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn tiny notice-action";
+    btn.textContent = "Enable batching";
+    btn.title =
+      "Score candidates on a fresh random batch of rows each iteration instead of the whole " +
+      "table (~18x faster at 10,000 rows). The reported result is still computed on all rows. " +
+      "Same as the Batching option in Search settings.";
+    btn.addEventListener("click", () => {
+      $("batching").checked = true;
+      syncBatchingDependants();
+      updateSettingsSummary();
+      saveSearchSettings();
+      renderDataNotice(over); // drops the button, since the thing it offered is done
+      setStatus("Batching enabled — it takes effect on the next run.");
+    });
+    el.appendChild(btn);
+  }
+  el.hidden = false;
 }
 
 function renderDataSummary() {
@@ -772,6 +831,22 @@ function renderFeatureList() {
 
 function currentFeatureIndices() {
   return [...document.querySelectorAll('input[data-feature="1"]:checked')].map((e) => parseInt(e.value, 10));
+}
+
+// all / none for the feature pills. A wide table otherwise costs one click per column, and
+// the list is rebuilt fully ticked on every target change, so "none then pick two" is the
+// common shape. Ticking changes the fitted width and therefore the row ceiling, so this ends
+// in the same place the individual pills do.
+function setAllFeatures(on) {
+  document.querySelectorAll('input[data-feature="1"]').forEach((cb) => { cb.checked = on; });
+  syncRowPolicyIfShapeChanged();
+  saveSearchSettingsSoon();
+}
+
+// The Pareto chart's loss axis. A <select> since it joined the two selects beside it, so the
+// truth is a string, not a checkbox's .checked.
+function logLossEnabled() {
+  return $("logloss").value === "log";
 }
 
 // --- Config -----------------------------------------------------------------------
@@ -905,6 +980,7 @@ function closeSettings(keep) {
   state.settingsSnapshot = null;
   updateSettingsSummary();
   syncRowPolicyIfShapeChanged(); // Apply and every dismissal path can land on a new value
+  refreshDataNotice();           // ... including a new Batching state, which the notice offers
   $("settings-dialog").close();
   // The commit point for the dialog's fields: nothing typed inside it is persisted until it
   // closes, so Apply stores what was kept and every dismissal path stores the restored snapshot.
@@ -1053,9 +1129,30 @@ function differsFromShippedDefaults() {
 
 function restoreSearchSettings() {
   const saved = loadSearchSettings();
-  if (!saved) return;
+  if (!saved) { syncOperatorReset(); return; }
   applySearchSettings(saved);
+  syncOperatorReset();
   $("settings-restored").hidden = !differsFromShippedDefaults();
+}
+
+// Reset for the operator library alone. Scoped deliberately: the operator set is the one
+// problem input a user builds up over a session AND the only one the app itself adds to
+// (applyExampleOps), so it needs an undo of its own — while macros, the opt-ins and the
+// parity constants are all edited in place and visible where they are edited.
+function resetOperators() {
+  applyOpSelection("bin", [...BINARY_DEFAULT]);
+  applyOpSelection("un", [...UNARY_DEFAULT]);
+  syncOperatorReset();
+  saveSearchSettings();
+}
+
+// Present-but-disabled, never hidden (index.html says why). The disabled state is also the
+// only place the rail reports "these are the shipped operators", which is worth saying.
+function syncOperatorReset() {
+  const atDefault =
+    opsAreDefault(checkedOps("bin"), BINARY_DEFAULT) &&
+    opsAreDefault(checkedOps("un"), UNARY_DEFAULT);
+  $("reset-ops").disabled = atDefault;
 }
 
 // A wider reset than the dialog's own button, which stays field-only on purpose (see
@@ -1067,6 +1164,7 @@ function useShippedDefaults() {
   resetDefaults();
   applyOpSelection("bin", [...BINARY_DEFAULT]);
   applyOpSelection("un", [...UNARY_DEFAULT]);
+  syncOperatorReset();
   $("macro-list").textContent = "";
   updateMacroSummary();
   $("linear_scaling").checked = false;
@@ -1267,7 +1365,7 @@ function onProgress(msg) {
   if (now - state.lastProgressDraw < 250) return;
   state.lastProgressDraw = now;
   drawPareto($("pareto-canvas"), { complexity: msg.complexity, loss: msg.loss, score: null }, {
-    logLoss: $("logloss").checked,
+    logLoss: logLossEnabled(),
   });
 }
 
@@ -1395,7 +1493,7 @@ function drawParetoChart() {
   const front = state.result.pareto_front;
   drawPareto($("pareto-canvas"), front, {
     bestIndex: state.result.best_index,
-    logLoss: $("logloss").checked,
+    logLoss: logLossEnabled(),
     selectedIndex: state.selectedIndex,
     onSelect: (i) => selectEquation(i),
   });
@@ -1486,6 +1584,14 @@ function wireExport() {
       copyText((front.latex_simplified || front.latex)[state.selectedIndex]);
     }
   });
+  $("copy-sympy").addEventListener("click", () => {
+    if (state.selectedIndex != null) {
+      const front = state.result.pareto_front;
+      // Same rule as LaTeX above: copy what is displayed, i.e. the simplified form. Falls
+      // back to the raw rendering if the engine is an older build without the field.
+      copyText((front.sympy_simplified || front.sympy)[state.selectedIndex]);
+    }
+  });
   $("copy-python").addEventListener("click", () => {
     if (state.config) copyText(pythonCall(state.config, state.sampling));
   });
@@ -1567,7 +1673,7 @@ function reportContext() {
     charts: {
       pareto: paretoImage(front, {
         bestIndex: res.best_index,
-        logLoss: $("logloss").checked,
+        logLoss: logLossEnabled(),
         selectedIndex: i,
       }),
       // The on-screen chart is read with the legend printed above it; the figure is not, so
@@ -1724,6 +1830,15 @@ function init() {
   // Delegated: the feature checkboxes are rebuilt on every target change. Ticking one changes
   // the fitted width, hence the row ceiling — see fittedWidth().
   $("feature-list").addEventListener("change", syncRowPolicyIfShapeChanged);
+  $("features-all").addEventListener("click", () => setAllFeatures(true));
+  $("features-none").addEventListener("click", () => setAllFeatures(false));
+  $("reset-ops").addEventListener("click", resetOperators);
+  // The reset's enabled state follows the pills, and the pills move through three paths:
+  // a click, a restored session, and applyExampleOps(). One delegated listener plus the two
+  // explicit calls below (restore, example load) covers all of them.
+  document.addEventListener("change", (e) => {
+    if (e.target && e.target.dataset && e.target.dataset.kind) syncOperatorReset();
+  });
   $("logloss").addEventListener("change", () => { if (state.result) drawParetoChart(); });
   $("model_selection").addEventListener("change", applyModelSelection);
   // Redraw the currently selected equation in the other view; selectEquation() reads the
@@ -1764,11 +1879,14 @@ function init() {
     loadTextAsTable(text, { label: "pasted table", kind: "paste" });
   });
 
-  // Empty-state shortcut: one click loads the first example dataset and runs it.
+  // Empty-state shortcuts. Only one of the two is ever visible (body.has-data, style.css):
+  // the example loader before there is data, Run afterwards — so the example button can no
+  // longer replace a table the user has just loaded.
   $("placeholder-run-example").addEventListener("click", () => {
     loadTable(EXAMPLES[0].make(), { label: EXAMPLES[0].label, kind: "example" });
     run();
   });
+  $("placeholder-run").addEventListener("click", run);
 
   // The summary line is the preview trigger; "change" re-opens the intake block.
   $("data-summary").addEventListener("click", openPreviewDialog);
@@ -1784,6 +1902,7 @@ function init() {
   // Sampling controls. Both re-derive the fitted table from the parsed source, so the size
   // can be raised and lowered without reloading the file.
   $("sample-rows").addEventListener("change", () => { if (state.sourceTable) reapplyRowPolicy(); });
+  $("sample-all").addEventListener("change", () => { if (state.sourceTable) reapplyRowPolicy(); });
   $("sample-size").addEventListener("change", () => { if (state.sourceTable) reapplyRowPolicy(); });
 
   // Keep the Settings summary in step with the fields it reports (including the "modified"

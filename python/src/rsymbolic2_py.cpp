@@ -27,6 +27,7 @@
 #include "rsymbolic/evolution/search_space.hpp"
 #include "rsymbolic/search/evolutionary_search.hpp"
 #include "rsymbolic/expression/latex.hpp"
+#include "rsymbolic/expression/sympy.hpp"
 #include "rsymbolic/expression/op_names.hpp"
 #include "rsymbolic/expression/tree.hpp"
 #include "rsymbolic/simplification/display_simplify.hpp"
@@ -281,8 +282,8 @@ py::dict symbolic_regression_cpp(
 
     // --- Pareto front -> parallel lists ---------------------------------------------
     const std::vector<double> scores = pareto_scores(res.pareto_front);
-    py::list pf_complexity, pf_loss, pf_score, pf_expr, pf_latex;
-    py::list pf_expr_simplified, pf_latex_simplified;
+    py::list pf_complexity, pf_loss, pf_score, pf_expr, pf_latex, pf_sympy;
+    py::list pf_expr_simplified, pf_latex_simplified, pf_sympy_simplified;
     for (std::size_t i = 0; i < res.pareto_front.size(); ++i) {
         const auto& m = res.pareto_front[i];
         pf_complexity.append(m.complexity);
@@ -290,10 +291,12 @@ py::dict symbolic_regression_cpp(
         pf_score.append(scores[i]);
         pf_expr.append(to_string(m.tree));
         pf_latex.append(to_latex(m.tree));
+        pf_sympy.append(to_sympy(m.tree));
         // Display-only companions (docs/52): computed on a COPY of m.tree.
         const Tree simplified = display_simplify(m.tree);
         pf_expr_simplified.append(to_string(simplified));
         pf_latex_simplified.append(to_latex(simplified));
+        pf_sympy_simplified.append(to_sympy(simplified));
     }
 
     // Recommended ("best") trade-off; best_index is 0-based in C++ and is kept 0-based
@@ -338,8 +341,10 @@ py::dict symbolic_regression_cpp(
         py::arg("score")                  = pf_score,
         py::arg("expression")             = pf_expr,
         py::arg("latex")                  = pf_latex,
+        py::arg("sympy")                  = pf_sympy,
         py::arg("expression_simplified")  = pf_expr_simplified,
-        py::arg("latex_simplified")       = pf_latex_simplified);
+        py::arg("latex_simplified")       = pf_latex_simplified,
+        py::arg("sympy_simplified")       = pf_sympy_simplified);
     return result;
 }
 

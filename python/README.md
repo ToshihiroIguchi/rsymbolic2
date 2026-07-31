@@ -20,6 +20,7 @@ print(res.predict(np.array([[0.0], [1.0]])))
 print(res)          # Pareto front with per-member score, training R-squared,
                     # and a ">" marker on the recommended row
 print(res.latex())  # LaTeX of the recommended member (display-only)
+print(res.sympy())  # the same, as Python that SymPy's sympify() parses
 ```
 
 Building from source needs only a C++17 compiler (`pip` fetches CMake and Ninja itself).

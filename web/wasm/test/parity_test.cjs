@@ -118,6 +118,29 @@ function assert(cond, msg) {
       && c <= pf.complexity[i]),
     "every complexity_simplified is a positive integer <= the raw complexity");
 
+  // 2b-2. SymPy renderings (docs/70). The GUI's "SymPy" button and the Pareto CSV both read
+  // these, and the reason they exist is that `expression` is NOT valid Python: square(),
+  // inv() and neg() are undefined in SymPy (sympify() turns each into an undefined applied
+  // function rather than raising) and `^` is not the power operator outside sympify's own
+  // convert_xor. The property asserted here is that no such token survives into the export.
+  //
+  // This run's operator set has no square/inv/neg at all, and the check still matters: the
+  // DISPLAY simplifier introduces square() on its own (x*x -> square(x)), so the equation on
+  // screen can spell an operator the user never enabled.
+  assert(Array.isArray(pf.sympy) && Array.isArray(pf.sympy_simplified),
+    "pareto_front carries sympy/sympy_simplified arrays");
+  assert(pf.sympy.length === pf.complexity.length
+      && pf.sympy_simplified.length === pf.complexity.length,
+    "pareto_front.sympy/sympy_simplified have one entry per front member");
+  assert(pf.sympy.every((s) => typeof s === "string" && s.length > 0)
+      && pf.sympy_simplified.every((s) => typeof s === "string" && s.length > 0),
+    "every sympy/sympy_simplified entry is a non-empty string");
+  const notPython = (s) => /\b(square|inv|neg)\s*\(/.test(s) || s.includes("^");
+  assert(!pf.sympy.some(notPython) && !pf.sympy_simplified.some(notPython),
+    "no sympy rendering spells square()/inv()/neg()/^");
+  assert(pf.expression_simplified.some((s) => s.includes("square(")),
+    "the display simplifier did introduce square() (so the check above was exercised)");
+
   // 2c. Progress callback (docs/53): purely observational — attaching one must not
   // change the result — and it fires at least once on this multi-iteration config
   // (generations=200 with the default migration_interval=28 gives multiple epochs).

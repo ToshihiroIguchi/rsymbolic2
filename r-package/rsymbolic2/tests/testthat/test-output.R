@@ -23,8 +23,8 @@ test_that("result has the documented structure", {
   expect_true(res$best_index >= 1L && res$best_index <= nrow(res$pareto_front))
   expect_s3_class(res$pareto_front, "data.frame")
   expect_named(res$pareto_front,
-               c("complexity", "loss", "score", "expression", "latex",
-                 "expression_simplified", "latex_simplified"))
+               c("complexity", "loss", "score", "expression", "latex", "sympy",
+                 "expression_simplified", "latex_simplified", "sympy_simplified"))
   expect_type(res$pareto_front$score, "double")
   expect_identical(res$pareto_front$score[1L], 0)
   expect_true(nrow(res$pareto_front) >= 1L)

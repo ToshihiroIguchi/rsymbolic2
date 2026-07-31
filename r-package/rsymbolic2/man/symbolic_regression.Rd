@@ -248,7 +248,10 @@ rather than \eqn{O(\code{nrow(X)})}. The hall of fame, early-stop test and the
 reported result are \strong{always} computed on the full dataset, so batching
 changes only which candidates are explored, never the accuracy attributed to a
 returned model. Rows are sampled with replacement and re-sampled each iteration.
-For most problems fewer than ~10,000 rows are enough without batching.}
+For most problems fewer than ~10,000 rows are enough without batching; above
+that, an unbatched call emits an advisory \code{message()} pointing here.
+The message changes nothing about the search and
+\code{\link[base]{suppressMessages}} silences it.}
 
 \item{batch_size}{Number of rows sampled per iteration when \code{batching} is
 \code{TRUE} (PySR \code{batch_size}; default 50). Must be a positive integer;
@@ -378,8 +381,12 @@ A list of class \code{"rsymbolic2"} with elements:
       accuracy-vs-complexity Pareto front, with columns \code{complexity},
       \code{loss}, \code{score} (log-loss drop per unit of added complexity,
       the value \code{model_selection} ranks by; \code{0} for the simplest
-      member), \code{expression}, and \code{latex} (display-only LaTeX
-      rendering; see \code{\link{to_latex.rsymbolic2}}).}
+      member), \code{expression}, \code{latex} (display-only LaTeX
+      rendering; see \code{\link{to_latex.rsymbolic2}}) and \code{sympy}
+      (display-only Python source that SymPy's \code{sympify()} parses; see
+      \code{\link{to_sympy.rsymbolic2}}). \code{expression_simplified},
+      \code{latex_simplified} and \code{sympy_simplified} are the same three
+      renderings of the display-simplified form (docs/52).}
     \item{n_obs}{Number of training observations (rows of \code{X}).}
     \item{sst}{Total sum of squares of \code{y} about its (weighted) mean on
       the training data; basis for the \code{r_squared} column reported by
