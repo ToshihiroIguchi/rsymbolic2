@@ -124,9 +124,30 @@ oversight:
   still applies (inherited from the container, not per-card), so the live points
   are visibly updating but not clickable — a `::after` badge reading "updating…" is
   shown on the card only while both `body.running` and `.live` hold.
+- **(c′) Running with snapshots, but no result to fall back on.** States (a)–(c)
+  above silently assume a previous run: the progressive-disclosure rule
+  `#results-area:not(.has-result) .card:not(.placeholder) { display: none; }` keeps
+  every result card hidden behind the empty-state placeholder until the first run
+  *finishes*, so on the first run of a session — and on any run after the data
+  changed and `clearResults()` took `.has-result` off again — the live snapshots were
+  being drawn into a `display: none` canvas. The user watched an unchanged "Results
+  appear here after a run." placeholder for the whole search (the header progress bar
+  and the epoch/ETA status line were the only signs of life), and the live front
+  appeared only from the *second* run on — i.e. the feature was suppressed exactly
+  where there was nothing else to look at. `onProgress()` therefore also adds
+  `.has-live` to `#results-area`, which promotes the Pareto card alone
+  (`#results-area:not(.has-result).has-live #pareto-card { display: flex; }`, plus
+  hiding the placeholder and collapsing `.charts-row` to one column so the card is
+  not left beside an empty grid cell). Every other result card stays hidden because
+  it has nothing in it until the run ends. The class is scoped under
+  `:not(.has-result)`, so once a result exists it changes nothing and states (a)–(c)
+  are byte-for-byte the behaviour described above.
 - **(d) Finished.** `finishRun()` (called from all three end-of-run paths — Stop,
-  result, error) removes both `body.running` and the Pareto card's `.live` class, so
-  a Stop mid-run leaves no live state behind. `onResult()` → `renderResult()` is the
+  result, error) removes `body.running`, the Pareto card's `.live` class and the
+  `.has-live` reveal of (c′), so a Stop mid-run leaves no live state behind — a first
+  run that is stopped or fails goes back to the placeholder, since
+  `restoreResultCharts()` has no completed front to put back and a partial one must
+  not read as the answer. `onResult()` → `renderResult()` is the
   authoritative full render: it destroys and recreates the Chart.js instance with the
   complete final front (`score`, `bestIndex`, `selectedIndex`, `onSelect` all
   present), fully replacing whatever the live chart last showed; `renderResult()`

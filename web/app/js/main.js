@@ -525,7 +525,7 @@ function clearResults() {
   state.selectedIndex = null;
   state.treeSvg = null;
   $("print-btn").disabled = true; // nothing left to report on
-  $("results-area").classList.remove("has-result");
+  $("results-area").classList.remove("has-result", "has-live");
   $("pareto-card").classList.remove("live");
   $("pareto-table").querySelector("tbody").innerHTML = "";
   $("eq-latex").innerHTML = "";
@@ -1335,6 +1335,11 @@ function finishRun() {
   stopTimer();
   document.body.classList.remove("running", "determinate");
   $("pareto-card").classList.remove("live"); // Stop/error/result all end the live state
+  // The first-run reveal lasts exactly as long as the run: a finished run is revealed by
+  // renderResult() (.has-result, synchronously after this, so nothing flashes), while a
+  // stopped or failed one goes back to the placeholder — restoreResultCharts() has no
+  // completed front to put back, and a partial one must not read as the answer.
+  $("results-area").classList.remove("has-live");
   setRunButton(false);
 }
 
@@ -1346,6 +1351,11 @@ function finishRun() {
 // pointer-events: none while body.running.
 function onProgress(msg) {
   $("pareto-card").classList.add("live");
+  // Before there is any result, the whole panel is still the placeholder and the Pareto card
+  // is display:none — so on the first run of a session these snapshots would be drawn into a
+  // hidden canvas and the user would watch an empty column for the entire search. This
+  // promotes that one card (style.css) for the duration of the run; the rest stay hidden.
+  $("results-area").classList.add("has-live");
   const now = performance.now();
   // Progress accounting is separate from the redraw throttle below: every epoch must be
   // timed even when its chart redraw is skipped, or the ETA's rate is computed from a

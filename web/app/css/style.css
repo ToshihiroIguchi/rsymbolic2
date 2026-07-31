@@ -607,6 +607,18 @@ body.has-data #placeholder-run-example { display: none; }
 #results-area:not(.has-result) .charts-row { display: none; }
 #results-area.has-result .placeholder { display: none; }
 
+/* Exception, for the run that has no previous result to fall back on (the first run of a
+   session, and any run after the data changed cleared the last one): the rules above would
+   hide the Pareto card for exactly the run where the column is otherwise an empty
+   placeholder, and the live snapshots (main.js onProgress) would be drawn into a
+   display:none canvas. JS adds .has-live on the first snapshot and finishRun() takes it off
+   again, which promotes that ONE card; every other result card stays hidden because it has
+   nothing in it until the run finishes. The row drops to a single column so the promoted
+   card is not left sitting beside an empty grid cell. */
+#results-area:not(.has-result).has-live .placeholder { display: none; }
+#results-area:not(.has-result).has-live .charts-row { display: grid; grid-template-columns: 1fr; }
+#results-area:not(.has-result).has-live #pareto-card { display: flex; }
+
 /* While a search is running, the previous run's results are stale: dim them and block
    interaction (row/point clicks, copy buttons) until finishRun() removes body.running.
    Interaction is disabled on the whole container (a parent's pointer-events: none already
