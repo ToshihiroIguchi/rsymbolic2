@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <vector>
 
 #include "rsymbolic/expression/dual.hpp"
@@ -182,9 +183,51 @@ void test_pow_value_and_gradient() {
     CHECK(close(dual_grad(tree, row, c, 0), finite_diff(tree, row, c, 0, h), 1e-4));
 }
 
-// Verify square and pow guarded values are finite (not NaN) at boundary inputs.
-void test_safe_boundaries() {
-    // square(-3) = 9, no NaN
+// The protected-operator semantics, asserted directly against SymbolicRegression.jl's
+// Operators.jl (docs/69). These are load-bearing for PySR parity: out of domain the
+// value must be NaN, because a non-finite loss is how a candidate gets REJECTED. An
+// earlier version of this test asserted the opposite for pow (that x<0 with a
+// non-integer exponent is finite), which is what let the divergence survive.
+void test_safe_operator_semantics() {
+    // safe_sqrt(x) = x >= 0 ? sqrt(x) : NaN
+    CHECK(std::isnan(rsymbolic::sqrt(-1.0)));
+    CHECK(std::isnan(rsymbolic::sqrt(-1e-300)));
+    CHECK(std::isnan(rsymbolic::sqrt(std::numeric_limits<double>::quiet_NaN())));
+    CHECK(rsymbolic::sqrt(0.0) == 0.0);
+    CHECK(close(rsymbolic::sqrt(4.0), 2.0, 1e-15));
+
+    // safe_pow: plain IEEE pow, except 0^negative is NaN rather than +-Inf.
+    CHECK(std::isnan(rsymbolic::pow(0.0, -1.0)));    // SR.jl: isinteger, y<0, x==0
+    CHECK(std::isnan(rsymbolic::pow(0.0, -0.5)));    // SR.jl: y<0 && x<=0
+    CHECK(std::isnan(rsymbolic::pow(-2.0, 0.5)));    // y>0 non-integer, x<0
+    CHECK(std::isnan(rsymbolic::pow(-2.0, -0.5)));   // y<0, x<0
+    // A NEAR-integer exponent is not an integer exponent. The old implementation
+    // rounded within 1e-6 and answered 4.0 here; SR.jl rejects.
+    CHECK(std::isnan(rsymbolic::pow(-2.0, 2.0000001)));
+    CHECK(close(rsymbolic::pow(-2.0, 3.0), -8.0, 1e-12));   // integer exponent: real
+    CHECK(close(rsymbolic::pow(-2.0, 2.0), 4.0, 1e-12));
+    CHECK(rsymbolic::pow(0.0, 2.0) == 0.0);
+    CHECK(rsymbolic::pow(0.0, 0.0) == 1.0);                 // Julia: 0.0^0.0 == 1.0
+    CHECK(close(rsymbolic::pow(2.0, 0.5), std::sqrt(2.0), 1e-12));
+
+    // The infinities. These are the cases a "simplify the branch table" rewrite gets
+    // wrong (docs/69 §4.1): IEEE pow answers +-Inf / +-0 for a -Inf base, but SR.jl's
+    // `x < 0` and `x <= 0` guards catch -Inf and return NaN. Verified against Julia.
+    const double inf = std::numeric_limits<double>::infinity();
+    CHECK(std::isnan(rsymbolic::pow(-inf, 0.5)));    // IEEE pow would say +Inf
+    CHECK(std::isnan(rsymbolic::pow(-inf, 1.5)));
+    CHECK(std::isnan(rsymbolic::pow(-inf, -0.5)));   // IEEE pow would say +0
+    CHECK(std::isnan(rsymbolic::pow(-inf, -1.5)));
+    CHECK(std::isnan(rsymbolic::pow(-inf, 2.0000001)));
+    CHECK(rsymbolic::pow(inf, 2.0) == inf);          // positive base: plain pow
+    CHECK(std::isnan(rsymbolic::pow(2.0, std::numeric_limits<double>::quiet_NaN())));
+    // isinteger(Inf) is false in Julia, so the isfinite test in the branch is load
+    // bearing: without it floor(Inf) == Inf would take the integer path and skip the
+    // x < 0 guard. Julia: safe_pow(-3.0, Inf) = NaN, safe_pow(2.0, Inf) = Inf.
+    CHECK(std::isnan(rsymbolic::pow(-3.0, inf)));
+    CHECK(rsymbolic::pow(2.0, inf) == inf);
+
+    // square is unguarded and total: square(-3) = 9, no NaN.
     {
         const Tree tree = square_tree(1.0);
         const std::vector<double> c = {1.0};
@@ -193,22 +236,29 @@ void test_safe_boundaries() {
         CHECK(std::isfinite(v));
         CHECK(close(v, 9.0, 1e-12));
     }
-    // pow(-2, 2) = 4 (integer exponent, negative base)
+    // The same semantics must arrive through the tree evaluator, not just the free
+    // function: pow(-2, 2) = 4 stays finite, pow(-2, 1.5) is now NaN.
     {
         const Tree tree = pow_tree(2.0);
         const std::vector<double> c = {2.0};
         const std::vector<double> row = {-2.0};
-        const double v = evaluate<double>(tree, row.data(), c.data());
-        CHECK(std::isfinite(v));
-        CHECK(close(v, 4.0, 1e-9));
+        CHECK(close(evaluate<double>(tree, row.data(), c.data()), 4.0, 1e-9));
     }
-    // pow(-2, 1.5) -> guarded (not NaN)
     {
         const Tree tree = pow_tree(1.5);
         const std::vector<double> c = {1.5};
         const std::vector<double> row = {-2.0};
-        const double v = evaluate<double>(tree, row.data(), c.data());
-        CHECK(std::isfinite(v));
+        CHECK(std::isnan(evaluate<double>(tree, row.data(), c.data())));
+    }
+    // Sqrt through the tree evaluator, the path that used to disagree with the
+    // shipped SoA evaluator for a negative argument.
+    {
+        const Tree tree = {variable_node(0), unary_node(UnaryOp::Sqrt)};
+        const std::vector<double> c = {};
+        const std::vector<double> neg = {-4.0};
+        const std::vector<double> pos = {9.0};
+        CHECK(std::isnan(evaluate<double>(tree, neg.data(), c.data())));
+        CHECK(close(evaluate<double>(tree, pos.data(), c.data()), 3.0, 1e-12));
     }
 }
 
@@ -223,7 +273,7 @@ int main() {
     test_inv_value_and_gradient();
     test_erf_sinh_cosh_value_and_gradient();
     test_pow_value_and_gradient();
-    test_safe_boundaries();
+    test_safe_operator_semantics();
 
     if (g_failures == 0) {
         std::printf("All %d checks passed\n", g_checks);

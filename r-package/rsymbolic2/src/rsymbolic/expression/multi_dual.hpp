@@ -142,11 +142,18 @@ inline MultiDual<N> cos(const MultiDual<N>& a) {
     return r;
 }
 
-// safe: negative input -> value=0, deriv=0 (prevents NaN poisoning the LM solver).
+// safe_sqrt: x >= 0 ? sqrt(x) : NaN, via dual.hpp's single definition (see it for why
+// NaN rather than 0). Same branch and same derivative convention as the Dual overload.
 template <int N>
 inline MultiDual<N> sqrt(const MultiDual<N>& a) {
-    const double s = std::sqrt(a.value > 0.0 ? a.value : 0.0);
     MultiDual<N> r;
+    if (!(a.value >= 0.0)) {
+        const double nan = std::numeric_limits<double>::quiet_NaN();
+        r.value = nan;
+        for (int c = 0; c < N; ++c) r.grad[c] = nan;
+        return r;
+    }
+    const double s = std::sqrt(a.value);
     r.value = s;
     // dual.hpp uses division (a.deriv / (2*s)); keep division to match bit-for-bit.
     for (int c = 0; c < N; ++c) r.grad[c] = s > 0.0 ? a.grad[c] / (2.0 * s) : 0.0;
@@ -232,27 +239,11 @@ inline MultiDual<N> pow(const MultiDual<N>& base, const MultiDual<N>& exp_arg) {
     const double x = base.value;
     const double y = exp_arg.value;
 
-    double p;
-    bool std_branch = false;  // true iff x > 0
-    if (x > 0.0) {
-        p = libm::exp(y * libm::log(x));
-        std_branch = true;
-    } else if (x == 0.0 && y > 0.0) {
-        p = 0.0;
-    } else if (x < 0.0) {
-        const double yr = std::round(y);
-        if (std::fabs(y - yr) < 1e-6) {
-            p = libm::pow(x, yr);
-        } else {
-            p = 0.0;
-        }
-    } else {
-        p = 0.0;
-    }
+    const double p = rsymbolic::pow(x, y);  // dual.hpp: the single value definition
 
     MultiDual<N> r;
     r.value = p;
-    if (std_branch) {
+    if (x > 0.0) {
         const double dpdx = y * libm::exp((y - 1.0) * libm::log(x));
         const double dpdy = p * libm::log(x);
         for (int c = 0; c < N; ++c)

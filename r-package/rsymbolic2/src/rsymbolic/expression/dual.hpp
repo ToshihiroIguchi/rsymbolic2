@@ -6,6 +6,7 @@
 #pragma once
 
 #include <cmath>
+#include <limits>
 
 #include "rsymbolic/platform/libm.hpp"  // libm::exp/log/sin/cos/erf/pow == std:: off MinGW
 
@@ -66,9 +67,32 @@ inline Dual cos(const Dual& a) {
     return {libm::cos(a.value), -a.deriv * libm::sin(a.value)};
 }
 
-// safe: negative input → value=0, deriv=0 (prevents NaN from poisoning the LM solver)
+// safe_sqrt, mirroring SymbolicRegression.jl Operators.jl:
+//     safe_sqrt(x) = x >= 0 ? sqrt(x) : NaN
+// The NaN is the point: it makes the loss non-finite, and sse_current() turns a
+// non-finite residual into kInf, which rejects the candidate — exactly SR.jl's
+// NaN-cost rejection. This codebase used to return 0 here instead, on the reasoning
+// that NaN would poison the LM solver. It does not: self_lm_optimizer.cpp clamps
+// non-finite residuals and Jacobian entries to kLargeResidual, so the solver simply
+// steps away. Returning 0 meanwhile let expressions survive that PySR discards, and
+// made predict() answer a silently wrong finite number outside the model's domain
+// (docs/69).
+//
+// Written as !(x >= 0) rather than (x < 0) so a NaN argument also yields NaN, which
+// is what `x >= zero(x) ? ... : NaN` does in Julia.
+inline double sqrt(double x) {
+    if (!(x >= 0.0)) return std::numeric_limits<double>::quiet_NaN();
+    return std::sqrt(x);
+}
+
 inline Dual sqrt(const Dual& a) {
-    const double s = std::sqrt(a.value > 0.0 ? a.value : 0.0);
+    if (!(a.value >= 0.0)) {
+        const double nan = std::numeric_limits<double>::quiet_NaN();
+        return {nan, nan};
+    }
+    const double s = std::sqrt(a.value);
+    // deriv at exactly 0 is +Inf mathematically; 0 is kept here (unchanged) so the
+    // Jacobian stays finite on a value that is itself finite and legitimate.
     return {s, s > 0.0 ? a.deriv / (2.0 * s) : 0.0};
 }
 
@@ -122,62 +146,63 @@ inline Dual cosh(const Dual& a) {
     return {std::cosh(a.value), a.deriv * std::sinh(a.value)};
 }
 
-// safe_pow for plain doubles: same branch logic as the Dual overload so the value
-// path and the AD path always agree. Named pow() so ADL in apply_binary<double> picks
-// this instead of std::pow, giving both the same guarded semantics.
+// safe_pow, a LITERAL transcription of SymbolicRegression.jl Operators.jl:
+//
+//     if isinteger(y)
+//         y < 0 && iszero(x) && return NaN
+//     else
+//         y > 0 && x <  0 && return NaN
+//         y < 0 && x <= 0 && return NaN
+//     end
+//     return x^y
+//
+// Transcribed rather than simplified on purpose. The obvious simplification — "IEEE pow
+// already returns NaN for a negative base with a non-integer exponent, so the only
+// exception is 0^negative" — is WRONG at the infinities: pow(-Inf, 0.5) is +Inf and
+// pow(-Inf, -1.5) is +0 under IEEE, while SR.jl's `x < 0` / `x <= 0` guards catch -Inf
+// and return NaN. That divergence was found by diffing this function against Julia over
+// a grid of edge cases (docs/69 §4.1), not by reading the code.
+//
+// `isinteger` must exclude the infinities: std::floor(Inf) == Inf, so the isfinite test
+// is load bearing (Julia's isinteger(Inf) is false).
+//
+// This replaces a hand-rolled table that returned **0** wherever SR.jl returns NaN, and
+// that accepted a *near*-integer exponent within 1e-6 (so pow(-2, 2.0000001) answered 4
+// where SR.jl rejects). Both let candidates survive that PySR discards; see docs/69 and
+// difference #12 in docs/29, now closed.
+//
+// Named pow() so ADL in apply_binary<double> picks this instead of std::pow.
 inline double pow(double x, double y) {
-    if (x > 0.0) return libm::exp(y * libm::log(x));
-    if (x == 0.0 && y > 0.0) return 0.0;
-    if (x < 0.0) {
-        const double yr = std::round(y);
-        if (std::fabs(y - yr) < 1e-6) return libm::pow(x, yr);
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    if (std::isfinite(y) && std::floor(y) == y) {  // isinteger(y)
+        if (y < 0.0 && x == 0.0) return nan;
+    } else {
+        if (y > 0.0 && x < 0.0) return nan;
+        if (y < 0.0 && x <= 0.0) return nan;
     }
-    return 0.0;
+    return libm::pow(x, y);
 }
 
-// safe_pow: x^y with guarded behaviour when x <= 0 to prevent NaN from poisoning
-// the LM solver. Mirrors SymbolicRegression.jl safe_pow semantics:
-//   x > 0          : exp(y * log(x))        [standard]
-//   x == 0, y > 0  : 0                      [continuous limit]
-//   x < 0, y integer (within tol): real-valued result with correct sign
-//   otherwise      : 0                      [undefined; treat as 0 to stay finite]
-// Derivatives:
-//   dp/dx = y * x^(y-1)        [guarded; 0 when safe value is 0]
-//   dp/dy = x^y * log(x)       [only when x > 0; 0 otherwise]
+// safe_pow for Duals: the value is exactly the double overload above, so the value path
+// and the AD path can never disagree. Derivatives are carried only on the x > 0 branch:
+//   dp/dx = y * x^(y-1),  dp/dy = x^y * log(x)
+// Everywhere else the derivative is 0. That is an implementation choice, not a claim
+// about the mathematics — where the value is NaN the candidate is already rejected on
+// loss, and where it is finite but x <= 0 (a negative base with an integer exponent)
+// dp/dy would be log of a negative number anyway.
 inline Dual pow(const Dual& base, const Dual& exp_arg) {
     const double x = base.value;
     const double y = exp_arg.value;
+    const double p = pow(x, y);
 
-    // Evaluate the safe value and decide which branch we're on.
-    double p;
-    bool std_branch = false;  // true iff x > 0
-    if (x > 0.0) {
-        p = libm::exp(y * libm::log(x));
-        std_branch = true;
-    } else if (x == 0.0 && y > 0.0) {
-        p = 0.0;
-    } else if (x < 0.0) {
-        // Use the rounded exponent if it is close enough to an integer.
-        const double yr = std::round(y);
-        if (std::fabs(y - yr) < 1e-6) {
-            p = libm::pow(x, yr);  // pow handles negative base with integer exp
-        } else {
-            p = 0.0;
-        }
-    } else {
-        p = 0.0;  // x == 0, y <= 0: undefined; return 0
-    }
-
-    // Derivatives.
     double dp = 0.0;
-    if (std_branch) {
+    if (x > 0.0) {
         // dp/dx contribution: y * x^(y-1) * base.deriv
         const double dpdx = y * libm::exp((y - 1.0) * libm::log(x));
         // dp/dy contribution: x^y * log(x) * exp_arg.deriv
         const double dpdy = p * libm::log(x);
         dp = dpdx * base.deriv + dpdy * exp_arg.deriv;
     }
-    // On guarded branches: derivative is 0 (function is flat/undefined there).
 
     return {p, dp};
 }

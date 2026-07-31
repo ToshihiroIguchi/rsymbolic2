@@ -34,15 +34,19 @@ T apply_unary(UnaryOp op, const T& a) {
     using std::abs;
     using std::cosh;
     using std::sinh;
-    using std::sqrt;
     using std::tanh;
+    // NOTE: no `using std::sqrt`. Sqrt resolves to rsymbolic::sqrt — the safe_sqrt in
+    // dual.hpp — for double as well as for Dual/MultiDual, exactly like square/recip/pow
+    // below. It used to pull in std::sqrt here, which made this path the one place in the
+    // codebase that returned NaN for a negative argument while the shipped SoA evaluator
+    // returned 0. Both now return NaN, from one definition (docs/69).
     switch (op) {
         case UnaryOp::Neg:    return -a;
         case UnaryOp::Exp:    return exp(a);    // ADL: rsymbolic:: for Dual, std:: for double
         case UnaryOp::Log:    return log(a);
         case UnaryOp::Sin:    return sin(a);
         case UnaryOp::Cos:    return cos(a);
-        case UnaryOp::Sqrt:   return sqrt(a);   // Dual: safe (neg→0); double: std::sqrt
+        case UnaryOp::Sqrt:   return sqrt(a);   // rsymbolic::safe_sqrt (neg→NaN), all T
         case UnaryOp::Tanh:   return tanh(a);
         case UnaryOp::Abs:    return abs(a);
         case UnaryOp::Square: return square(a); // rsymbolic::square via ADL

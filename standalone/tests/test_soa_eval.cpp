@@ -220,6 +220,25 @@ void test_sin_sqrt() {
     run_case("sin_sqrt", t, X, {1.1, 0.9}, true);
 }
 
+// sqrt(c0 + x0) driven NEGATIVE at some points. Until docs/69 no test did this, and the
+// two evaluators disagreed there: the scalar path returned NaN and the SoA path 0. The
+// bit-identity check below is what makes that impossible to reintroduce silently, and
+// the explicit NaN assertion is what keeps both from drifting back to 0 together.
+// finite_diff is off because a NaN value has no finite-difference derivative.
+void test_sqrt_negative() {
+    Tree t = {constant_node(0, 0.5), variable_node(0), binary_node(BinaryOp::Add),
+              unary_node(UnaryOp::Sqrt)};
+    std::vector<std::vector<double>> X = {{2.0}, {-3.0}, {-0.5}, {0.25}};
+    run_case("sqrt_negative", t, X, {0.5}, false);
+
+    const std::vector<double> params = {0.5};
+    const std::vector<double> r = soa_residual(t, to_columns(X), X.size(), params);
+    CHECK(!std::isnan(r[0]));  // sqrt(2.5)
+    CHECK(std::isnan(r[1]));   // sqrt(-2.5) -> NaN, i.e. the candidate is rejected
+    CHECK(r[2] == 0.0);        // sqrt(0): the >= 0 boundary is IN domain, not NaN
+    CHECK(!std::isnan(r[3]));  // sqrt(0.75)
+}
+
 // Every unary op: square(exp(c0*x0)) + log(c1+x1) + cos(c2) + tanh(c3*x0) + abs(c4-x1)
 void test_all_unary() {
     Tree t = {
@@ -320,6 +339,7 @@ void test_point_tiling() {
 int main() {
     test_linear();
     test_sin_sqrt();
+    test_sqrt_negative();
     test_all_unary();
     test_inv();
     test_erf_sinh_cosh();

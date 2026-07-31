@@ -126,10 +126,16 @@ void test_pow_guarded() {
     CHECK(close(neg.value, -8.0));
     CHECK(std::isfinite(neg.deriv));
 
-    // x<0, non-integer y -> 0 (not NaN)
+    // x<0, non-integer y -> NaN, matching SR.jl safe_pow (docs/69). A non-finite value
+    // is how the candidate gets rejected; this used to return 0, which let expressions
+    // survive that PySR discards.
     Dual bad = rsymbolic::pow(Dual(-2.0, 1.0), Dual(1.5, 0.0));
-    CHECK(std::isfinite(bad.value));
-    CHECK(std::isfinite(bad.deriv));
+    CHECK(std::isnan(bad.value));
+    CHECK(std::isfinite(bad.deriv));  // derivative stays 0 off the x>0 branch
+
+    // x==0, y<0 -> NaN (IEEE pow would give +Inf; SR.jl special-cases this one)
+    Dual zneg = rsymbolic::pow(Dual(0.0, 1.0), Dual(-1.0, 0.0));
+    CHECK(std::isnan(zneg.value));
 }
 
 // erf/sinh/cosh: AD vs central finite differences at several points (the standing rule

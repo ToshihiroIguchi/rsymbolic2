@@ -64,19 +64,22 @@ EGraphLimits layer1_only() {
     return lim;
 }
 
-// --- pow(x, 1) exactness finding ---------------------------------------------------
-// The core's safe pow (dual.hpp) evaluates x>0 as exp(y * log(x)), which is NOT bit-
-// exact to x for y=1 (a round trip through log/exp loses a rounding step for almost
-// every x). This — together with safe_pow's 0-fallback for NaN/undefined bases — is
-// why display_simplify has NO Pow rewrite at all (docs/54). Verified here as living
-// documentation of the finding.
-void test_pow_one_not_exact_for_positive_base() {
-    bool any_inexact = false;
+// --- pow(x, 1) exactness ------------------------------------------------------------
+// This test used to assert the OPPOSITE, and the reason it flipped is worth recording.
+// safe_pow evaluated x>0 as exp(y * log(x)), a round trip that loses a rounding step for
+// almost every x, so x^1 != x. That inexactness — with safe_pow's 0-fallback for
+// undefined bases — was the stated justification for display_simplify having no Pow
+// rewrite at all (docs/54). docs/69 replaced safe_pow with IEEE pow plus one special
+// case, and IEEE pow is exact at y=1, so the justification no longer holds.
+//
+// The rewrite is NOT being added here; that is a separate decision with its own
+// measurement. This test is the standing evidence that the door is now open, and it will
+// fail loudly if the value path ever regresses to exp(y*log(x)).
+void test_pow_one_is_exact_for_positive_base() {
     for (double x : {3.0, 0.1, 1e-10, 1e10, 7.0, 100.0, 123456.789}) {
         const double viaSafePow = detail::apply_binary<double>(BinaryOp::Pow, x, 1.0);
-        if (viaSafePow != x) any_inexact = true;
+        CHECK(viaSafePow == x);
     }
-    CHECK(any_inexact);  // confirms the exclusion of t^1 -> t is justified
 }
 
 // --- GUI regression fixture ---------------------------------------------------------
@@ -235,8 +238,9 @@ void test_identity_pow_zero_excluded() {
     CHECK_STR(tree, "(x0 ^ 0)");
 }
 
-// t^1 is NOT eliminated (pow(x,1) is not bit-exact to x for x>0; see
-// test_pow_one_not_exact_for_positive_base and docs/54).
+// t^1 is still NOT eliminated. The original reason (pow(x,1) not being bit-exact to x)
+// no longer applies since docs/69 — see test_pow_one_is_exact_for_positive_base — but
+// adding the rewrite is a separate change; this asserts today's behaviour, not a law.
 void test_identity_pow_one_excluded() {
     const Tree tree = {variable_node(0), constant_node(0, 1.0), binary_node(BinaryOp::Pow)};
     CHECK_STR(tree, "(x0 ^ 1)");
@@ -489,7 +493,7 @@ void test_rendering_is_reproducible() {
 }  // namespace
 
 int main() {
-    test_pow_one_not_exact_for_positive_base();
+    test_pow_one_is_exact_for_positive_base();
     test_gui_regression_constant_chain_collapse();
     test_div_chain_mul_then_div();
     test_div_chain_div_then_div();

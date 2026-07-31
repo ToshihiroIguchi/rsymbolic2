@@ -54,7 +54,7 @@ inline void soa_res_unary(UnaryOp op, double* a, std::size_t P) {
         case UnaryOp::Sin:    for (std::size_t p = 0; p < P; ++p) a[p] = libm::sin(a[p]); break;
         case UnaryOp::Cos:    for (std::size_t p = 0; p < P; ++p) a[p] = libm::cos(a[p]); break;
         case UnaryOp::Sqrt:   for (std::size_t p = 0; p < P; ++p)
-                                  a[p] = std::sqrt(a[p] > 0.0 ? a[p] : 0.0); break;  // safe, == dual.hpp
+                                  a[p] = rsymbolic::sqrt(a[p]); break;  // safe_sqrt, == dual.hpp
         case UnaryOp::Tanh:   for (std::size_t p = 0; p < P; ++p) a[p] = std::tanh(a[p]); break;
         case UnaryOp::Abs:    for (std::size_t p = 0; p < P; ++p) a[p] = std::abs(a[p]); break;
         case UnaryOp::Square: for (std::size_t p = 0; p < P; ++p) a[p] = a[p] * a[p]; break;
@@ -159,9 +159,16 @@ inline void soa_jac_unary(UnaryOp op, double* s, std::size_t P, double* coeff) {
             for (std::size_t p = 0; p < P; ++p) val[p] = libm::cos(val[p]);
             break;
         case UnaryOp::Sqrt:
-            for (std::size_t p = 0; p < P; ++p) coeff[p] = std::sqrt(val[p] > 0.0 ? val[p] : 0.0);
+            // multi_dual.hpp::sqrt: out of domain the VALUE and every lane are NaN.
+            // `coeff[p] > 0.0` is false for NaN, so writing the 0-branch here would
+            // silently give the gradient 0 under a NaN value — which is exactly what
+            // test_soa_eval's sqrt_negative case catches.
+            for (std::size_t p = 0; p < P; ++p) coeff[p] = rsymbolic::sqrt(val[p]);
             for (int c = 0; c < N; ++c) { double* gc = g(c);
-                for (std::size_t p = 0; p < P; ++p) gc[p] = coeff[p] > 0.0 ? gc[p] / (2.0 * coeff[p]) : 0.0; }
+                for (std::size_t p = 0; p < P; ++p)
+                    gc[p] = std::isnan(coeff[p]) ? coeff[p]
+                          : coeff[p] > 0.0       ? gc[p] / (2.0 * coeff[p])
+                                                 : 0.0; }
             for (std::size_t p = 0; p < P; ++p) val[p] = coeff[p];
             break;
         case UnaryOp::Tanh:
@@ -251,18 +258,11 @@ inline void soa_jac_binary(BinaryOp op, double* a, const double* b, std::size_t 
             for (std::size_t p = 0; p < P; ++p) {
                 const double x = av[p];
                 const double y = bv[p];
-                double pval, dx = 0.0, dy = 0.0;
+                const double pval = rsymbolic::pow(x, y);  // dual.hpp: one definition
+                double dx = 0.0, dy = 0.0;
                 if (x > 0.0) {
-                    pval = libm::exp(y * libm::log(x));
                     dx = y * libm::exp((y - 1.0) * libm::log(x));
                     dy = pval * libm::log(x);
-                } else if (x == 0.0 && y > 0.0) {
-                    pval = 0.0;
-                } else if (x < 0.0) {
-                    const double yr = std::round(y);
-                    pval = (std::fabs(y - yr) < 1e-6) ? libm::pow(x, yr) : 0.0;
-                } else {
-                    pval = 0.0;
                 }
                 pv[p] = pval; dpdx[p] = dx; dpdy[p] = dy;
             }
