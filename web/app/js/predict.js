@@ -11,10 +11,11 @@
 // neg/exp/log/sin/cos/sqrt/tanh/abs/square/inv/erf/sinh/cosh, and
 // fully-parenthesised binary `(a op b)` with op in + - * / ^.
 //
-// Safe-pow caveat (identical to the Python wrapper): `^` maps to JS `**`, which yields
-// NaN for a negative base with a non-integer exponent — this differs from the
-// training-time safe pow (which returns 0 there). It only matters if the fitted
-// expression raises a negative base to a fractional power on the prediction inputs.
+// Safe-pow caveat (identical to the Python wrapper): `^` maps to JS `**`, which agrees with
+// the training-time safe_pow on the ordinary out-of-domain cases — both are NaN for a
+// negative base with a non-integer exponent (docs/69). They still part at the edges the
+// SR.jl transcription guards explicitly: `0 ** -1` and `(-Infinity) ** 0.5` are Infinity
+// here and NaN in the engine. It only matters if the prediction inputs reach them.
 
 // erf: the one operator with no JavaScript counterpart (R borrows pnorm, Python borrows
 // math.erf, both exact; `Math` has nothing). Computed here to near double precision by the

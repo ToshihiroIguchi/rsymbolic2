@@ -92,34 +92,60 @@ draw_extrap <- function(key, n) {
 
 # Evaluate an engine expression string on rows of X, replicating the ENGINE's
 # operator semantics (dual.hpp / soa_eval.hpp), not R's:
-#   sqrt(x) = sqrt(x) if x > 0 else 0                      [safe, neg -> 0]
-#   x ^ y   = safe_pow: x>0 -> exp(y*log(x)); x==0,y>0 -> 0;
-#             x<0, y within 1e-6 of an integer -> std::pow(x, round(y));
-#             otherwise 0
+#   sqrt(x) = sqrt(x) if x >= 0 else NaN                   [safe_sqrt]
+#   x ^ y   = safe_pow (branch table below)
 #   log     = unprotected (NaN for x <= 0), like std::log
-# Also, the engine's printer emits negative constant leaves WITHOUT parens
-# (e.g. "(-1.3 ^ x1)"), which R would parse as -(1.3^x1) because unary minus
-# binds looser than ^. Unary negative literals are therefore wrapped in parens
-# before parsing (binary minus is always printed with spaces, "a - b", so it
-# never has a digit glued to the '-').
+#
+# safe_sqrt and safe_pow are transcribed from dual.hpp, which is itself a literal
+# transcription of SymbolicRegression.jl Operators.jl. Out of domain is NaN, NOT 0
+# (docs/69): a NaN makes the loss non-finite and the candidate is rejected, which is
+# exactly what this audit needs to see — a candidate that is undefined off the training
+# box must fail the extrapolation test, not quietly answer 0 there.
+#
+# This file returned 0 out of domain until the engine stopped doing so (commit 8077edb).
+# It was therefore CORRECT for the audits already recorded in docs/44, docs/45 and
+# docs/47, which ran against the old engine; it is the runs from 8077edb onward that
+# need this version. Old outputs are not invalidated, and are not comparable with new
+# ones either.
+#
+# The branch tables are transcribed rather than folded into their "obvious"
+# simplification, for the reason docs/69 4.1 records: the simplification is wrong at
+# the infinities, where R's ^ agrees with IEEE pow ((-Inf)^0.5 is Inf) and SR.jl's
+# `x < 0` guard returns NaN.
+#
+# The parity of this transcription against the C++ is checked, over a grid that includes
+# those infinities, by benchmarks/diag_audit_operator_parity.R. Run it after any change
+# to dual.hpp.
+
+# dual.hpp:  if (!(x >= 0.0)) return NaN; return std::sqrt(x);
+# Written as !(z >= 0) rather than (z < 0) so a NaN argument also yields NaN.
 engine_sqrt <- function(z) {
   out <- rep(NaN, length(z))
-  ok  <- !is.na(z)
-  out[ok] <- ifelse(z[ok] > 0, sqrt(pmax(z[ok], 0)), 0)
+  ok  <- which(z >= 0)          # which() drops the NA/NaN rows, leaving them NaN
+  out[ok] <- sqrt(z[ok])
   out
 }
+
+# dual.hpp:  if (isfinite(y) && floor(y) == y) { if (y < 0 && x == 0) return NaN; }
+#            else { if (y > 0 && x <  0) return NaN;
+#                   if (y < 0 && x <= 0) return NaN; }
+#            return pow(x, y);
+# The fall-through is R's `^`, which is IEEE pow — including pow(anything, 0) == 1,
+# so NaN inputs are deliberately not special-cased here either.
 engine_pow <- function(x, y) {
   n <- max(length(x), length(y))
   x <- rep_len(x, n); y <- rep_len(y, n)
-  out <- rep(NaN, n)
-  ok  <- !is.na(x) & !is.na(y)
-  out[ok] <- 0
-  pos <- ok & x > 0
-  out[pos] <- exp(y[pos] * log(x[pos]))
-  negint <- ok & x < 0 & abs(y - round(y)) < 1e-6
-  out[negint] <- x[negint]^round(y[negint])
+  out <- x^y
+  int_y <- is.finite(y) & floor(y) == y     # isinteger(y); Inf is not an integer
+  out[which( int_y & y < 0 & x == 0)] <- NaN
+  out[which(!int_y & y > 0 & x <  0)] <- NaN
+  out[which(!int_y & y < 0 & x <= 0)] <- NaN
   out
 }
+# The engine's printer emits negative constant leaves WITHOUT parens (e.g. "(-1.3 ^ x1)"),
+# which R would parse as -(1.3^x1) because unary minus binds looser than ^. Unary negative
+# literals are therefore wrapped in parens before parsing (binary minus is always printed
+# with spaces, "a - b", so it never has a digit glued to the '-').
 eval_expr <- function(expr_str, X) {
   expr_str <- gsub("(?<![\\w.)])(-[0-9.]+(?:[eE][+-]?[0-9]+)?)", "(\\1)",
                    expr_str, perl = TRUE)

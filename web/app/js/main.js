@@ -70,20 +70,21 @@ const UNARY_GLYPH = {
 };
 // Pill tooltip: the engine identifier first (this is the only place it appears now, and the
 // form a macro body calls for the unary ops), then the meaning. Guard behaviour is stated only
-// where it was read off the core: sqrt clamps a negative argument to 0 and pow is safe_pow
-// (dual.hpp), while div/inv/log are unguarded (multi_dual.hpp recip, "Unguarded, like
+// where it was read off the core: sqrt and pow reject their out-of-domain arguments with NaN,
+// which discards the candidate (safe_sqrt / safe_pow in dual.hpp, SR.jl semantics — docs/69),
+// while div/inv/log are unguarded (multi_dual.hpp recip, "Unguarded, like
 // operator/"). Absence of a guard clause here means the operator has no guard.
 const OP_HINT = {
   add: 'add — a + b', sub: 'sub — a - b', mul: 'mul — a × b',
   div: 'div — a ÷ b; no divide-by-zero guard',
-  pow: 'pow — a raised to b; safe_pow, so a negative base with a fractional exponent gives 0',
+  pow: 'pow — a raised to b; safe_pow, so a negative base with a fractional exponent is NaN and the candidate is rejected',
   neg: 'neg(x) — sign flip, -x',
   exp: 'exp(x) — e to the power x',
   log: 'log(x) — natural logarithm, base e (not base 10)',
   sin: 'sin(x) — sine, in radians',
   cos: 'cos(x) — cosine, in radians',
   tanh: 'tanh(x) — hyperbolic tangent',
-  sqrt: 'sqrt(x) — square root; guarded, a negative argument gives 0',
+  sqrt: 'sqrt(x) — square root; guarded, a negative argument is NaN and the candidate is rejected',
   square: 'square(x) — x times x',
   inv: 'inv(x) — reciprocal, 1/x; no divide-by-zero guard',
   abs: 'abs(x) — absolute value',
@@ -1528,7 +1529,11 @@ function selectEquation(i) {
   const eqEl = $("eq-string");
   const shown = front.expression_simplified ? front.expression_simplified[i] : front.expression[i];
   eqEl.textContent = shown;
-  eqEl.title = front.expression[i];
+  // The raw string is the only thing on this card that is NOT the displayed form, so name it
+  // rather than showing a bare second string — and only when the simplifier actually changed
+  // something, since an identical tooltip repeating the line under it says nothing.
+  eqEl.title = shown === front.expression[i] ? ""
+    : `As searched, before display simplification (docs/52): ${front.expression[i]}`;
 
   // Tree of the same string the hero card shows (docs/48 D6). Its node count is the printed
   // form's, not the `complexity` column's — see the caption's title attribute.
@@ -1584,8 +1589,15 @@ function renderEvalAccounting(res) {
 // --- Export wiring ----------------------------------------------------------------
 function wireExport() {
   $("copy-expr").addEventListener("click", () => {
-    if (state.selectedIndex != null)
-      copyText(state.result.pareto_front.expression[state.selectedIndex]);
+    if (state.selectedIndex != null) {
+      const front = state.result.pareto_front;
+      // Same rule as LaTeX and SymPy below: copy what is displayed. This button sits beside
+      // the string, so it must hand over that string — it used to copy the raw round-trip
+      // form instead, which differs whenever the display simplifier fired (x*x -> square(x)).
+      // The raw form stays reachable: it is the element's hover title and the CSV's
+      // `expression` column.
+      copyText((front.expression_simplified || front.expression)[state.selectedIndex]);
+    }
   });
   $("copy-latex").addEventListener("click", () => {
     if (state.selectedIndex != null) {

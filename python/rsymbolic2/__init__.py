@@ -222,11 +222,13 @@ class SymbolicRegressionResult:
 
         Notes
         -----
-        ``pow(x, y)`` nodes are rendered as ``x ^ y`` and evaluated with Python's
-        ``**`` (NumPy ``power``), which yields ``nan`` for negative bases with
-        non-integer exponents. This differs slightly from the safe-pow semantics used
-        during training (which returns 0 there); it only matters if the training
-        domain included negative bases under a fractional power.
+        NumPy's operators agree with the guarded operators used during training on the
+        ordinary out-of-domain cases: ``np.sqrt`` of a negative number, and ``pow(x, y)``
+        nodes (rendered ``x ^ y``, evaluated with ``**``) for a negative base under a
+        fractional exponent, are ``nan`` both here and in the engine (see ``docs/69``).
+        They part only at the edges the engine guards explicitly, where NumPy follows
+        IEEE: ``0 ** -1`` and ``(-inf) ** 0.5`` are ``inf`` here and ``nan`` in the
+        engine. It matters only if the prediction inputs reach them.
         """
         X = _as_design_matrix(newdata, "newdata")
         if X.shape[1] != self.n_features:

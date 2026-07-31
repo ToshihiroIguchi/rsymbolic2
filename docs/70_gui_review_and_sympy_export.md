@@ -212,9 +212,79 @@ The link stayed, as a link: this is a demo of a library, and that is worth sayin
 session. §3.6 is the other half of this change — dropping the permanent warning is only safe
 if the conditional one fires when it should.
 
+### 3.10 The copy button beside the equation copied a different equation (defect)
+
+Found while re-reading §1: the hero card's clipboard icon copied `expression`, the raw
+round-trip string, while the line it sits beside displays `expression_simplified`. Both
+choices are individually defensible and together they are a defect — a control adjacent to a
+text must hand over that text. It was not a cosmetic gap. Measured on the shipped example:
+
+| | before | after |
+|---|---|---|
+| shown | `((square(x0) * 2.5) - 1.3)` | unchanged |
+| clipboard | `(-1.3 - (x0 * (x0 * -2.5)))` | `((square(x0) * 2.5) - 1.3)` |
+
+Not a spelling difference: a different term order, a different placement of the sign, and
+`square` where the user had only enabled `mul`. `copy-latex` and `copy-sympy` already copy
+the displayed (simplified) rendering and say so in a comment; `copy-expr` was the lone
+exception, so the fix is to apply the rule the other two already follow.
+
+The raw string is still reachable — it is the line's hover title and the CSV's `expression`
+column — but the title now *names* it (`As searched, before display simplification`) instead
+of showing a bare second string, and is set only when the simplifier actually changed
+something. An identical tooltip repeating the line beneath it says nothing.
+
 ---
 
-## 4. What was checked
+## 4. Follow-through from `8077edb` (out of domain is NaN, not 0)
+
+Making the operators reject out-of-domain arguments changed what four surfaces were
+describing, and none of them had been updated. Three were comments and tooltips; one was
+executable.
+
+* **Wrong in the GUI (user-visible).** The operator-pill tooltips promised `pow` gives
+  **0** for a negative base under a fractional exponent, and `sqrt` gives **0** for a
+  negative argument. Both are NaN now, and the candidate is rejected — which is the more
+  useful thing to tell someone choosing operators. Fixed, with the header comment above
+  `OP_HINT` that sourced the claim.
+* **Wrong in three `predict` docs.** `web/app/js/predict.js`, `?predict.rsymbolic2` and
+  `Result.predict`'s docstring each said the wrapper's `^` "differs from the training-time
+  safe pow (which returns 0 there)". The opposite is now true: they **agree** on the
+  ordinary cases, and part only at the edges the SR.jl transcription guards explicitly —
+  `0 ** -1` and `(-Inf) ** 0.5` are `Inf` in R/NumPy/JS and NaN in the engine. All three now
+  say that, in the same words.
+* **Wrong in `benchmarks/diag_structural_audit.R` (executable).** `engine_sqrt` and
+  `engine_pow` still *implemented* the pre-`8077edb` semantics: negative → 0, and a
+  "within 1e-6 of an integer" exponent tolerance the engine dropped as difference #12
+  (docs/29). This is the one that mattered: the script's whole purpose is to decide whether
+  a recovered expression is real structure or a threshold grinder by evaluating it off the
+  training box, and an evaluator that answers a finite 0 where the engine refuses to answer
+  at all gets that verdict from a formula the engine would never have accepted.
+
+  Both functions are now transcribed literally from `dual.hpp`, branch for branch, for the
+  reason docs/69 §4.1 records — the folded form is wrong at the infinities.
+
+  **Verified by differential test against the C++**, the same method docs/69 used against
+  Julia, and kept as `benchmarks/diag_audit_operator_parity.R` so the next drift is loud:
+  it compiles a throwaway emitter against `dual.hpp`, prints `rsymbolic::sqrt` /
+  `rsymbolic::pow` over a 255-case grid (15 bases × 16 exponents, including ±Inf, ±0 and
+  NaN — where the folded branch table is wrong), pulls the two functions out of the audit
+  script without running the audit, and compares case by case with NaN equal to itself.
+  **New: 255/255 agree.** Old: 57 of 168 disagree on the *finite* subgrid
+  alone, and it raises `NAs are not allowed in subscripted assignments` outright whenever an
+  operand is ±Inf or NaN — a latent crash in a tool whose job is to evaluate expressions
+  outside the box that made them finite.
+
+  Scope of the correction: the script was *correct* for the audits recorded in docs/44,
+  docs/45 and docs/47, which ran against the pre-`8077edb` engine. Those results are not
+  invalidated. They are also not comparable with anything this script produces from now on.
+  The script's existing self-check — re-evaluating on the training sample and requiring the
+  recorded train NMSE back, or the verdict is void — is what would have caught the mismatch
+  on the first post-`8077edb` audit.
+
+---
+
+## 5. What was checked
 
 * `test_to_sympy.cpp` (48), full standalone suite 30/30.
 * `pytest python/tests` 73 passed, including the 7 new SymPy round-trip tests.
@@ -225,3 +295,15 @@ if the conditional one fires when it should.
   tooltip, the batching action and its persistence, the loss-axis select redraw, the SymPy
   copy (`sin(x0) + x1**2` from a displayed `(sin(x0) + square(x1))`) and the CSV column.
   Zero console errors.
+
+Added for §3.10 and §4:
+
+* The GUI driven again for the copy fix: `copy-expr` now yields exactly the displayed
+  string, `copy-sympy` still yields `x0**2*2.5 - 1.3`, and clicking through all 13 Pareto
+  members shows the hover title set on the 11 the simplifier changed and empty on the two it
+  did not (a bare constant and `exp(x0)`). Zero console errors.
+* `benchmarks/diag_audit_operator_parity.R` (§4): 255/255 on Windows and on Ubuntu (WSL).
+* `eval_expr` smoke-tested end to end on `sqrt(x0)`, `(x0 ^ x1)`, `(x0 ^ -1.0)` and
+  `(square(x0) * -2.5)` over a grid spanning negative, zero and positive bases.
+* Docs only in R and Python (roxygen prose and a docstring); `predict.rsymbolic2.Rd`
+  regenerated with `roxygen2::roxygenise()` and checked with `tools::checkRd()`.

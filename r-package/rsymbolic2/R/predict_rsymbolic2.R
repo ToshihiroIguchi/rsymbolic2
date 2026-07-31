@@ -10,12 +10,13 @@
 #' any other member of the Pareto front.
 #'
 #' The expression is evaluated using R's standard arithmetic operators and math
-#' functions.  \code{pow(x, y)} nodes are rendered as \code{x ^ y} and use R's
-#' \code{^} operator, which returns \code{NaN} for negative bases with
-#' non-integer exponents.  This differs slightly from the safe-pow semantics
-#' used during training (which returns 0 in those cases).  If the training
-#' variable domains excluded negative inputs (the Feynman / Nguyen defaults),
-#' this distinction does not affect predictions.
+#' functions.  These agree with the guarded operators used during training on the
+#' ordinary out-of-domain cases: \code{sqrt} of a negative number and \code{x ^ y}
+#' for a negative base under a fractional exponent are \code{NaN} both here and in
+#' the engine (see \code{docs/69}).  They part only at the edges the engine guards
+#' explicitly, where R follows IEEE: \code{0 ^ -1} and \code{(-Inf) ^ 0.5} are
+#' \code{Inf} in R and \code{NaN} in the engine.  It matters only if the prediction
+#' inputs reach them.
 #'
 #' An expression that uses no data column -- a bare constant, which the simplest
 #' Pareto-front member usually is -- yields the same value for every row; it is

@@ -328,8 +328,13 @@
           <div id="eq-latex" class="eq-latex"></div>
           <div class="eq-string">
             <code id="eq-string"></code>
+            <!-- Copies the string shown to its left, which is the display-simplified form
+                 (docs/52) like every other copy on this card. The raw searched string — the
+                 frozen round-trip source predict() parses back — is this line's hover title
+                 and the CSV's `expression` column. -->
             <button id="copy-expr" class="btn small icon-btn" type="button"
-                    aria-label="Copy expression string" title="Copy expression string">
+                    aria-label="Copy expression string"
+                    title="Copy the expression string shown here">
               <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none"
                    stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="4" y="3" width="8" height="11" rx="1.5" /><path d="M6 3v-.5A1.5 1.5 0 0 1 7.5 1h1A1.5 1.5 0 0 1 10 2.5V3" />
