@@ -196,6 +196,12 @@ limits:
 Median cost is microseconds; the p90 stays in the low milliseconds. At finalize time
 the function runs once per Pareto member (≤ ~25 calls).
 
+> **Layer-2 adoption here is also unrepresentative — see docs/72 §5.** The rows below
+> report 10-40 Layer-2 adoptions per 300 random trees. Measured on 1750 real Pareto
+> expressions instead, Layer 2 is adopted **2.8 %** of the time (Layer 1 does nearly all
+> the visible work), and raising the caps 10x changes nothing at all below 21 nodes.
+> Same sampling error as the one described immediately below.
+
 **The conclusion drawn here — "the cap is genuinely a safety net" — did not hold.** These
 runs used `generate_random_tree` at `max_depth ≤ 8`, which produces trees averaging 5-12
 nodes: far below the `maxsize = 30` the display layer is actually handed, so the cap looked
