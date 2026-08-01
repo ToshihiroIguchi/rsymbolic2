@@ -1,6 +1,6 @@
 # 68. Closing the Windows libm gap: it was never the compiler
 
-**Date:** 2026-07-30
+**Date:** 2026-07-30 (§6.1, the PySR head-to-head follow-up, added 2026-08-01)
 **Status:** implemented and verified on both platforms. Supersedes `docs/67` §6's decision
 ("C — do nothing") and corrects two of its statements (§9).
 **Change:** `rsymbolic/platform/libm.hpp` + `platform_libm.cpp`; call sites in `tree.hpp`,
@@ -172,6 +172,48 @@ each other: **4.44x wall / 4.63x cpu on equal work.**
 
 This is the number that matters: it is measured on the artefact users install, and it proves
 the redirect activates inside a DLL loaded by `R.exe` rather than silently falling back.
+
+### 6.1 Follow-up (2026-08-01): what it did to the PySR head-to-head
+
+The §6 speedups are OFF-vs-ON against our own prior code. They say nothing on their own about
+the reference tool. This subsection closes that gap for the one Feynman problem where the
+wall-clock comparison against SR.jl was *methodologically clean*.
+
+Why `rel_mass` is the right problem to re-measure. On most of the Feynman set a wall-clock
+comparison is confounded by the asymmetric stopping criterion `docs/15` §5 records
+(rsymbolic2 early-stops at `target_loss`, SR.jl consumes its full budget). `rel_mass` is
+the exception in rsymbolic2's favour-free direction: it **recovers** (NMSE ~1e-9) but never
+reaches `target_loss = 1e-10`, so every seed runs the full 2800 generations — the same
+full-budget behaviour as SR.jl's default `early_stop_condition=None`. Both tools are
+therefore timed doing all of the work, and the ratio is pure throughput. (This is the same
+property that made `rel_mass` `docs/37`'s thread-scaling test case.)
+
+Gate config, `OMP_NUM_THREADS=4`, 5 seeds, HEAD `d130211` reinstalled from source
+(`benchmarks/results/feynman_gate_diag_20260801.csv`):
+
+| | median wall | vs SR.jl |
+|---|---:|---:|
+| rsymbolic2, redirect OFF (`feynman_gate_20260627.csv`, 5 seeds) | 85.4 s | 2.93x slower |
+| **rsymbolic2, redirect ON (2026-08-01, 5 seeds)** | **32 s** | **1.10x** |
+| SR.jl / PySR (`sr_comparison_feynman_20260621.csv`, 3 seeds: 20.4 / 29.2 / 51.0) | 29.1 s | — |
+
+**2.67x against our own prior gate number**, inside the 2.27-4.65x this document's §6 measured
+for `rel_mass` under a controlled A/B — so the two agree, and the head-to-head deficit is gone:
+1.10x sits well inside SR.jl's own 20-51 s seed spread. Recovery is unchanged at 5/5; the NMSE
+values do not reproduce the 2026-06-27 run, which is §7's documented consequence on Windows,
+not a regression.
+
+Two limits on this result, stated so it is not over-read:
+
+- **One problem, not the set.** The other problems where rsymbolic2 trailed (planck,
+  boltzmann_dist, bose_einstein, doppler_rel) are transcendental-heavy in the same way and are
+  *expected* to have moved similarly, so the 25-problem totals (1191 s vs 1264 s at the time)
+  have probably shifted in rsymbolic2's favour. **That is an inference, not a measurement.**
+  The full 25x5 re-run has not been done.
+- **The SR.jl arm is the 2026-06-21 CSV**, not a fresh run, and its times exclude Julia JIT
+  compilation (warmed up untimed, `benchmarks/05_feynman_pysr_comparison.jl:212`) — a choice
+  that favours the reference tool. Both are unchanged from the earlier comparison, so the
+  *delta* recorded here is attributable to the redirect.
 
 ## 7. The bit-identity break, and its exact blast radius
 
