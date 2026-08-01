@@ -1,6 +1,7 @@
 // Tests for the SymPy serializer (rsymbolic/expression/sympy.hpp): precedence-aware
-// minimal parenthesization in Python syntax, and the four tokens to_string() emits that
-// Python does not accept — square(), inv(), neg() and `^`.
+// minimal parenthesization in Python syntax, and the one token to_string() emits that
+// Python misreads — `^`, the rendering of both a Pow node and a Square node, which Python
+// takes for xor everywhere except inside sympify() (docs/71 §6).
 //
 // The strings asserted here are checked for SEMANTIC correctness (that sympify() parses
 // them to the same function) by python/tests/test_sympy_export.py, which round-trips a

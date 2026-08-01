@@ -45,9 +45,14 @@ def test_front_carries_sympy_renderings():
 def test_sympy_parses_without_undefined_functions():
     """The failure this export exists to remove.
 
-    `square(a)`, `inv(a)` and `neg(a)` are not SymPy functions, and sympify() turns
-    each into an undefined APPLIED FUNCTION rather than raising — a silently wrong
-    expression. Nothing in the exported form may do that.
+    A name SymPy does not know becomes an undefined APPLIED FUNCTION rather than an
+    error — an expression that differentiates, simplifies and prints while meaning
+    nothing. Nothing in the exported form may do that.
+
+    `square(a)`, `inv(a)` and `neg(a)` used to be exactly that case; the renderer now
+    prints those nodes as `(a ^ 2)`, `(1 / a)` and `(-a)` (docs/71), so the *raw*
+    expression is asserted to be sympify-clean too. What the export still exists for
+    is `^`, which sympify() accepts as a power and eval()/NumPy read as xor.
     """
     from sympy.core.function import AppliedUndef
 
@@ -60,8 +65,18 @@ def test_sympy_parses_without_undefined_functions():
                 f"{key}={m[key]!r} parsed with undefined functions "
                 f"{expr.atoms(AppliedUndef)}"
             )
-        if any(t in m["expression"] for t in ("square(", "inv(", "neg(", "^")):
+        if "^" in m["expression"]:
             seen_a_rewrite = True
+        # The renderer spells no engine-internal operator name, so the raw string is
+        # itself free of undefined functions — the property that used to hold only
+        # for the export.
+        for name in ("square(", "inv(", "neg("):
+            assert name not in m["expression"], (
+                f"to_string() must not spell {name!r}: {m['expression']!r}"
+            )
+        assert not sympy.sympify(m["expression"]).atoms(AppliedUndef), (
+            f"expression={m['expression']!r} parsed with undefined functions"
+        )
     assert seen_a_rewrite, "the front exercised none of the rewritten tokens"
 
 

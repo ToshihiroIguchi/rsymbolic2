@@ -101,7 +101,7 @@ void test_identity_mul_zero_unchanged() {
 void test_double_negation_unchanged() {
     const Tree tree = {variable_node(0), unary_node(UnaryOp::Neg),
                        unary_node(UnaryOp::Neg)};
-    CHECK_STR(tree, "neg(neg(x0))");
+    CHECK_STR(tree, "(-(-x0))");
 }
 
 // --- Stage 2: combine_operators (cases from test_simplification.jl) ---------------

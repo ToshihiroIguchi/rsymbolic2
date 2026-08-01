@@ -240,7 +240,40 @@ inline void set_constants(Tree& tree, const std::vector<double>& constants) {
     }
 }
 
-// Render a tree as a human-readable infix string (for logging / debugging).
+// Render a tree as a human-readable infix string. This is the frozen round-trip form:
+// predict() parses it back in R, Python and JavaScript, and every display surface shows
+// it, so a change here is a change to all of them at once.
+//
+// Three unaries render as operators rather than as calls, because notation exists for
+// them and `square`/`inv`/`neg` are the engine's internal names, not anything a reader
+// writes:
+//
+//     square(a) -> (a ^ 2)        inv(a) -> (1 / a)        neg(a) -> (-a)
+//
+// Each reuses syntax this grammar already has — `^`, `/` and unary minus are all in the
+// parser and in all three predict() wrappers — so nothing new has to be parsed, and the
+// result agrees with to_latex(), which has always printed `a^{2}` and `-a`.
+//
+// The rewrites are exact, not approximate:
+//   * safe_pow's only guard for an integer exponent is `y < 0 && x == 0` (dual.hpp), so
+//     pow(x, 2) is x*x for every double including the infinities and NaN — what square()
+//     computes, and what the wrappers' `^` computes (they part from safe_pow only at
+//     0^-1 and (-Inf)^0.5, neither reachable with exponent 2).
+//   * recip(a) is literally `1.0 / a` and Div is `a / b`, both unguarded, so `(1 / a)`
+//     and inv(a) are the same IEEE operation.
+//   * negation is exact by definition.
+//
+// Every form is fully parenthesized, like the binaries, so the printer needs no
+// precedence tracking and no context is ever misread. The parenthesisation of neg is
+// load bearing rather than cosmetic: `-a ^ 2` would parse as -(a^2) in Python and R,
+// which is not square(neg(a)).
+//
+// A Square node and a Pow node over the constant 2 therefore print alike, as do Inv and
+// a Div under a 1. That is a property of the string, not a loss: each pair computes the
+// same function, and the string has never carried node identity (complexity comes from
+// the tree). Parsers still accept `square(...)`, `inv(...)` and `neg(...)` —
+// op_names.hpp keeps the names, and the predict wrappers keep the bindings — so strings
+// saved by an earlier version continue to evaluate.
 inline std::string to_string(const Tree& tree) {
     std::vector<std::string> stack;
     stack.reserve(tree.size());
@@ -257,7 +290,15 @@ inline std::string to_string(const Tree& tree) {
                 break;
             case NodeKind::Unary: {
                 const std::string a = stack.back();
-                stack.back() = std::string(detail::unary_name(node.uop)) + "(" + a + ")";
+                switch (node.uop) {
+                    case UnaryOp::Square: stack.back() = "(" + a + " ^ 2)"; break;
+                    case UnaryOp::Inv:    stack.back() = "(1 / " + a + ")"; break;
+                    case UnaryOp::Neg:    stack.back() = "(-" + a + ")"; break;
+                    default:
+                        stack.back() =
+                            std::string(detail::unary_name(node.uop)) + "(" + a + ")";
+                        break;
+                }
                 break;
             }
             case NodeKind::Binary: {

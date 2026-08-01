@@ -255,7 +255,7 @@ void test_double_negation_cancels() {
 
 void test_mul_neg_one_becomes_neg() {
     const Tree tree = {variable_node(0), constant_node(0, -1.0), binary_node(BinaryOp::Mul)};
-    CHECK_STR(tree, "neg(x0)");
+    CHECK_STR(tree, "(-x0)");
 }
 
 // neg(x0) * -1: the sign is pulled out of the factor and cancels with the -1.
@@ -268,7 +268,7 @@ void test_mul_neg_one_with_neg_factor_cancels() {
 // 0 - t -> neg(t); t - (-c) -> t + c (both exact).
 void test_sub_normal_forms() {
     const Tree t1 = {constant_node(0, 0.0), variable_node(0), binary_node(BinaryOp::Sub)};
-    CHECK_STR(t1, "neg(x0)");
+    CHECK_STR(t1, "(-x0)");
     const Tree t2 = {variable_node(0), constant_node(0, -2.0), binary_node(BinaryOp::Sub)};
     CHECK_STR(t2, "(x0 + 2)");
 }
@@ -313,14 +313,15 @@ void test_cancellation_keeps_zero_times_term() {
 }
 
 void test_like_factors_become_square() {
-    // x * x -> square(x): bit-exact (square evaluates as x*x).
+    // x * x -> square(x): bit-exact (square evaluates as x*x). A Square node prints as
+    // the infix power `(x0 ^ 2)`, not as square(x0) — see to_string() in tree.hpp.
     const Tree t1 = {variable_node(0), variable_node(0), binary_node(BinaryOp::Mul)};
-    CHECK_STR(t1, "square(x0)");
+    CHECK_STR(t1, "(x0 ^ 2)");
     // x*x*x*x -> square(square(x)).
     const Tree t2 = {variable_node(0), variable_node(0), binary_node(BinaryOp::Mul),
                      variable_node(0), binary_node(BinaryOp::Mul), variable_node(0),
                      binary_node(BinaryOp::Mul)};
-    CHECK_STR(t2, "square(square(x0))");
+    CHECK_STR(t2, "((x0 ^ 2) ^ 2)");
 }
 
 void test_add_constant_chain() {
@@ -344,18 +345,18 @@ void test_unary_rewrites() {
     CHECK_STR(t3, "abs(x0)");
     // square(neg(t)) -> square(t).
     const Tree t4 = {variable_node(0), unary_node(UnaryOp::Neg), unary_node(UnaryOp::Square)};
-    CHECK_STR(t4, "square(x0)");
+    CHECK_STR(t4, "(x0 ^ 2)");
     // Odd/even: sin(neg t) -> neg(sin t); cos(neg t) -> cos(t).
     const Tree t5 = {variable_node(0), unary_node(UnaryOp::Neg), unary_node(UnaryOp::Sin)};
-    CHECK_STR(t5, "neg(sin(x0))");
+    CHECK_STR(t5, "(-sin(x0))");
     const Tree t6 = {variable_node(0), unary_node(UnaryOp::Neg), unary_node(UnaryOp::Cos)};
     CHECK_STR(t6, "cos(x0)");
     // Same two classes for the special-function operators: erf and sinh are odd,
     // cosh is even (exact in IEEE libm, as test_dual.cpp asserts on the values).
     const Tree t5b = {variable_node(0), unary_node(UnaryOp::Neg), unary_node(UnaryOp::Erf)};
-    CHECK_STR(t5b, "neg(erf(x0))");
+    CHECK_STR(t5b, "(-erf(x0))");
     const Tree t5c = {variable_node(0), unary_node(UnaryOp::Neg), unary_node(UnaryOp::Sinh)};
-    CHECK_STR(t5c, "neg(sinh(x0))");
+    CHECK_STR(t5c, "(-sinh(x0))");
     const Tree t6b = {variable_node(0), unary_node(UnaryOp::Neg), unary_node(UnaryOp::Cosh)};
     CHECK_STR(t6b, "cosh(x0)");
     // Excluded inverse compositions stay untouched (docs/54): exp(log t), log(exp t).

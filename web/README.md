@@ -144,13 +144,14 @@ evaluation counts, and the notes a reader needs — above all that this build is
 bit-identical to R/Python, so re-running the snippet can return a different but equally
 valid expression).
 
-**SymPy** exists because the expression string beside it is not valid Python. `square()`,
-`inv()` and `neg()` are not SymPy functions, and `sympify()` turns each into an undefined
-applied function *without raising* — so pasting the displayed equation into SymPy gives
-something that simplifies and prints but means nothing. The SymPy button copies `a**2`,
-`1/a` and `-a` instead (docs/70). Note that the display simplifier can introduce `square()`
-on its own, from `x*x`, even when that operator is not in the library — so this applies to
-runs that never enabled it. The copied form is the *mathematical* expression: the engine's
+**SymPy** exists because the expression string beside it is not valid Python. Its power
+operator is `^`, which Python reads as **xor** — so pasting the displayed equation into
+`eval()`, NumPy or `lambdify()` computes the wrong function without complaining
+(`sympify()` alone is the exception). The SymPy button copies `**` instead (docs/70,
+docs/71). Note that the display simplifier can introduce a squaring on its own, from `x*x`,
+even when that operator is not in the library — so a displayed `^` can appear in a run that
+never enabled `pow` or `square`. The copied form is the *mathematical* expression: the
+engine's
 `sqrt`, `log` and `^` are domain-guarded and return NaN where SymPy returns a complex value.
 
 It is a report *about the run*, not a screenshot of the page: the charts are re-rendered

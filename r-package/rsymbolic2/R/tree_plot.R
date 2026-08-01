@@ -9,9 +9,11 @@
 # only normalises that language object into a flat node table and draws it, so nothing here
 # touches the search or the stored expression strings.
 
-# Unary operators the core prints in call form. `neg`, `square` and `inv` are not R
-# functions (predict.rsymbolic2() supplies them in its evaluation environment); the rest
-# are, but here they are only labels.
+# Unary operators the core can print in call form. `neg`, `square` and `inv` are no longer
+# among them — the core renders those three as `(-a)`, `(a ^ 2)` and `(1 / a)` (docs/71),
+# which arrive here as ordinary operators — but they stay in this list so a string saved by
+# an earlier version still draws. They are not R functions (predict.rsymbolic2() supplies
+# them in its evaluation environment); the rest are, but here they are only labels.
 UNARY_OPS <- c("neg", "exp", "log", "sin", "cos", "sqrt", "tanh", "abs", "square", "inv",
                "erf", "sinh", "cosh")
 
@@ -84,7 +86,10 @@ tree_draw_node <- function(e, variable_names) {
             return(list(kind = "constant", label = tree_constant_label(-inner),
                         children = list()))
         }
-        return(list(kind = "operator", label = "neg",
+        # Labelled with the sign the expression string shows, not the engine's "neg":
+        # one operator must not appear under two names on one screen. A one-child "-"
+        # is unambiguous beside the two-child subtraction.
+        return(list(kind = "operator", label = "-",
                     children = list(tree_draw_node(inner, variable_names))))
     }
     if (length(args) == 2L && op %in% names(BINARY_LABEL)) {

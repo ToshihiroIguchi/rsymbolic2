@@ -51,10 +51,14 @@ const BINARY_DEFAULT = new Set(["add", "sub", "mul"]);
 //
 // The engine identifier ("mul", "sqrt") is NOT shown beside it. It is the machine spelling of
 // the same thing, and there is nowhere the user has to type it from memory: an export snippet
-// is generated code they copy, results print the names back (`square(x0)`), and the macro
+// is generated code they copy, results print the names back (`sqrt(x0)`), and the macro
 // disclosure spells out the one place a name is written by hand, in its own example
 // (`exp(-square(x))`). The identifier lives in each pill's tooltip instead (OP_HINT), which is
 // where it is wanted - when reading a snippet, not when picking operators.
+//
+// square, inv and neg are the exception in both directions: a result never prints their
+// names (it prints `(x0 ^ 2)`, `(1 / x0)` and `(-x0)` — tree.hpp to_string, docs/71), while
+// a macro body still has to spell them, so their tooltips say both.
 //
 // sin/cos/tanh/exp keep their word form because that IS the notation for them; sqrt/square/
 // inv/abs/neg/log take the symbolic form, which is both shorter and unambiguous (`log` in
@@ -78,15 +82,15 @@ const OP_HINT = {
   add: 'add — a + b', sub: 'sub — a - b', mul: 'mul — a × b',
   div: 'div — a ÷ b; no divide-by-zero guard',
   pow: 'pow — a raised to b; safe_pow, so a negative base with a fractional exponent is NaN and the candidate is rejected',
-  neg: 'neg(x) — sign flip, -x',
+  neg: 'neg(x) — sign flip; results print it as -x',
   exp: 'exp(x) — e to the power x',
   log: 'log(x) — natural logarithm, base e (not base 10)',
   sin: 'sin(x) — sine, in radians',
   cos: 'cos(x) — cosine, in radians',
   tanh: 'tanh(x) — hyperbolic tangent',
   sqrt: 'sqrt(x) — square root; guarded, a negative argument is NaN and the candidate is rejected',
-  square: 'square(x) — x times x',
-  inv: 'inv(x) — reciprocal, 1/x; no divide-by-zero guard',
+  square: 'square(x) — x times x; results print it as x ^ 2',
+  inv: 'inv(x) — reciprocal; no divide-by-zero guard; results print it as 1 / x',
   abs: 'abs(x) — absolute value',
   erf: 'erf(x) — error function, the integral of a Gaussian: diffusion profiles, Maxwell-Boltzmann fractions, the normal CDF. Bounded between -1 and 1, so no guard is possible or needed',
   sinh: 'sinh(x) — hyperbolic sine: Butler-Volmer current, catenary. No overflow guard; a large argument gives a non-finite value and the candidate is rejected',
@@ -1593,7 +1597,7 @@ function wireExport() {
       const front = state.result.pareto_front;
       // Same rule as LaTeX and SymPy below: copy what is displayed. This button sits beside
       // the string, so it must hand over that string — it used to copy the raw round-trip
-      // form instead, which differs whenever the display simplifier fired (x*x -> square(x)).
+      // form instead, which differs whenever the display simplifier fired (x*x -> (x ^ 2)).
       // The raw form stays reachable: it is the element's hover title and the CSV's
       // `expression` column.
       copyText((front.expression_simplified || front.expression)[state.selectedIndex]);

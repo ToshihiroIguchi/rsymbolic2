@@ -119,14 +119,15 @@ function assert(cond, msg) {
     "every complexity_simplified is a positive integer <= the raw complexity");
 
   // 2b-2. SymPy renderings (docs/70). The GUI's "SymPy" button and the Pareto CSV both read
-  // these, and the reason they exist is that `expression` is NOT valid Python: square(),
-  // inv() and neg() are undefined in SymPy (sympify() turns each into an undefined applied
-  // function rather than raising) and `^` is not the power operator outside sympify's own
-  // convert_xor. The property asserted here is that no such token survives into the export.
+  // these, and the reason they exist is `^`: it is the engine's power operator on every
+  // display surface, and Python reads it as xor, so eval()/NumPy/lambdify() compute the
+  // wrong function without complaining. The property asserted here is that no such token
+  // survives into the export.
   //
-  // This run's operator set has no square/inv/neg at all, and the check still matters: the
-  // DISPLAY simplifier introduces square() on its own (x*x -> square(x)), so the equation on
-  // screen can spell an operator the user never enabled.
+  // This run's operator set has no pow, square, inv or neg at all, and the check still
+  // matters: the DISPLAY simplifier introduces a Square node on its own (x*x -> square(x)),
+  // which the renderer prints as `(x ^ 2)` (docs/71), so the equation on screen can carry a
+  // power the user never enabled.
   assert(Array.isArray(pf.sympy) && Array.isArray(pf.sympy_simplified),
     "pareto_front carries sympy/sympy_simplified arrays");
   assert(pf.sympy.length === pf.complexity.length
@@ -138,8 +139,13 @@ function assert(cond, msg) {
   const notPython = (s) => /\b(square|inv|neg)\s*\(/.test(s) || s.includes("^");
   assert(!pf.sympy.some(notPython) && !pf.sympy_simplified.some(notPython),
     "no sympy rendering spells square()/inv()/neg()/^");
-  assert(pf.expression_simplified.some((s) => s.includes("square(")),
-    "the display simplifier did introduce square() (so the check above was exercised)");
+  assert(pf.expression_simplified.some((s) => s.includes(" ^ 2)")),
+    "the display simplifier did introduce a Square node (so the check above was exercised)");
+  // The renderer never spells an engine-internal operator name, on any surface: those
+  // three nodes print as `(a ^ 2)`, `(1 / a)` and `(-a)` (docs/71).
+  const engineName = (s) => /\b(square|inv|neg)\s*\(/.test(s);
+  assert(!pf.expression.some(engineName) && !pf.expression_simplified.some(engineName),
+    "no expression string spells square()/inv()/neg()");
 
   // 2c. Progress callback (docs/53): purely observational — attaching one must not
   // change the result — and it fires at least once on this multi-iteration config

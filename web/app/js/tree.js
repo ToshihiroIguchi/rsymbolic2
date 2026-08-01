@@ -76,7 +76,10 @@ function toDrawNode(n, featureNames) {
     case "neg":
       if (n.a.type === "num")
         return { kind: "constant", label: constLabel(-n.a.value), children: [] };
-      return { kind: "operator", label: "neg", children: [toDrawNode(n.a, featureNames)] };
+      // Labelled with the sign the expression string shows, not the engine's "neg": one
+      // operator must not appear under two names on one screen. A one-child "-" is
+      // unambiguous beside the two-child subtraction.
+      return { kind: "operator", label: "-", children: [toDrawNode(n.a, featureNames)] };
     case "call":
       return { kind: "operator", label: n.name, children: [toDrawNode(n.a, featureNames)] };
     case "bin":

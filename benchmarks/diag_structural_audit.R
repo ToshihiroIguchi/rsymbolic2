@@ -10,7 +10,8 @@
 # a grinder is a local approximation and degrades by orders of magnitude.
 #
 # For every recovered=TRUE row of the listed result CSVs this script parses the
-# expression (engine syntax: x0..x(n-1), square(), infix ^), evaluates it on
+# expression (engine syntax: x0..x(n-1), infix ^ — a Square node prints as
+# `(x ^ 2)`, docs/71; `square()` still parses for older CSVs), evaluates it on
 # fresh points drawn from an EXTENDED domain box (lower bound 0.75*lo, upper
 # bound hi + 0.5*(hi - lo), with per-problem validity predicates so the true
 # formula itself stays well-defined), and reports

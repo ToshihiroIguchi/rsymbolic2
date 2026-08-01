@@ -18,6 +18,15 @@ assumed.
 
 ## 1. The export problem: `square(x0)` is not Python
 
+> **Superseded in part by [docs/71](71_operators_render_as_notation.md) (2026-08-01).**
+> `to_string()` no longer emits `square(a)`, `inv(a)` or `neg(a)` at all — those nodes
+> print as `(a ^ 2)`, `(1 / a)` and `(-a)`. The first three rows of the table below are
+> therefore historical, and with them the finding that `sympify()` mis-parses an
+> `expression` string: it no longer does. What still needs the export is `^`, and the
+> reason inverts — `sympify()` is the one thing that reads it correctly, while `eval()`,
+> `parse_expr()`, `lambdify()` and NumPy read it as xor. Everything else in this section,
+> including `to_sympy()`'s node handling, is unchanged.
+
 `to_string()` produces the frozen, evaluatable round-trip form — `predict()` parses it back
 (`parse_expression.hpp`), so it cannot change. It is also what every surface shows and
 copies. Four of its tokens look like they would not survive SymPy. **Measured against SymPy

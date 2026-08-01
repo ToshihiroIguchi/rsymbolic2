@@ -72,10 +72,11 @@ predict.rsymbolic2 <- function(object, newdata, expression = NULL, ...) {
         assign(paste0("x", j - 1L), X[, j], envir = env)
     }
     # Operators used in the expression string that are not in R's base:
-    #   neg(x)    -> unary minus
-    #   square(x) -> x^2
-    #   inv(x)    -> 1/x
     #   erf(x)    -> 2 * pnorm(x * sqrt(2)) - 1
+    #   neg(x)    -> unary minus     |  no longer emitted: the core renders these
+    #   square(x) -> x^2             |  three as `(-x)`, `(x ^ 2)` and `(1 / x)`
+    #   inv(x)    -> 1/x             |  (docs/71). Kept bound so an expression string
+    #                                   saved by an earlier version still evaluates.
     # R has sinh() and cosh() in base, but no erf(); the pnorm identity is exact to
     # double precision (pnorm uses Cody's algorithm), so predict() reproduces the
     # core's std::erf rather than approximating it.

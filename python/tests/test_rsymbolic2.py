@@ -77,7 +77,9 @@ def test_reciprocal_recovery_with_inv():
         X, y, unary_ops=["inv"], population_size=200, generations=60, seed=1
     )
     assert res.loss < 1e-4
-    assert "inv" in res.expression
+    # An Inv node prints as the division it is, `(1 / a)`, not as inv(a) — docs/71.
+    assert "inv(" not in res.expression
+    assert "/" in res.expression
     pred = res.predict(X, expression=res.expression)
     np.testing.assert_allclose(pred, y, atol=1e-2)
 

@@ -306,13 +306,15 @@ class SymbolicRegressionResult:
     ) -> str:
         """Return a Pareto-front member as Python source SymPy's ``sympify()`` parses.
 
-        The plain ``expression`` strings are *not* valid Python: ``square(a)``,
-        ``inv(a)`` and ``neg(a)`` have no SymPy function, and ``sympify()``
-        silently turns each into an undefined applied function rather than
-        raising. This rendering emits ``a**2``, ``1/a`` and ``-a`` instead; ``^``
-        also becomes ``**`` and every other operator already carries its Python
-        name, so the result is valid under plain ``eval()`` and NumPy as well as
-        ``sympify()``.
+        What this rewrites is ``^``. The engine's power operator is ``^`` on every
+        display surface, and Python reads that as *xor*: ``eval()``,
+        ``parse_expr()``, ``lambdify()`` and NumPy all evaluate the wrong
+        function, silently, for any expression that contains one — and since
+        ``square`` prints as ``(a ^ 2)``, that is most of them. (``sympify()``
+        alone is the exception: it passes ``convert_xor=True``.) Every other
+        operator in an ``expression`` string already carries its Python name, so
+        this rendering is valid under ``sympify()``, ``parse_expr()``, ``eval()``
+        and NumPy alike.
 
         Display-only, like :meth:`latex`: :meth:`predict` keeps using the
         ``expression`` strings. **This is the mathematical form, not the
@@ -658,8 +660,11 @@ class SymbolicRegressionResult:
 
 
 # --- Equation tree (docs/48 D6) --------------------------------------------------------
-# The unary operators the core prints in call form are `_UNARY_OPS` above (one definition
-# for both validation and drawing). Below are the binary glyphs. "/" and "*" are
+# The unary operators the core can print in call form are `_UNARY_OPS` above (one
+# definition for both validation and drawing); `neg`, `square` and `inv` are no longer
+# among them — the core renders those three as `(-a)`, `(a ^ 2)` and `(1 / a)` (docs/71) —
+# but they stay accepted so a string saved by an earlier version still draws. Below are
+# the binary glyphs. "/" and "*" are
 # rewritten: "/" reads as part of a fraction that is not there, and "*" is a raised
 # asterisk that sits off-centre inside a node. The R package and the web GUI use the same
 # substitutions, so one equation draws identically on all three surfaces.
@@ -713,7 +718,10 @@ def _tree_draw_node(node, variable_names) -> dict:
         if isinstance(inner, ast.Constant) and isinstance(inner.value, (int, float)):
             return {"kind": "constant", "label": _tree_const_label(-inner.value),
                     "children": []}
-        return {"kind": "operator", "label": "neg",
+        # Labelled with the sign the expression string shows, not the engine's "neg":
+        # one operator must not appear under two names on one screen. A one-child "-"
+        # is unambiguous beside the two-child subtraction.
+        return {"kind": "operator", "label": "-",
                 "children": [_tree_draw_node(inner, variable_names)]}
     if isinstance(node, ast.BinOp) and type(node.op) in _BINARY_LABEL:
         return {
@@ -782,7 +790,10 @@ def _erf(v):
 
 
 # Math namespace used by predict(). neg/square/inv/erf are not Python builtins; the rest map
-# to NumPy ufuncs so evaluation is vectorised over the input columns.
+# to NumPy ufuncs so evaluation is vectorised over the input columns. `neg`, `square` and
+# `inv` are no longer emitted — to_string() prints those nodes as `(-x)`, `(x ^ 2)` and
+# `(1 / x)` (docs/71) — but they stay bound so a string saved by an earlier version still
+# evaluates.
 def _eval_namespace(X: np.ndarray) -> dict:
     ns = {
         "__builtins__": {},

@@ -63,7 +63,7 @@ from rsymbolic2 import symbolic_regression
 X = np.linspace(-3, 3, 60).reshape(-1, 1)
 y = 2.5 * X[:, 0] ** 2 - 1.3            # the formula we hope to recover
 result = symbolic_regression(X, y, unary_ops=["square"], seed=1)
-print(result.expression)               # e.g. ((square(x0) * 2.5) - 1.3)
+print(result.expression)               # e.g. (((x0 ^ 2) * 2.5) - 1.3)
 ```
 
 The same `pip install` works in a plain virtualenv. For a thorough run use the full
@@ -261,7 +261,7 @@ result = symbolic_regression(
 **Step 3 — read the result.**
 
 ```python
-print(result.expression)     # lowest-loss formula, e.g. ((square(x0) * 2.5) - 1.3)
+print(result.expression)     # lowest-loss formula, e.g. (((x0 ^ 2) * 2.5) - 1.3)
 print(result.loss)           # training sum-of-squared-errors
 print(result.recommended)    # Pareto "best" accuracy/complexity trade-off
 print(result)                # Pareto front table with per-member score, training
@@ -323,7 +323,7 @@ result <- symbolic_regression(
 **Step 3 — read the result.**
 
 ```r
-result$expression     # lowest-loss formula, e.g. ((square(x0) * 2.5) - 1.3)
+result$expression     # lowest-loss formula, e.g. (((x0 ^ 2) * 2.5) - 1.3)
 result$loss           # training sum-of-squared-errors
 result$recommended    # Pareto "best" trade-off
 result$pareto_front   # data frame: complexity, loss, expression
@@ -649,14 +649,15 @@ frozen `expression` string:
 
 | field / call | form | for |
 |---|---|---|
-| `expression` | `((square(x0) * 2.5) - 1.3)` | the engine; round-trips through `predict()` |
+| `expression` | `(((x0 ^ 2) * 2.5) - 1.3)` | the engine; round-trips through `predict()` |
 | `latex` / `to_latex()` / `.latex()` | `x_{0}^{2} \cdot 2.5 - 1.3` | papers, slides |
 | `sympy` / `to_sympy()` / `.sympy()` | `x0**2*2.5 - 1.3` | SymPy, NumPy, plain `eval()` |
 
-The `sympy` rendering exists because `expression` is **not** valid Python: `square()`,
-`inv()` and `neg()` are not SymPy functions, and `sympify()` turns each into an undefined
-applied function *without raising* — a silently wrong expression. SymPy is not a
-dependency; these are strings.
+The `sympy` rendering exists because of `^`. The engine's power operator is `^` on every
+display surface, and Python reads that as **xor** — `eval()`, `parse_expr()`, `lambdify()`
+and NumPy silently compute the wrong function for any equation containing one, and since a
+squaring prints as `(a ^ 2)`, that is most of them. `sympify()` alone is the exception
+(`convert_xor=True`). SymPy is not a dependency; these are strings.
 
 > The SymPy form is the **mathematical** expression, not the engine's. rsymbolic2's
 > operators are domain-guarded (`docs/69`): `sqrt`, `log` and `^` return `NaN` outside

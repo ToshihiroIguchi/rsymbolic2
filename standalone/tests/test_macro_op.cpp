@@ -61,7 +61,9 @@ void test_parse_and_expand() {
     Tree out = expand_macro(gauss, arg);
     CHECK(is_valid_postfix(out));
     CHECK(out.size() == 4);
-    CHECK(to_string(out) == "exp(neg(square(x0)))");
+    // The body is written with square(); a Square node prints back as `(x0 ^ 2)`, so the
+    // two spellings meet in the parser, not in the renderer (tree.hpp to_string).
+    CHECK(to_string(out) == "exp((-(x0 ^ 2)))");
 }
 
 // Infix operators, precedence and the placeholder in a non-leading position.
@@ -69,7 +71,7 @@ void test_infix_grammar() {
     const MacroOp logistic = make("1 / (1 + exp(neg(x)))");
     Tree out = expand_macro(logistic, Tree{variable_node(2)});
     CHECK(is_valid_postfix(out));
-    CHECK(to_string(out) == "(1 / (1 + exp(neg(x2))))");
+    CHECK(to_string(out) == "(1 / (1 + exp((-x2))))");
     CHECK(logistic.placeholder != 0);  // the argument is not the first postfix node here
 
     // Precedence: a + b * c parses as a + (b * c); ^ is right-associative.
@@ -92,7 +94,7 @@ void test_expand_multi_node_argument() {
     Tree out = expand_macro(gauss, arg);
     CHECK(is_valid_postfix(out));
     CHECK(out.size() == arg.size() + macro_extra_nodes(gauss));
-    CHECK(to_string(out) == "exp(neg(square((x0 + 1.5))))");
+    CHECK(to_string(out) == "exp((-((x0 + 1.5) ^ 2)))");
 }
 
 // Numeric literals become ordinary tunable constants once the tree is re-indexed.

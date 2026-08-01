@@ -9,7 +9,9 @@
 // tree.hpp::to_string: variables `x<i>`, `%.6g` constants (incl. inf / nan /
 // scientific), unary `name(arg)` for
 // neg/exp/log/sin/cos/sqrt/tanh/abs/square/inv/erf/sinh/cosh, and
-// fully-parenthesised binary `(a op b)` with op in + - * / ^.
+// fully-parenthesised binary `(a op b)` with op in + - * / ^. `neg`, `square` and `inv` are
+// no longer emitted — those nodes print as `(-x)`, `(x ^ 2)` and `(1 / x)` (docs/71) — but
+// they stay in the table so a string saved by an earlier version still evaluates.
 //
 // Safe-pow caveat (identical to the Python wrapper): `^` maps to JS `**`, which agrees with
 // the training-time safe_pow on the ordinary out-of-domain cases — both are NaN for a

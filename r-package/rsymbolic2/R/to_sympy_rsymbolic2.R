@@ -19,13 +19,15 @@ to_sympy <- function(x, ...) UseMethod("to_sympy")
 #'   \code{\link{symbolic_regression}} fit, in the form SymPy's
 #'   \code{sympify()} accepts.
 #'
-#'   The plain \code{expression} strings are \emph{not} valid Python:
-#'   \code{square(a)}, \code{inv(a)} and \code{neg(a)} have no SymPy function,
-#'   and \code{sympify()} silently turns each into an undefined applied function
-#'   rather than raising. This rendering emits \code{a**2}, \code{1/a} and
-#'   \code{-a} instead; \code{^} also becomes \code{**} and every other operator
-#'   already carries its Python name, so the result is valid under plain
-#'   \code{eval()} and NumPy as well as \code{sympify()}.
+#'   What this rewrites is \code{^}. The engine's power operator is \code{^} on
+#'   every display surface, and Python reads that as \emph{xor}: \code{eval()},
+#'   \code{parse_expr()}, \code{lambdify()} and NumPy all evaluate the wrong
+#'   function, silently, for any expression containing one — and since
+#'   \code{square} prints as \code{(a ^ 2)}, that is most of them.
+#'   (\code{sympify()} alone is the exception: it passes
+#'   \code{convert_xor=True}.) Every other operator in an \code{expression}
+#'   string already carries its Python name, so this rendering is valid under
+#'   \code{sympify()}, \code{parse_expr()}, \code{eval()} and NumPy alike.
 #'
 #'   Display-only, like \code{\link{to_latex.rsymbolic2}}:
 #'   \code{\link{predict.rsymbolic2}} keeps using the \code{expression} strings.

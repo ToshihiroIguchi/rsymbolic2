@@ -86,9 +86,14 @@ test_that("a real fit exports no square()/inv()/neg()/^ in any sympy rendering",
   not_python <- "\\b(square|inv|neg)\\(|\\^"
   expect_false(any(grepl(not_python, df$sympy)))
   expect_false(any(grepl(not_python, df$sympy_simplified)))
-  # The point of the export: the frozen `expression` strings DO carry those tokens, so
-  # the two renderings cannot be the same string.
-  expect_true(any(grepl(not_python, df$expression)))
+  # The point of the export: the frozen `expression` strings DO carry `^`, so the two
+  # renderings cannot be the same string.
+  expect_true(any(grepl("\\^", df$expression)))
+  # ... but never an engine-internal operator name. to_string() prints those three nodes
+  # as `(x ^ 2)`, `(1 / x)` and `(-x)` on every surface (tree.hpp, docs/71).
+  engine_names <- "\\b(square|inv|neg)\\("
+  expect_false(any(grepl(engine_names, df$expression)))
+  expect_false(any(grepl(engine_names, df$expression_simplified)))
   expect_type(to_sympy(res), "character")
 })
 

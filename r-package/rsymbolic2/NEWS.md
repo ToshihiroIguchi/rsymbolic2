@@ -1,5 +1,25 @@
 # rsymbolic2 0.1.0.9000 (development)
 
+Expression rendering (docs/71):
+
+- **Display change.** `square`, `inv` and `neg` are now printed as the operators they
+  are: `expression` and `expression_simplified` read `(x0 ^ 2)`, `(1 / x0)` and
+  `(-x0)` where they used to read `square(x0)`, `inv(x0)` and `neg(x0)`. Those are the
+  engine's internal names, not notation, and `^`, `/` and unary minus are already in
+  the grammar — `to_latex()` has always rendered the same nodes as `x_{0}^{2}` and
+  `-x_{0}`. The rewrites are exact, not approximate: with an integer exponent
+  `safe_pow`'s only guard is `y < 0 && x == 0`, so `pow(x, 2)` is `x*x` for every
+  double including ±Inf and NaN, and `inv` is literally `1/a` with the same unguarded
+  division. Nothing about the search changes.
+- Side effect: an `expression` string now contains no name SymPy is unaware of, so
+  `sympify()` parses it correctly on its own. `to_sympy()` is still the right thing to
+  paste anywhere else — it rewrites `^`, which Python reads as xor.
+- `plot(type = "tree")` labels a negation `-` instead of `neg`, matching the equation.
+- `square(...)`, `inv(...)` and `neg(...)` are still **accepted** everywhere they were:
+  macro bodies still spell them (`c(gauss = "exp(neg(square(x)))")`), and `predict()`
+  keeps its bindings, so an expression string saved by an earlier version still
+  evaluates.
+
 New operators (docs/62):
 
 - `unary_ops` accepts `"erf"`, `"sinh"` and `"cosh"`. All three are **opt-in**: the

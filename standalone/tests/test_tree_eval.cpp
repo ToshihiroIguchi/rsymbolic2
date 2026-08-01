@@ -138,6 +138,50 @@ void test_square_value_and_gradient() {
     CHECK(close(dual_grad(tree, row, c, 0), finite_diff(tree, row, c, 0, h), 1e-5));
 }
 
+// square / inv / neg render as operators, and the renderings are exact.
+//
+// to_string() prints them as `(a ^ 2)`, `(1 / a)` and `(-a)` rather than as calls
+// (tree.hpp). That is only legitimate if reading the string back gives the same numbers,
+// so the claim is checked rather than asserted, over the operands where a guarded or
+// signed operator can differ — the infinities, the signed zeros, NaN, and a negative.
+void test_operator_renderings() {
+    CHECK(to_string(square_tree(3.0)) == "(3 * (x0 ^ 2))");
+    // Nested and compound arguments keep the grammar's full parenthesisation.
+    const Tree nested = {variable_node(0), unary_node(UnaryOp::Square),
+                         unary_node(UnaryOp::Square)};
+    CHECK(to_string(nested) == "((x0 ^ 2) ^ 2)");
+    const Tree of_sum = {variable_node(0), constant_node(0, 1.5),
+                         binary_node(BinaryOp::Add), unary_node(UnaryOp::Square)};
+    CHECK(to_string(of_sum) == "((x0 + 1.5) ^ 2)");
+    const Tree neg_x = {variable_node(0), unary_node(UnaryOp::Neg)};
+    CHECK(to_string(neg_x) == "(-x0)");
+    const Tree double_neg = {variable_node(0), unary_node(UnaryOp::Neg),
+                             unary_node(UnaryOp::Neg)};
+    CHECK(to_string(double_neg) == "(-(-x0))");
+    const Tree inv_x = {variable_node(0), unary_node(UnaryOp::Inv)};
+    CHECK(to_string(inv_x) == "(1 / x0)");
+
+    // The parentheses around a negation are load bearing, not cosmetic: `-x0 ^ 2` would
+    // parse as -(x0^2) in Python and R, which is not square(neg(x0)).
+    const Tree square_of_neg = {variable_node(0), unary_node(UnaryOp::Neg),
+                                unary_node(UnaryOp::Square)};
+    CHECK(to_string(square_of_neg) == "((-x0) ^ 2)");
+
+    const double inf = std::numeric_limits<double>::infinity();
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double operands[] = {-3.0, -0.0, 0.0, 2.5, inf, -inf, nan};
+    for (const double x : operands) {
+        const double as_square = rsymbolic::square(x);
+        const double as_pow = rsymbolic::pow(x, 2.0);
+        CHECK(std::isnan(as_square) ? std::isnan(as_pow) : as_square == as_pow);
+        // inv(a) is `1.0 / a` and Div is `a / b`, both unguarded: the same IEEE operation,
+        // signed zeros and infinities included.
+        const double as_inv = rsymbolic::recip(x);
+        const double as_div = detail::apply_binary<double>(BinaryOp::Div, 1.0, x);
+        CHECK(std::isnan(as_inv) ? std::isnan(as_div) : as_inv == as_div);
+    }
+}
+
 // y = a * inv(x): value, AD-vs-finite-difference, and the rendered string.
 void test_inv_value_and_gradient() {
     const Tree tree = {constant_node(0, 3.0), variable_node(0),
@@ -149,7 +193,7 @@ void test_inv_value_and_gradient() {
     const double h = 1e-6;
     CHECK(close(dual_grad(tree, row, c, 0), finite_diff(tree, row, c, 0, h), 1e-6));
 
-    CHECK(to_string(tree) == "(3 * inv(x0))");
+    CHECK(to_string(tree) == "(3 * (1 / x0))");
 }
 
 // y = a * erf(x) + sinh(x) + cosh(x): values, AD-vs-finite-difference, rendered string.
@@ -270,6 +314,7 @@ int main() {
     test_gradient_matches_finite_difference();
     test_count_and_initial_constants();
     test_square_value_and_gradient();
+    test_operator_renderings();
     test_inv_value_and_gradient();
     test_erf_sinh_cosh_value_and_gradient();
     test_pow_value_and_gradient();

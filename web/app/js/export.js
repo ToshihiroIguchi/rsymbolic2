@@ -112,9 +112,10 @@ export function rCall(cfg, sampling = null) {
 // CSV of the Pareto front. `expression` is the evaluatable round-trip string;
 // `expression_simplified` is the display-only companion (docs/52), and
 // `complexity_simplified` is its node count — it can be smaller than `complexity`, which
-// counts the raw searched tree. `sympy` is the same expression in Python syntax (docs/70):
-// the round-trip string is not valid Python, so a spreadsheet full of `square(x0)` cannot be
-// pasted into SymPy, NumPy or anything else that evaluates expressions.
+// counts the raw searched tree. `sympy` is the same expression in Python syntax (docs/70,
+// docs/71): the round-trip string spells power as `^`, which Python reads as xor, so a
+// spreadsheet column full of `(x0 ^ 2)` cannot be pasted into NumPy or anything else that
+// evaluates expressions.
 export function paretoCsv(front) {
   const q = (v) => `"${String(v).replace(/"/g, '""')}"`;
   const pick = (arr, i, fallback) => (arr ? arr[i] : fallback);

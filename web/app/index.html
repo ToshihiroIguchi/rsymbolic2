@@ -358,14 +358,15 @@
             <button id="copy-latex" class="btn small" type="button"
                     aria-label="Copy LaTeX"
                     title="Copy the displayed equation as LaTeX">LaTeX</button>
-            <!-- The expression string above is frozen (predict() parses it back), and it is
-                 not valid Python: square(), inv() and neg() are not SymPy functions, and
-                 sympify() turns each into an undefined applied function instead of raising —
-                 a silently wrong expression. This copies the same equation rewritten as
-                 a**2 / 1/a / -a, which sympify(), eval() and NumPy all accept. -->
+            <!-- The expression string above is frozen (predict() parses it back), and its
+                 power operator is `^`, which Python reads as XOR. eval(), parse_expr(),
+                 lambdify() and NumPy therefore compute the wrong function, silently, for
+                 any equation containing one — and since a squaring prints as `(a ^ 2)`,
+                 that is most of them. sympify() alone is the exception (convert_xor). This
+                 copies the same equation with `**`, which all of them accept. -->
             <button id="copy-sympy" class="btn small" type="button"
                     aria-label="Copy SymPy expression"
-                    title="Copy the displayed equation as Python that SymPy's sympify() parses. Variables stay x0, x1, …; the guarded operators (sqrt, log, ^) become their plain mathematical forms.">SymPy</button>
+                    title="Copy the displayed equation as Python: `^` becomes `**`, so eval(), NumPy and lambdify() read a power and not a xor. Variables stay x0, x1, …; the guarded operators (sqrt, log, ^) become their plain mathematical forms.">SymPy</button>
             <button id="copy-python" class="btn small" type="button"
                     aria-label="Copy Python code"
                     title="Copy a Python snippet that reproduces this run">Python code</button>
