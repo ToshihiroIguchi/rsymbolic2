@@ -174,7 +174,37 @@ void test_randomize_always_valid() {
 
 }  // namespace
 
+// gen_random_tree_fixed_size must always terminate, even when asked for more nodes than
+// the search space allows. append_random_op returns false once no operator fits under
+// space.max_nodes, and the loop used to have no progress guard on its general branch — so
+// cur_size stopped advancing and the call spun forever with no diagnostic (docs/73). The
+// search never asks for this (randomize_tree draws from [1, max_nodes]), but the function
+// is a public entry point, so an out-of-contract request must fail benignly.
+void test_fixed_size_terminates_beyond_max_nodes() {
+    SearchSpace space;
+    space.max_nodes = 7;
+    space.unary_ops = {UnaryOp::Sin};
+    std::mt19937_64 rng(20260802);
+
+    // Far beyond the cap: must return (rather than hang) with a well-formed, capped tree.
+    for (int request : {8, 15, 100}) {
+        Tree t = gen_random_tree_fixed_size(request, space, rng);
+        CHECK(is_valid_postfix(t));
+        CHECK(!t.empty());
+        CHECK(static_cast<int>(t.size()) <= space.max_nodes);
+    }
+
+    // An operator-free space cannot grow past the initial leaf; still must terminate.
+    SearchSpace bare;
+    bare.binary_ops.clear();
+    bare.unary_ops.clear();
+    Tree leaf = gen_random_tree_fixed_size(5, bare, rng);
+    CHECK(is_valid_postfix(leaf));
+    CHECK(leaf.size() == 1);
+}
+
 int main() {
+    test_fixed_size_terminates_beyond_max_nodes();
     test_gen_random_tree_is_small_and_bounded();
     test_gen_random_tree_fixed_size_hits_target();
     test_generate_random_tree_is_wellformed_and_bounded();

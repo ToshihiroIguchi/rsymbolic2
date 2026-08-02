@@ -101,7 +101,14 @@ struct OptimizationResult {
 // ignores the rest. A single struct avoids a config-class explosion in the skeleton.
 struct OptimizerConfig {
     std::uint64_t seed = 0;             // RNG seed (reproducibility is required)
-    std::size_t n_restarts = 4;         // number of restarts (including the initial)
+    // Number of restarts. The two backends read this differently, deliberately:
+    //   SelfLMOptimizer (default) — ADDITIONAL perturbed starts on top of the run from
+    //     x0, so the total is 1 + n_restarts. This is SR.jl _optimize_constants, whose
+    //     loop is `for _ in 1:optimizer_nrestarts` after an unconditional first fit; the
+    //     search's default of 2 is therefore PySR's optimizer_nrestarts=2 exactly.
+    //   RandomRestartOptimizer (non-default) — TOTAL number of starts, the first of which
+    //     is x0.
+    std::size_t n_restarts = 4;
     std::size_t max_iterations = 100;   // local-search iters / solver evaluation cap
     double perturbation_scale = 0.5;    // relative scale of random perturbations
 };

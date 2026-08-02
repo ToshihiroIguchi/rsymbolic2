@@ -48,6 +48,18 @@ bool rejects(const std::string& body, std::string& error, int max_nodes = 30) {
     return !make_macro_op("f", body, "x", max_nodes, m, error);
 }
 
+// Parse a bare expression (no macro validation, so bodies without the argument are fine).
+Tree parsed(const std::string& text) {
+    Tree t;
+    std::string error;
+    if (!parse_expression(text, "x", kMacroArgIndex, t, error)) {
+        std::printf("  unexpected parse failure for '%s': %s\n", text.c_str(),
+                    error.c_str());
+        CHECK(false);
+    }
+    return t;
+}
+
 // A parsed body is a normal postfix tree; expanding it over a single variable gives back
 // the expression the user wrote.
 void test_parse_and_expand() {
@@ -183,9 +195,76 @@ void test_unfittable_macro_is_inert() {
     }
 }
 
+// Operator precedence around '^' and unary minus (docs/73). '^' must bind TIGHTER than a
+// leading minus and LOOSER than one on its right operand, which is what R, Python and
+// ordinary mathematical notation do. The parser previously placed unary above power, so
+// `-x^2` became `(-x)^2` — a silently different, always non-negative function — and the
+// literal-folding shortcut turned `-2^2` into the constant 4 instead of -4.
+void test_power_precedence() {
+    // -x^2 is -(x^2), not (-x)^2. to_string renders Square as `(a ^ 2)` and Neg as `(-a)`.
+    const MacroOp neg_sq = make("-x^2");
+    Tree out = expand_macro(neg_sq, Tree{variable_node(0)});
+    CHECK(is_valid_postfix(out));
+    CHECK(to_string(out) == "(-(x0 ^ 2))");
+
+    // A literal base must not absorb the sign: -2^2 is -(2^2) = -4, so the tree must be
+    // Neg(Pow(2, 2)) — 4 nodes. The old literal folding produced Pow(-2, 2) = +4 instead.
+    {
+        const Tree t = parsed("-2^2");
+        CHECK(t.size() == 4);
+        CHECK(t.back().kind == NodeKind::Unary && t.back().uop == UnaryOp::Neg);
+    }
+
+    // The right operand of '^' still takes a unary minus: 2^-3 is 2^(-3), i.e. the Neg is
+    // INSIDE the Pow, so the last node is the Pow.
+    {
+        const Tree t = parsed("2^-3");
+        CHECK(!t.empty());
+        CHECK(t.back().kind == NodeKind::Binary && t.back().bop == BinaryOp::Pow);
+    }
+
+    // Right-associativity is preserved: 2^3^2 is 2^(3^2), not (2^3)^2.
+    {
+        const Tree t = parsed("2^3^2");
+        CHECK(t.size() == 5);
+        CHECK(to_string(t) == to_string(parsed("2^(3^2)")));
+        CHECK(to_string(t) != to_string(parsed("(2^3)^2")));
+    }
+
+    // A parenthesised base is unaffected: (-2)^2 stays (+4)'s shape, Pow on the outside.
+    {
+        const Tree t = parsed("(-2)^2");
+        CHECK(t.back().kind == NodeKind::Binary && t.back().bop == BinaryOp::Pow);
+    }
+}
+
+// A numeric literal with more than one decimal point must be REJECTED, not silently
+// truncated. The tokenizer used to scan a run of digits-and-dots and hand the whole span
+// to strtod, which stops at the second '.', while the scan advanced past it — so "1.2.3"
+// parsed as 1.2 with no error at all (docs/73).
+void test_malformed_number_rejected() {
+    std::string error;
+    CHECK(rejects("1.2.3 + x", error));
+    CHECK(error.find("malformed number") != std::string::npos);
+
+    error.clear();
+    CHECK(rejects("x * 0..5", error));
+
+    // Well-formed literals in every accepted spelling still parse.
+    for (const char* body : {"1.5 * x", ".5 * x", "2e3 * x", "1.5e-2 * x", "7 * x"}) {
+        Tree t;
+        std::string e;
+        const bool ok = parse_expression(body, "x", kMacroArgIndex, t, e);
+        if (!ok) std::printf("  unexpected parse failure for '%s': %s\n", body, e.c_str());
+        CHECK(ok);
+    }
+}
+
 }  // namespace
 
 int main() {
+    test_power_precedence();
+    test_malformed_number_rejected();
     test_parse_and_expand();
     test_infix_grammar();
     test_expand_multi_node_argument();

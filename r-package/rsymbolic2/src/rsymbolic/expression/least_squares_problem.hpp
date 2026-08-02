@@ -10,6 +10,8 @@
 #include <cmath>
 #include <cstddef>
 #include <memory>
+#include <stdexcept>
+#include <string>
 #include <vector>
 #ifdef RSYMBOLIC2_PROFILE
 #include <chrono>
@@ -99,6 +101,23 @@ struct Dataset {
     Dataset(std::vector<std::vector<double>> Xcol_, std::vector<double> y_,
             std::vector<double> w_ = {})
         : y(std::move(y_)), Xcol(std::move(Xcol_)) {
+        // Every column and the weight vector must be exactly as long as y. The SoA
+        // evaluators derive their tile bounds from m = y.size() alone (soa_eval.hpp), so a
+        // short column is not a wrong answer but an out-of-bounds heap read. Checked once
+        // per run, off every hot path (docs/73).
+        for (std::size_t j = 0; j < Xcol.size(); ++j) {
+            if (Xcol[j].size() != y.size()) {
+                throw std::invalid_argument(
+                    "Dataset: feature column " + std::to_string(j) + " has " +
+                    std::to_string(Xcol[j].size()) + " points but y has " +
+                    std::to_string(y.size()));
+            }
+        }
+        if (!w_.empty() && w_.size() != y.size()) {
+            throw std::invalid_argument(
+                "Dataset: weights has " + std::to_string(w_.size()) +
+                " points but y has " + std::to_string(y.size()));
+        }
         if (!w_.empty()) {
             sqrt_weights.resize(w_.size());
             for (std::size_t i = 0; i < w_.size(); ++i)

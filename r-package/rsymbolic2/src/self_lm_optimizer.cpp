@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <random>
 #include <stdexcept>
 #include <vector>
@@ -122,8 +123,18 @@ OptimizationResult SelfLMOptimizer::optimize(
     result.constants = problem.initial_constants;
 
     // Degenerate case: no tunable constants. Nothing to solve; just report the loss.
+    // The stop can fire part-way through even this single evaluation, in which case the
+    // residual closure fills the remaining points with the large FINITE sentinel
+    // (least_squares_problem.hpp) and the sum is a fabricated number that isfinite()
+    // would happily accept. Report it as unsuccessful instead (docs/73).
     if (k == 0) {
+        if (problem.aborted) {
+            problem.aborted->store(false, std::memory_order_relaxed);
+        }
         result.loss = sum_of_squared_residuals(problem, problem.initial_constants);
+        const bool eval_aborted =
+            problem.aborted && problem.aborted->load(std::memory_order_relaxed);
+        if (eval_aborted) result.loss = std::numeric_limits<double>::infinity();
         result.success = std::isfinite(result.loss);
         result.evaluations = 1;
         return result;
@@ -211,6 +222,13 @@ OptimizationResult SelfLMOptimizer::run_lm_from(
 
     double sse = eval_sse(problem, s.params, s.rbuf, m);
     ++nfev;
+    // If the stop fired DURING this first evaluation, `sse` mixes real residuals with the
+    // large FINITE sentinel the residual closure writes on abort (least_squares_problem.hpp)
+    // — a fabricated value, but one isfinite() accepts, so without this flag the result
+    // below would be reported as a successful fit. Every LATER evaluation is already
+    // discarded by an aborted() check before it can be accepted as the new best, which is
+    // why this first one is the only unguarded case (docs/73).
+    const bool first_eval_aborted = aborted();
 
     const std::size_t max_iter =
         config_.max_iterations > 0 ? config_.max_iterations : 200;
@@ -374,8 +392,12 @@ OptimizationResult SelfLMOptimizer::run_lm_from(
 
     OptimizationResult res;
     res.constants = s.params;
-    res.loss = sse;
-    res.success = std::isfinite(sse);
+    // An aborted first evaluation never produced a loss for x0, so there is no
+    // "best so far" to report: +Inf / success=false, which fit() maps to kInf and the
+    // caller keeps the pre-optimisation member. A stop that fires on any LATER iteration
+    // still returns the genuinely-improved sse reached before it (docs/73).
+    res.loss = first_eval_aborted ? std::numeric_limits<double>::infinity() : sse;
+    res.success = std::isfinite(res.loss);
     // res.evaluations / res.jacobian_evaluations left 0: the caller (optimize)
     // accumulates nfev/njev across all starts.
     return res;

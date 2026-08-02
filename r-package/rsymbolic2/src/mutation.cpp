@@ -443,18 +443,66 @@ std::unique_ptr<PNode> build_pnode(const Tree& tree) {
     return std::move(stack.back());
 }
 
-void serialize_pnode(const PNode* n, Tree& out) {
-    if (n == nullptr) return;
-    serialize_pnode(n->l.get(), out);
-    serialize_pnode(n->r.get(), out);
-    out.push_back(n->value);
+// The three helpers below walk the pointer tree with an explicit stack rather than by
+// recursion. Recursion depth here equals the tree's STRUCTURAL depth, and a chain of
+// nested unary operators — which ordinary append/insert mutations do produce — has depth
+// equal to its node count. max_nodes is user-settable with no upper bound, so a large
+// setting could drive these deep enough to overflow the stack. build_pnode was already
+// written iteratively for this reason; the traversals and the teardown were not (docs/73).
+//
+// Emission order is load-bearing and unchanged: serialize_pnode emits postfix (l, r, self)
+// and collect_pnodes emits preorder (self, l, r). collect_pnodes' order in particular
+// decides which node a rotation lands on, so a reordering here would silently move the
+// search trajectory even though RNG consumption stayed identical.
+
+// Postfix (l, r, self), matching the recursive form exactly.
+void serialize_pnode(const PNode* root, Tree& out) {
+    if (root == nullptr) return;
+    struct Frame { const PNode* n; int stage; };
+    std::vector<Frame> stack;
+    stack.push_back({root, 0});
+    while (!stack.empty()) {
+        const PNode* n  = stack.back().n;
+        const int stage = stack.back().stage++;
+        if (stage == 0) {
+            if (n->l) stack.push_back({n->l.get(), 0});
+        } else if (stage == 1) {
+            if (n->r) stack.push_back({n->r.get(), 0});
+        } else {
+            out.push_back(n->value);
+            stack.pop_back();
+        }
+    }
 }
 
-void collect_pnodes(PNode* n, std::vector<PNode*>& out) {
-    if (n == nullptr) return;
-    out.push_back(n);
-    collect_pnodes(n->l.get(), out);
-    collect_pnodes(n->r.get(), out);
+// Preorder (self, l, r), matching the recursive form exactly: the right child is pushed
+// first so the left subtree is fully emitted before it.
+void collect_pnodes(PNode* root, std::vector<PNode*>& out) {
+    if (root == nullptr) return;
+    std::vector<PNode*> stack{root};
+    while (!stack.empty()) {
+        PNode* n = stack.back();
+        stack.pop_back();
+        out.push_back(n);
+        if (n->r) stack.push_back(n->r.get());
+        if (n->l) stack.push_back(n->l.get());
+    }
+}
+
+// Iterative teardown. ~unique_ptr chains recursively, so without this the destructor
+// would overflow at the same depth the traversals above just stopped overflowing at —
+// fixing only the traversals would move the crash, not remove it. Detaching both children
+// before each node is destroyed keeps every individual destruction depth-1.
+void destroy_pnode(std::unique_ptr<PNode> root) {
+    std::vector<std::unique_ptr<PNode>> pending;
+    pending.push_back(std::move(root));
+    while (!pending.empty()) {
+        std::unique_ptr<PNode> n = std::move(pending.back());
+        pending.pop_back();
+        if (!n) continue;
+        if (n->l) pending.push_back(std::move(n->l));
+        if (n->r) pending.push_back(std::move(n->r));
+    }
 }
 
 // SR.jl is_valid_rotation_node: (degree>0 && l.degree>0) || (degree==2 && r.degree>0).
@@ -528,7 +576,10 @@ bool rotate_tree(Tree& tree, std::mt19937_64& rng) {
     for (PNode* n : nodes) {
         if (is_valid_rotation(n)) ++num_valid;
     }
-    if (num_valid == 0) return false;
+    if (num_valid == 0) {
+        destroy_pnode(std::move(root));  // iterative teardown; see destroy_pnode
+        return false;
+    }
 
     // SR.jl: rotate at the root with probability 1/num_valid (always when it is the only
     // valid node, since rand() < 1.0); otherwise sample a parent whose chosen child is a
@@ -562,6 +613,7 @@ bool rotate_tree(Tree& tree, std::mt19937_64& rng) {
     Tree out;
     out.reserve(tree.size());
     serialize_pnode(root.get(), out);
+    destroy_pnode(std::move(root));  // iterative teardown; see destroy_pnode
     reindex_constants(out);
     tree = std::move(out);
     return true;

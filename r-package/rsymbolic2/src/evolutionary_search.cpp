@@ -1658,9 +1658,14 @@ SearchResult run_evolution(FeatureColumns X,
     if (options.linear_scaling) {
         std::vector<double>  fin_pool, fin_pred;
         std::vector<double*> fin_stk;
-        const double mean_y = y.empty()
+        // Read the targets back through `data`: the `y` parameter was moved into the
+        // Dataset above and is a valid-but-unspecified (in practice empty) vector from
+        // that point on, which silently made this mean 0.0 and shrank the identity
+        // tolerance below to a fixed 1e-12 (docs/73).
+        const std::vector<double>& yv = data->y;
+        const double mean_y = yv.empty()
             ? 0.0
-            : std::accumulate(y.begin(), y.end(), 0.0) / static_cast<double>(y.size());
+            : std::accumulate(yv.begin(), yv.end(), 0.0) / static_cast<double>(yv.size());
         HallOfFame rebuilt;
         for (PopMember m : global.members()) {  // ascending complexity, deterministic
             double a = 1.0, b = 0.0;

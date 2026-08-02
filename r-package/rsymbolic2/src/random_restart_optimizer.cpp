@@ -20,12 +20,21 @@ constexpr double kInf = std::numeric_limits<double>::infinity();
 // Evaluate the sum of squared residuals at `x`, mapping any non-finite residual to
 // +Inf so it is never accepted as an improvement. Reuses `scratch` to avoid
 // reallocating the residual buffer on every call. Increments the evaluation counter.
+//
+// A stop that fires part-way through the evaluation also maps to +Inf: the residual
+// closure fills the points it never reached with a large FINITE sentinel
+// (least_squares_problem.hpp), so the sum would otherwise be a fabricated value that
+// `result.loss = kInf` initialisation accepts as an improvement on the first restart
+// (docs/73).
 double evaluate(const OptimizationProblem& problem,
                 const std::vector<double>& x,
                 std::vector<double>& scratch,
                 std::size_t& eval_count) {
     ++eval_count;
     problem.residuals(x, scratch);
+    if (problem.aborted && problem.aborted->load(std::memory_order_relaxed)) {
+        return kInf;
+    }
     double sse = 0.0;
     for (const double r : scratch) {
         if (!std::isfinite(r)) {
@@ -52,6 +61,12 @@ OptimizationResult RandomRestartOptimizer::optimize(
     if (!problem.residuals) {
         throw std::invalid_argument(
             "RandomRestartOptimizer: problem.residuals must not be null");
+    }
+
+    // Reset the abort flag so a problem re-optimized after an aborted run starts fresh,
+    // matching SelfLMOptimizer (docs/22 §5.1 step 2).
+    if (problem.aborted) {
+        problem.aborted->store(false, std::memory_order_relaxed);
     }
 
     const std::vector<double>& x0 = problem.initial_constants;

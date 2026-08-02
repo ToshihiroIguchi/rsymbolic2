@@ -22,10 +22,16 @@ namespace rsymbolic {
 //
 // Grammar (precedence low to high):
 //   expr    := term (('+' | '-') term)*
-//   term    := factor (('*' | '/') factor)*
-//   factor  := unary ('^' factor)?            [right-associative]
-//   unary   := '-' unary | primary
+//   term    := unary (('*' | '/') unary)*
+//   unary   := '-' unary | power
+//   power   := primary ('^' unary)?           [right-associative]
 //   primary := number | name '(' expr ')' | '(' expr ')' | <argument identifier>
+//
+// `^` binds TIGHTER than unary minus and LOOSER than it on its right operand, which is
+// what R, Python and ordinary mathematical notation do: `-x^2` is `-(x^2)`, `-2^2` is
+// `-4`, and `2^-3` is `2^(-3)`. An earlier form had `unary` above `power`, which parsed
+// `-x^2` as `(-x)^2` — silently a different (always non-negative) function, and with the
+// literal folding below `-2^2` silently became `+4`. See docs/73.
 //
 // Function names are the shared operator names (op_names.hpp); only unary calls are
 // accepted, because a macro body is written in ordinary infix for its binary operators.
@@ -60,9 +66,22 @@ inline bool tokenize(const std::string& s, std::vector<Token>& out, std::string&
         if (std::isdigit(static_cast<unsigned char>(c)) ||
             (c == '.' && i + 1 < s.size() &&
              std::isdigit(static_cast<unsigned char>(s[i + 1])))) {
+            // At most one decimal point. Accepting a run of digits-and-dots and handing
+            // the whole span to strtod silently truncated malformed input: strtod stops
+            // at the second '.' but the scan advanced past it, so "1.2.3" parsed as 1.2
+            // with no error at all. Reject it instead (docs/73).
             std::size_t j = i;
+            bool seen_dot = false;
             while (j < s.size() && (std::isdigit(static_cast<unsigned char>(s[j])) ||
                                     s[j] == '.')) {
+                if (s[j] == '.') {
+                    if (seen_dot) {
+                        error = "malformed number '" + s.substr(i, j + 1 - i) +
+                                "' (more than one decimal point)";
+                        return false;
+                    }
+                    seen_dot = true;
+                }
                 ++j;
             }
             // Exponent part: e/E, optional sign, at least one digit.
@@ -149,22 +168,12 @@ struct Parser {
     }
 
     bool parse_term() {
-        if (!parse_factor()) return false;
+        if (!parse_unary()) return false;
         while (peek().kind == Token::Op && (peek().op == '*' || peek().op == '/')) {
             const char op = peek().op;
             ++pos;
-            if (!parse_factor()) return false;
+            if (!parse_unary()) return false;
             out.push_back(binary_node(op == '*' ? BinaryOp::Mul : BinaryOp::Div));
-        }
-        return true;
-    }
-
-    bool parse_factor() {
-        if (!parse_unary()) return false;
-        if (peek().kind == Token::Op && peek().op == '^') {
-            ++pos;
-            if (!parse_factor()) return false;  // right-associative
-            out.push_back(binary_node(BinaryOp::Pow));
         }
         return true;
     }
@@ -172,8 +181,11 @@ struct Parser {
     bool parse_unary() {
         if (peek().kind == Token::Op && peek().op == '-') {
             ++pos;
-            // Fold a literal negation into the constant: exact, and one node instead of two.
-            if (peek().kind == Token::Number) {
+            // Fold a literal negation into the constant: exact, and one node instead of
+            // two. Only when the literal is NOT the base of a power — `-2^2` must be
+            // -(2^2) = -4, so folding `-2` there would produce (-2)^2 = +4.
+            if (peek().kind == Token::Number &&
+                !(tokens[pos + 1].kind == Token::Op && tokens[pos + 1].op == '^')) {
                 out.push_back(constant_node(0, -peek().number));
                 ++pos;
                 return true;
@@ -182,7 +194,19 @@ struct Parser {
             out.push_back(unary_node(UnaryOp::Neg));
             return true;
         }
-        return parse_primary();
+        return parse_power();
+    }
+
+    bool parse_power() {
+        if (!parse_primary()) return false;
+        if (peek().kind == Token::Op && peek().op == '^') {
+            ++pos;
+            // Right operand goes through parse_unary so `2^-3` is 2^(-3) and the
+            // operator stays right-associative (`2^3^2` == 2^(3^2)).
+            if (!parse_unary()) return false;
+            out.push_back(binary_node(BinaryOp::Pow));
+        }
+        return true;
     }
 
     bool parse_primary() {

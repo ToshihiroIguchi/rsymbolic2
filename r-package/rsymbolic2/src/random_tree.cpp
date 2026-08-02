@@ -96,12 +96,24 @@ Tree gen_random_tree_fixed_size(int node_count, const SearchSpace& space,
     Tree tree{make_random_leaf(space, rng)};
     int cur_size = static_cast<int>(tree.size());
     while (cur_size < node_count) {
+        // Progress guard: append_random_op returns false when no operator can be placed
+        // (no room left under space.max_nodes, or an empty operator alphabet), leaving the
+        // tree unchanged. Without this check cur_size would never advance and the loop
+        // would spin forever with no diagnostic. Accepting a short tree is the same
+        // outcome the unary branch below already takes (SR.jl's `nuna == 0 && break`).
+        //
+        // Unreachable from the search today — randomize_tree draws node_count from
+        // [1, space.max_nodes] and the R layer requires a non-empty binary_ops — but this
+        // is a public entry point (random_tree.hpp), so an out-of-contract node_count from
+        // a test or another binding must fail benignly rather than hang (docs/73).
+        bool progressed;
         if (cur_size == node_count - 1) {
             if (space.unary_ops.empty()) break;
-            append_random_op(tree, space, rng, /*make_new_bin_op=*/false);
+            progressed = append_random_op(tree, space, rng, /*make_new_bin_op=*/false);
         } else {
-            append_random_op(tree, space, rng);
+            progressed = append_random_op(tree, space, rng);
         }
+        if (!progressed) break;
         cur_size = static_cast<int>(tree.size());
     }
     return tree;

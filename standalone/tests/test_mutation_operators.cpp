@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <random>
 #include <set>
+#include <string>
 #include <vector>
 
 #include "rsymbolic/evolution/mutation.hpp"
@@ -330,7 +331,64 @@ void test_mutate_constant_infeasible() {
 
 }  // namespace
 
+// rotate_tree builds a temporary pointer tree, walks it, and tears it down. All three
+// steps used to recurse to the tree's STRUCTURAL depth (build_pnode was already iterative;
+// the traversals and the unique_ptr teardown chain were not), so a deep unary chain — which
+// max_nodes, being user-settable with no upper bound, permits — could overflow the stack
+// (docs/73). A chain far deeper than any default maxsize must now rotate without crashing
+// and produce a well-formed tree of the same size.
+void test_rotate_deep_unary_chain() {
+    // sin(sin(...sin(x0)...)) with 20000 unary nodes: well past the depth at which the
+    // recursive traversal or the recursive teardown would exhaust a default stack.
+    constexpr int kDepth = 20000;
+    Tree t;
+    t.reserve(kDepth + 1);
+    t.push_back(variable_node(0));
+    for (int i = 0; i < kDepth; ++i) t.push_back(unary_node(UnaryOp::Sin));
+
+    const std::size_t size_before = t.size();
+    std::mt19937_64 rng(20260802);
+    CHECK(rotate_tree(t, rng));
+    CHECK(structurally_valid(t));
+    CHECK(t.size() == size_before);  // rotation permutes, never resizes
+}
+
+// The iterative traversals must emit in exactly the order the recursive ones did:
+// serialize_pnode postfix, collect_pnodes preorder. collect_pnodes' order decides which
+// node a rotation lands on, so a reordering would move the search even with identical RNG
+// consumption. Pin it with a fixed seed over a batch of random trees.
+void test_rotate_is_order_stable() {
+    SearchSpace space;
+    space.binary_ops = {BinaryOp::Add, BinaryOp::Sub, BinaryOp::Mul, BinaryOp::Div};
+    space.unary_ops  = {UnaryOp::Sin, UnaryOp::Exp};
+    space.num_features = 2;
+
+    std::mt19937_64 gen(4242);
+    std::mt19937_64 rot(99);
+    std::vector<std::string> got;
+    for (int i = 0; i < 40; ++i) {
+        Tree t = generate_random_tree(space, gen);
+        if (rotate_tree(t, rot)) {
+            CHECK(structurally_valid(t));
+            got.push_back(to_string(t));
+        }
+    }
+    CHECK(!got.empty());
+
+    // Re-running from the same seeds must reproduce the identical sequence.
+    std::mt19937_64 gen2(4242);
+    std::mt19937_64 rot2(99);
+    std::vector<std::string> again;
+    for (int i = 0; i < 40; ++i) {
+        Tree t = generate_random_tree(space, gen2);
+        if (rotate_tree(t, rot2)) again.push_back(to_string(t));
+    }
+    CHECK(got == again);
+}
+
 int main() {
+    test_rotate_deep_unary_chain();
+    test_rotate_is_order_stable();
     test_swap_operands_semantics();
     test_swap_operands_infeasible();
     test_rotate_right_value_preserving();

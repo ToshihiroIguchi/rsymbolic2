@@ -63,12 +63,22 @@ Dataset make_dataset() {
     return d;
 }
 
-// (a) The stop predicate fires after the first poll (at point 256 of 300 in the
-// residual loop). We verify:
+// (a) The stop predicate fires on the very first poll, which happens at the TOP of the
+// first residual tile — i.e. before any real residual has been computed, so the closure
+// fills all 300 points with the large finite sentinel (least_squares_problem.hpp).
+// We verify:
 //   - optimize() returns without hanging
 //   - nfev is at most a small number (far below the default maxfev)
-//   - success == true (UserAsked is not ImproperInputParameters)
-//   - loss is finite (not NaN)
+//   - success == false and loss == +Inf
+//
+// The last point is the corrected contract (docs/73). This test previously asserted
+// success == true with a finite loss, on the reasoning that "UserAsked is not
+// ImproperInputParameters" — a leftover from the Eigen-era backend, where `success`
+// meant "the solver accepted the input". Under SelfLM the field is documented as "true
+// iff a finite-loss solution was found", and a sum of sentinels is not a solution: it is
+// finite only because the sentinel is deliberately finite (so it cannot poison JtJ).
+// Reporting it as a successful fit made fit() overwrite the population member's loss and
+// constants with that fabricated number instead of keeping the pre-optimisation member.
 void test_honours_stop() {
     const Dataset d = make_dataset();
 
@@ -95,11 +105,41 @@ void test_honours_stop() {
     CHECK(poll_count.load() > 0);
     // nfev must be tiny — the abort fires inside the first (or second) evaluation.
     CHECK(res.evaluations < 20);
-    // success must be true (UserAsked is not ImproperInputParameters).
+    // The first evaluation never completed, so there is no loss to report: the result
+    // must be unsuccessful with +Inf, NOT a finite sum of sentinel residuals.
+    CHECK(!res.success);
+    CHECK(std::isinf(res.loss));
+    CHECK(res.loss > 0.0);
+    // constants vector must have the right size (x0, unchanged).
+    CHECK(res.constants.size() == 2);
+}
+
+// (c) A stop that fires only AFTER the fit is under way must still return the progress
+// made before it — the "best result so far" contract. This is the other side of (a):
+// the abort guard must not throw away legitimately-improved constants. The predicate
+// below lets a generous number of polls through, so several LM iterations complete
+// before the stop trips.
+void test_stop_keeps_progress() {
+    const Dataset d = make_dataset();
+
+    std::atomic<int> poll_count{0};
+    StopRequested stop = [&poll_count]() -> bool {
+        return poll_count.fetch_add(1, std::memory_order_relaxed) >= 200;
+    };
+
+    OptimizationProblem problem =
+        make_least_squares_problem(linear_tree(), d.X, d.y, {0.0, 0.0}, stop);
+
+    OptimizerConfig cfg;
+    cfg.max_iterations = 1000;
+    SelfLMOptimizer opt(cfg);
+    const OptimizationResult res = opt.optimize(problem, stop);
+
+    // The first evaluation completed, so a real loss was produced and kept.
     CHECK(res.success);
-    // loss must be finite (not NaN).
     CHECK(std::isfinite(res.loss));
-    // constants vector must have the right size.
+    // It must be a genuine fit, not the SSE at x0 = {0, 0} (which is sum(y^2), huge).
+    CHECK(res.loss < 1.0);
     CHECK(res.constants.size() == 2);
 }
 
@@ -137,6 +177,7 @@ void test_no_stop_unchanged() {
 
 int main() {
     test_honours_stop();
+    test_stop_keeps_progress();
     test_no_stop_unchanged();
 
     if (g_failures == 0) {

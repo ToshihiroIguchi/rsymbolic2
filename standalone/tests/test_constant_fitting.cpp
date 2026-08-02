@@ -6,6 +6,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <stdexcept>
 #include <vector>
 
 #include "rsymbolic/expression/least_squares_problem.hpp"
@@ -207,7 +208,48 @@ void test_via_factory() {
 
 }  // namespace
 
+// A Dataset whose feature columns or weights do not match y in length is rejected at
+// construction. The SoA evaluators derive their tile bounds from m = y.size() alone, so a
+// short column is an out-of-bounds heap read rather than a wrong answer (docs/73).
+void test_dataset_rejects_mismatched_lengths() {
+    const std::vector<double> y{1.0, 2.0, 3.0};
+
+    bool threw = false;
+    try {
+        Dataset d({{1.0, 2.0}}, y);  // column has 2 points, y has 3
+        (void)d;
+    } catch (const std::invalid_argument&) {
+        threw = true;
+    }
+    CHECK(threw);
+
+    threw = false;
+    try {
+        Dataset d({{1.0, 2.0, 3.0}, {1.0}}, y);  // second column short
+        (void)d;
+    } catch (const std::invalid_argument&) {
+        threw = true;
+    }
+    CHECK(threw);
+
+    threw = false;
+    try {
+        Dataset d({{1.0, 2.0, 3.0}}, y, {1.0, 1.0});  // weights short
+        (void)d;
+    } catch (const std::invalid_argument&) {
+        threw = true;
+    }
+    CHECK(threw);
+
+    // The well-formed cases still construct, weighted and unweighted.
+    Dataset ok({{1.0, 2.0, 3.0}}, y);
+    CHECK(ok.num_points() == 3);
+    Dataset okw({{1.0, 2.0, 3.0}}, y, {1.0, 2.0, 3.0});
+    CHECK(okw.sqrt_weights.size() == 3);
+}
+
 int main() {
+    test_dataset_rejects_mismatched_lengths();
     test_fit_linear();
     test_fit_exponential();
     test_analytic_vs_numerical_jacobian();

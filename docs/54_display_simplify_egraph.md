@@ -159,10 +159,22 @@ drift class B describes.
   the same intermediate-overflow class as constant-chain reassociation (accepted by
   docs/52) and only fires beyond 1e154.
 - Like-term/factoring merges (class B) can exchange **NaN for Inf** in mixed-sign
-  overflow corners (`3t + (-2t)` at `t = Inf` is NaN, merged `1*t` is Inf); finite
-  inputs stay finite, non-finite stay non-finite. A merged coefficient of exactly
-  `-0.0` is normalised to `+0.0`, and zero-coefficient terms keep the `* 0` factor,
-  so the sign of a produced zero (not its finiteness) is the only zero-level drift.
+  overflow corners (`3t + (-2t)` at `t = Inf` is NaN, merged `1*t` is Inf). A merged
+  coefficient of exactly `-0.0` is normalised to `+0.0`, and zero-coefficient terms keep
+  the `* 0` factor, so the sign of a produced zero (not its finiteness) is the only
+  zero-level drift.
+- **Correction (docs/73).** An earlier version of the bullet above also claimed "finite
+  inputs stay finite, non-finite stay non-finite". That is **wrong**, and the failure is
+  not limited to non-finite inputs. Reassociation and redistribution change *where* an
+  intermediate overflows, and overflow is not a small perturbation, so class B can flip
+  finiteness in **both** directions from entirely finite inputs. Concretely, for
+  `x0*x1 + x0*x2` at `x0 = 1e300, x1 = 1e300, x2 = -1e300`, the written form is
+  `Inf + (-Inf) = NaN` while the `factor` rewrite `x0*(x1+x2)` — which the extractor
+  prefers, being 5 nodes against 7 — is `0`. The same holds for `distrib`, the
+  `add-assoc-*`/`mul-assoc-*` pairs, and the division-chain rules. This is accepted, not
+  fixed: these rules are the size-reduction driver, and the divergence is confined to the
+  display-only `expression_simplified` string. `predict()`, the hall of fame and every
+  search decision read the untouched tree, so no result depends on it.
 - Odd/even libm rules assume sign-symmetric `sin`/`cos`/`tanh` (true of every libm
   in the support set; IEEE 754 recommends it). At worst this is class-B drift.
 

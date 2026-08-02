@@ -324,6 +324,17 @@ std::vector<Rule> build_rules() {
     const auto AB = [](PP x) { return pu(UnaryOp::Abs, std::move(x)); };
 
     std::vector<Rule> r;
+    // Class B rules reassociate or redistribute, so the two sides can differ by more than
+    // rounding at the edges of the floating-point range: reassociation changes WHERE an
+    // intermediate overflows, and overflow is not a small perturbation. For example
+    // `x0*x1 + x0*x2` at x0=1e300, x1=1e300, x2=-1e300 is Inf + (-Inf) = NaN, while the
+    // factored `x0*(x1+x2)` the extractor prefers (it is smaller) is 0. The same applies to
+    // the assoc and division-chain rules below. This is the accepted cost of the
+    // size-reduction driver and matches the caveat already carried by sqrt(square(t)) ->
+    // abs(t): these rules are DISPLAY-ONLY, so the divergence can reach
+    // `expression_simplified`, never predict() or any search decision, whose trees are
+    // untouched (docs/54, docs/73).
+    //
     // --- commutativity / associativity (reassociation drift; docs/54 FP class B) ---
     r.push_back({"add-comm", A(a, b), A(b, a)});
     r.push_back({"mul-comm", M(a, b), M(b, a)});
