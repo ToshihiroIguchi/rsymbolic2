@@ -865,3 +865,48 @@ def test_to_pandas_matches_the_R_data_frame():
     ]
     assert df["recommended"].sum() == 1
     assert df.loc[df["recommended"], "expression"].iloc[0] == res.recommended
+
+
+@pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])
+def test_non_finite_X_or_y_is_rejected(bad):
+    """NaN/Inf in the data used to run to completion and return a meaningless fit.
+
+    The core maps a non-finite prediction to an infinite loss per candidate, so a bad
+    point does not stop the run -- it quietly makes the answer nonsense, and the
+    reported loss can still look ordinary (a NaN in X gave a finite-looking loss).
+    """
+    X = np.linspace(-3, 3, 20).reshape(-1, 1)
+    y = 2 * X[:, 0] + 1
+
+    X_bad = X.copy()
+    X_bad[3, 0] = bad
+    with pytest.raises(ValueError, match="X must not contain"):
+        symbolic_regression(X_bad, y, population_size=8, generations=2,
+                            n_populations=1, seed=1, verbosity=0)
+
+    y_bad = y.copy()
+    y_bad[3] = bad
+    with pytest.raises(ValueError, match="y must not contain"):
+        symbolic_regression(X, y_bad, population_size=8, generations=2,
+                            n_populations=1, seed=1, verbosity=0)
+
+
+@pytest.mark.parametrize("name", [
+    "population_size", "generations", "tournament_size",
+    "max_depth", "max_nodes", "n_populations",
+])
+@pytest.mark.parametrize("value", [0, -1])
+def test_non_positive_counts_are_rejected(name, value):
+    """These reach the core as unsigned counts.
+
+    A negative value wrapped to an enormous one, and the resulting reserve() threw
+    inside the OpenMP region -- where an exception cannot escape the structured block --
+    so it reached std::terminate and aborted the interpreter outright.
+    """
+    X = np.linspace(-3, 3, 12).reshape(-1, 1)
+    y = 2 * X[:, 0] + 1
+    kwargs = dict(population_size=8, generations=2, n_populations=1,
+                  seed=1, verbosity=0)
+    kwargs[name] = value
+    with pytest.raises(ValueError, match=name):
+        symbolic_regression(X, y, **kwargs)

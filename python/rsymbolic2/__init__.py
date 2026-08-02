@@ -1090,6 +1090,32 @@ def symbolic_regression(
     if X_arr.shape[0] != y_arr.shape[0]:
         raise ValueError("X.shape[0] must equal len(y).")
 
+    # NaN/Inf in the data are rejected rather than carried into the search. The core maps
+    # a non-finite prediction to an infinite loss per candidate, so a single bad point
+    # does not stop the run — it quietly makes the result meaningless, and the reported
+    # loss can still look ordinary (a NaN in X gave a finite-looking loss and a nonsense
+    # expression). `weights` has been checked this way all along; this is the same check
+    # on the data it weights (docs/74).
+    if not np.all(np.isfinite(X_arr)):
+        raise ValueError("X must not contain NaN or infinite values.")
+    if not np.all(np.isfinite(y_arr)):
+        raise ValueError("y must not contain NaN or infinite values.")
+
+    # Count-like arguments must be positive. Each is cast to an unsigned type in the C++
+    # core, so a negative value wraps to an enormous count; population_size = -1 then
+    # aborted the whole interpreter from inside the OpenMP region (docs/74). The binding
+    # guards these too; checking here is what makes the message useful.
+    for _name, _value in (
+        ("population_size", population_size),
+        ("generations", generations),
+        ("tournament_size", tournament_size),
+        ("max_depth", max_depth),
+        ("max_nodes", max_nodes),
+        ("n_populations", n_populations),
+    ):
+        if int(_value) < 1:
+            raise ValueError(f"{_name} must be a positive integer.")
+
     unary_list = [str(s) for s in unary_ops]
     binary_list = [str(s) for s in binary_ops]
     for s in unary_list:

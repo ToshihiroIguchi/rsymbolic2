@@ -138,6 +138,20 @@ cpp11::writable::list symbolic_regression_cpp(
     }
     std::vector<double> y_cpp(y.begin(), y.end());
 
+    // Count-like arguments must be positive, checked HERE while they are still signed
+    // ints. Every one of them is assigned to a std::size_t below, so a negative value
+    // wraps to an enormous count: `population_size = -1` became a reserve() of ~1.8e19
+    // elements, and because that throws inside the OpenMP parallel region — where an
+    // exception cannot leave the structured block — it reached std::terminate and aborted
+    // the whole R session. The R layer validates these too, for a better message; this is
+    // the boundary guard that holds no matter which caller gets there (docs/74).
+    if (population_size < 1) cpp11::stop("population_size must be a positive integer");
+    if (generations     < 1) cpp11::stop("generations must be a positive integer");
+    if (tournament_size < 1) cpp11::stop("tournament_size must be a positive integer");
+    if (max_nodes       < 1) cpp11::stop("max_nodes must be a positive integer");
+    if (max_depth       < 1) cpp11::stop("max_depth must be a positive integer");
+    if (n_populations   < 1) cpp11::stop("n_populations must be a positive integer");
+
     // Build SearchSpace from R arguments
     SearchSpace space;
     space.num_features = p;

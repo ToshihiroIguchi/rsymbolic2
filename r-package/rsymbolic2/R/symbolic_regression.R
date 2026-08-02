@@ -416,11 +416,47 @@ symbolic_regression.default <- function(
     ...
 ) {
     X <- as.matrix(X)
+    # Reject a factor y BEFORE coercing. as.numeric() on a factor returns its level
+    # CODES, not the values it displays, so factor(c(100, 20, 3)) would train on
+    # c(1, 2, 3) — a wrong answer with no error anywhere. X is already protected by
+    # the is.numeric() check below (as.matrix on a data.frame with a factor column
+    # yields a character matrix), so this closes the same hole on the response.
+    if (is.factor(y))
+        stop("y must be numeric; a factor's as.numeric() gives level codes, not values. ",
+             "Use as.numeric(as.character(y)) if the levels are numbers.")
     y <- as.numeric(y)
 
     if (nrow(X) == 0L) stop("X must have at least one row")
     if (nrow(X) != length(y)) stop("nrow(X) must equal length(y)")
     if (!is.numeric(X)) stop("X must be numeric")
+
+    # NA/NaN/Inf in the data are rejected rather than carried into the search. The core
+    # maps a non-finite prediction to an infinite loss per candidate, so a single bad
+    # point does not stop the run — it quietly makes the result meaningless, and the
+    # reported loss can still look ordinary (an NA in X gave a plausible-looking finite
+    # loss and a nonsense expression). `weights` has been checked this way all along;
+    # this is the same check on the data it weights (docs/74).
+    if (anyNA(X) || !all(is.finite(X)))
+        stop("X must not contain NA, NaN or infinite values")
+    if (anyNA(y) || !all(is.finite(y)))
+        stop("y must not contain NA, NaN or infinite values")
+
+    # Count-like arguments must be positive integers. Each is cast to an unsigned type in
+    # the C++ core, so a negative value wraps to an enormous count; population_size = -1
+    # then aborted the whole R session from inside the OpenMP region (docs/74). The C++
+    # binding guards these too; checking here is what makes the message useful.
+    check_positive_int <- function(value, name) {
+        v <- suppressWarnings(as.integer(value))
+        if (length(v) != 1L || is.na(v) || v < 1L)
+            stop(name, " must be a single positive integer")
+        v
+    }
+    population_size <- check_positive_int(population_size, "population_size")
+    generations     <- check_positive_int(generations,     "generations")
+    tournament_size <- check_positive_int(tournament_size, "tournament_size")
+    max_depth       <- check_positive_int(max_depth,       "max_depth")
+    max_nodes       <- check_positive_int(max_nodes,       "max_nodes")
+    n_populations   <- check_positive_int(n_populations,   "n_populations")
 
     model_selection <- match.arg(model_selection)
 
@@ -627,7 +663,14 @@ symbolic_regression.formula <- function(formula, data, ...) {
 
     mf   <- stats::model.frame(tt, data)
     resp <- attr(tt, "response")
-    y     <- as.numeric(stats::model.response(mf))
+    y_raw <- stats::model.response(mf)
+    # Same factor guard as the default method: as.numeric() on a factor returns level
+    # codes, not values, so a factor response would train on 1..nlevels with no error.
+    # The predictors are checked for non-numeric columns a few lines below.
+    if (is.factor(y_raw))
+        stop("response must be numeric; a factor's as.numeric() gives level codes, ",
+             "not values. Use as.numeric(as.character(.)) if the levels are numbers.")
+    y     <- as.numeric(y_raw)
     preds <- mf[-resp]
 
     nonnum <- !vapply(preds, is.numeric, logical(1))

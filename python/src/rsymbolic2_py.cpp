@@ -152,6 +152,20 @@ py::dict symbolic_regression_cpp(
     std::vector<double> y_cpp(n);
     for (std::size_t i = 0; i < n; ++i) y_cpp[i] = yv(i);
 
+    // Count-like arguments must be positive, checked HERE while they are still signed
+    // ints. Every one of them is assigned to a std::size_t below, so a negative value
+    // wraps to an enormous count: `population_size = -1` became a reserve() of ~1.8e19
+    // elements, and because that throws inside the OpenMP parallel region — where an
+    // exception cannot leave the structured block — it reached std::terminate and aborted
+    // the whole interpreter. The Python layer validates these too, for a better message;
+    // this is the boundary guard that holds no matter which caller gets there (docs/74).
+    if (population_size < 1) throw std::invalid_argument("population_size must be a positive integer");
+    if (generations     < 1) throw std::invalid_argument("generations must be a positive integer");
+    if (tournament_size < 1) throw std::invalid_argument("tournament_size must be a positive integer");
+    if (max_nodes       < 1) throw std::invalid_argument("max_nodes must be a positive integer");
+    if (max_depth       < 1) throw std::invalid_argument("max_depth must be a positive integer");
+    if (n_populations   < 1) throw std::invalid_argument("n_populations must be a positive integer");
+
     // --- Build SearchSpace ----------------------------------------------------------
     SearchSpace space;
     space.num_features = static_cast<int>(p);

@@ -32,6 +32,17 @@ test = ["pytest>=7.0"]
 Homepage = "https://github.com/ToshihiroIguchi/rsymbolic2"
 Issues = "https://github.com/ToshihiroIguchi/rsymbolic2/issues"
 
+[tool.pytest.ini_options]
+# Test the INSTALLED package, never the source tree next to this file. `rsymbolic2/`
+# here holds only __init__.py — the compiled `_core` extension is produced by CMake at
+# install time — so if this directory ends up on sys.path ahead of site-packages, the
+# import fails with a bare `No module named 'rsymbolic2._core'`, which reads like a
+# broken build rather than a shadowed import. `importmode = importlib` stops pytest
+# prepending the rootdir, so `cd python && pytest` now exercises what `pip install .`
+# actually produced (docs/74).
+addopts = "--import-mode=importlib"
+testpaths = ["tests"]
+
 [tool.scikit-build]
 # The Python package lives next to this file; the compiled _core extension is
 # installed into it by CMake (see CMakeLists.txt).

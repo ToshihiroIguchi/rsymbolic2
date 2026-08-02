@@ -30,6 +30,7 @@
 #include <memory>
 #include <numeric>
 #include <random>
+#include <stdexcept>
 #include <vector>
 
 #ifdef _OPENMP
@@ -1230,6 +1231,24 @@ void migrate_hof(std::vector<Island>& islands, double frac, std::mt19937_64& rng
 SearchResult run_evolution(FeatureColumns X,
                            std::vector<double> y,
                            const SearchOptions& options) {
+    // Entry guard, ahead of everything else and — critically — ahead of the OpenMP
+    // parallel region below. `population_size` is a std::size_t, so a binding that passes
+    // a negative count wraps it to an enormous value and `population.reserve()` throws
+    // std::length_error. Thrown from inside `#pragma omp parallel for` that exception
+    // cannot propagate out of the structured block, so it reached std::terminate and took
+    // the whole host process with it — an R session or a Python interpreter aborted by a
+    // typo like `population_size = -1`. Validating here turns every such case into an
+    // ordinary exception each binding already translates into its own idiom, and covers
+    // the bindings uniformly (R, Python, WASM) instead of relying on each to check first.
+    // Zero is rejected for the same reason it is meaningless: an empty population leaves
+    // the hall of fame empty and only surfaces later as "best() on an empty hall of fame".
+    // The defaults are all positive, so no default-path behaviour changes (docs/74).
+    if (options.population_size < 1) {
+        throw std::invalid_argument("population_size must be at least 1");
+    }
+    if (options.space.max_nodes < 1) {
+        throw std::invalid_argument("max_nodes must be at least 1");
+    }
     const std::size_t n = std::max<std::size_t>(1, options.n_populations);
 
     // Start the clock before island initialisation so that init time counts against
