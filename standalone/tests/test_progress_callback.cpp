@@ -5,8 +5,10 @@
 //      observer cannot change the search (PySR Default Parity, CLAUDE.md).
 //   2. The callback fires at least once, and never more than the number of outer
 //      epochs the run could possibly take (ceil(generations / migration_interval)).
-//   3. Each snapshot is internally well-formed: complexity/loss vectors have equal
-//      length and complexity is strictly increasing (the Pareto-front invariant).
+//   3. Each snapshot is internally well-formed: complexity/loss/tree vectors have equal
+//      length, complexity is strictly increasing (the Pareto-front invariant), and each
+//      carried tree is the member its complexity describes (tree[i].size() ==
+//      complexity[i], since complexity is tree.size() throughout the core).
 
 #include <algorithm>
 #include <cstdio>
@@ -122,13 +124,25 @@ void test_snapshot_shape_and_pareto_invariant() {
     SearchOptions options = small_options();
     bool all_lengths_equal = true;
     bool all_strictly_increasing = true;
+    bool all_trees_match_complexity = true;
+    bool all_trees_non_empty = true;
     std::size_t snapshots_seen = 0;
 
     options.progress_callback = [&](const ProgressSnapshot& snap) {
         ++snapshots_seen;
         if (snap.complexity.size() != snap.loss.size()) all_lengths_equal = false;
+        if (snap.complexity.size() != snap.tree.size()) all_lengths_equal = false;
         for (std::size_t i = 1; i < snap.complexity.size(); ++i) {
             if (snap.complexity[i] <= snap.complexity[i - 1]) all_strictly_increasing = false;
+        }
+        // The carried tree must BE the member its row describes, not merely some tree:
+        // complexity is tree.size() everywhere in the core, so this pins the three arrays
+        // to one another and would catch a fill loop that fell out of step.
+        for (std::size_t i = 0; i < snap.tree.size(); ++i) {
+            if (snap.tree[i].empty()) all_trees_non_empty = false;
+            if (snap.tree[i].size() != static_cast<std::size_t>(snap.complexity[i])) {
+                all_trees_match_complexity = false;
+            }
         }
     };
     run_evolution(X, y, options);
@@ -136,6 +150,8 @@ void test_snapshot_shape_and_pareto_invariant() {
     CHECK(snapshots_seen >= 1);
     CHECK(all_lengths_equal);
     CHECK(all_strictly_increasing);
+    CHECK(all_trees_non_empty);
+    CHECK(all_trees_match_complexity);
 }
 
 }  // namespace

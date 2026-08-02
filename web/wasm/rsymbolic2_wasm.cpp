@@ -323,6 +323,22 @@ val run(val opts) {
                 obj.set("total_epochs", total_epochs);
                 obj.set("complexity",   to_js_array(s.complexity));
                 obj.set("loss",         to_js_array(s.loss));
+                // ONE expression, not the whole front: the GUI shows a single provisional
+                // line, and stringifying all ~30 members costs ~71 us per epoch against
+                // ~2.5 us for one (measured, docs/53). The last member is the lowest-loss
+                // one -- the front is strictly increasing in complexity and strictly
+                // decreasing in loss, which is the same invariant hall_of_fame.cpp's
+                // ModelSelection::Accuracy relies on when it returns front.size() - 1.
+                // Deliberately NOT the recommended member: that needs pareto_scores and a
+                // model_selection band, and re-implementing that rule for a mid-run
+                // caption would give this project a second, divergeable answer to "which
+                // equation is best" (docs/48 put that rule in C++ precisely to have one).
+                // Raw to_string, never display_simplify: the simplifier is an e-graph with
+                // a 10 ms budget per call (docs/54), i.e. up to 300 ms per epoch on a full
+                // front, and this is a single-threaded build where that time comes
+                // straight out of the search. The finished result renders the simplified
+                // form; a run in flight shows what the engine actually holds.
+                if (!s.tree.empty()) obj.set("expression", to_string(s.tree.back()));
                 cb(obj);
             };
         }

@@ -420,6 +420,26 @@
               <span><i class="dot dot-recommended"></i>recommended (★)</span>
               <span><i class="dot dot-front"></i>front</span>
             </div>
+            <!-- Provisional formula, written only while progress snapshots are arriving
+                 (main.js onProgress) and cleared by finishRun(). It is the lowest-loss
+                 member of the front so far, printed raw — not display-simplified, and not
+                 the recommended equation, both of which the finished result decides. It is
+                 a plain line rather than anything the hero card would recognise: no KaTeX,
+                 no copy button, no highlight. A mid-run front is usually immature, and the
+                 hero card's typography is the page saying "this is the answer" — lending
+                 that authority to an equation that will be overwritten a hundred times is
+                 how a screenshot of epoch 3 ends up being read as the result. The rest of
+                 the card is the right weight for something still moving.
+
+                 ABOVE the chart, not below it, because the "updating…" badge is pinned to
+                 the card's bottom-right corner: sharing that line cost the expression ~100px
+                 of width to clear the badge, which at phone width left room for about a
+                 dozen characters before the ellipsis. Up here it gets the full card width at
+                 every viewport and the two never meet. -->
+            <div id="live-expr" class="live-expr">
+              <span class="live-expr-label">lowest loss so far</span>
+              <code id="live-expr-text"></code>
+            </div>
             <div class="chart-box"><canvas id="pareto-canvas"></canvas></div>
           </section>
 

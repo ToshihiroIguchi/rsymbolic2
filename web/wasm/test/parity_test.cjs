@@ -170,6 +170,17 @@ function assert(cond, msg) {
   assert(snapshots.every((s) => Number.isInteger(s.epoch) && s.epoch >= 1
                                 && s.epoch <= s.total_epochs),
     "epoch is a positive integer within total_epochs");
+  // Each snapshot also carries ONE expression: the lowest-loss member of the front so far,
+  // printed raw (docs/53 phase 2). It is what the GUI shows as a provisional line under the
+  // live chart, so it must be a real, non-empty expression string every epoch — and it must
+  // be the LAST member of the front the same snapshot reports, which is the invariant the
+  // binding relies on when it picks front.back() as the lowest-loss one.
+  assert(snapshots.every((s) => typeof s.expression === "string" && s.expression.length > 0),
+    "every snapshot carries a non-empty provisional expression");
+  assert(snapshots.every((s) => s.complexity.length === s.loss.length && s.complexity.length > 0),
+    "snapshot complexity/loss arrays are non-empty and equal length");
+  assert(snapshots.every((s) => s.loss[s.loss.length - 1] === Math.min(...s.loss)),
+    "the last front member is the lowest-loss one (what expression is taken from)");
   assert(r3.expression === r1.expression,
     "on_progress does not change the recovered expression (bit-identical, same seed)");
   assert(r3.pareto_front.loss.join(",") === l1,

@@ -541,6 +541,7 @@ function clearResults() {
   $("results-area").classList.remove("has-result", "has-live");
   $("pareto-card").classList.remove("live");
   $("pareto-table").querySelector("tbody").innerHTML = "";
+  $("live-expr-text").textContent = "";
   $("eq-latex").innerHTML = "";
   $("eq-string").textContent = "";
   $("eq-string").title = "";
@@ -1442,6 +1443,10 @@ function finishRun() {
   // stopped or failed one goes back to the placeholder — restoreResultCharts() has no
   // completed front to put back, and a partial one must not read as the answer.
   $("results-area").classList.remove("has-live");
+  // Belt and braces with the CSS, which already hides #live-expr outside a live run: a
+  // stopped or failed run leaves no result to overwrite it, and a provisional formula that
+  // survived into the idle card would be indistinguishable from an answer.
+  $("live-expr-text").textContent = "";
   setRunButton(false);
 }
 
@@ -1479,6 +1484,11 @@ function onProgress(msg) {
   drawPareto($("pareto-canvas"), { complexity: msg.complexity, loss: msg.loss, score: null }, {
     logLoss: logLossEnabled(),
   });
+  // Written under the same throttle as the chart, not on every snapshot, so the line and
+  // the points above it always describe the SAME epoch. The engine sends the lowest-loss
+  // member (rsymbolic2_wasm.cpp), raw — no display simplification mid-run, so this string
+  // can differ cosmetically from the one the finished hero card shows for the same tree.
+  if (msg.expression) $("live-expr-text").textContent = msg.expression;
 }
 
 // One morphing header button: "▶ Run" when idle, "■ Stop" (danger red) while a search is

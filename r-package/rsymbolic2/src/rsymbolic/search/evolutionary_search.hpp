@@ -30,6 +30,16 @@ struct ProgressSnapshot {
     std::size_t epoch = 0;          // completed outer iterations
     std::vector<int> complexity;    // current global pareto front
     std::vector<double> loss;
+    // The members themselves, same order and length as the two vectors above, so
+    // tree[i].size() == complexity[i] (complexity is tree.size() throughout the core).
+    // A third parallel array rather than a single "current best": deciding which member
+    // is best is a selection rule (hall_of_fame.cpp select_best, and the caller's
+    // model_selection), and putting one here would move that rule into what is meant to
+    // be pure observation data. Callers pick. Filling it costs ~1.2 us per epoch at the
+    // default maxsize (30 members, 465 nodes; measured, docs/53) against epochs three to
+    // five orders of magnitude longer, and the whole block is inside the
+    // `if (progress_callback)` branch, so a caller that sets no callback pays nothing.
+    std::vector<Tree> tree;
 };
 
 // Configuration for the (minimal, steady-state) evolutionary search.

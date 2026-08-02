@@ -58,6 +58,7 @@ self.onmessage = async (ev) => {
         total_epochs: snap.total_epochs, // epoch budget, so the UI can show real progress
         complexity: snap.complexity,
         loss: snap.loss,
+        expression: snap.expression, // lowest-loss member, raw (undefined on an empty front)
       });
     };
 

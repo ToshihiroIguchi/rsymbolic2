@@ -688,6 +688,24 @@ body.running #results-area .card.live {
   opacity: 1;
   position: relative;
 }
+/* Provisional formula line on the live Pareto card (index.html #live-expr, which explains
+   why it sits above the chart rather than below). Shown on exactly the condition that puts
+   the "updating…" badge on the card — mid-run, with snapshots arriving — so it cannot
+   outlive the run it describes even if a future caller forgets to clear its text. The
+   expression ellipsises rather than wrapping, like the equation column in the results
+   table; there is no title tooltip because the whole results column is pointer-events:
+   none while running, so no tooltip could ever be opened. */
+.live-expr { display: none; }
+body.running #results-area #pareto-card.live .live-expr {
+  display: flex; align-items: baseline; gap: 0.45rem;
+  margin-bottom: 0.45rem; min-width: 0;
+}
+.live-expr-label { flex: none; font-size: 0.72rem; color: var(--muted); }
+.live-expr code {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: var(--code-bg); padding: 0.2rem 0.4rem; border-radius: 5px; font-size: 0.78rem;
+}
+
 /* ==================================================================================
    Printable report (docs/64)
    ==================================================================================

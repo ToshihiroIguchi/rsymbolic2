@@ -19,6 +19,7 @@ struct ProgressSnapshot {
     std::size_t epoch = 0;          // completed outer iterations
     std::vector<int> complexity;    // current global pareto front
     std::vector<double> loss;
+    std::vector<Tree> tree;         // phase 2; same order/length as the two above
 };
 // on SearchOptions:
 std::function<void(const ProgressSnapshot&)> progress_callback;  // null by default
@@ -172,16 +173,102 @@ oversight:
   also defensively clears `.live` itself, so it is self-contained even if a future
   caller invokes it without going through `finishRun()` first.
 
+## Phase 2 — the snapshot carries the equations, and the card shows one
+
+Phase 1 (everything above) gave the running search a live *chart*. The equations
+themselves stayed invisible until the run ended, because the snapshot carried only
+complexity and loss. That is what phase 2 changes.
+
+### What the core sends: a third parallel array, not a "current best"
+
+`ProgressSnapshot` gains `std::vector<Tree> tree`, filled in the same loop as the other
+two so that `tree[i]` is the member `complexity[i]`/`loss[i]` describe — and, since
+complexity is `tree.size()` everywhere in the core, `tree[i].size() == complexity[i]`.
+
+It is deliberately **not** a single `best_tree`. Deciding which member is best is a
+selection rule — `pareto_scores` + a `model_selection` accuracy band
+(`hall_of_fame.cpp` `select_best`) — and docs/48 put that rule in C++ precisely so the
+project has exactly one answer to "which equation is recommended". A "best" field here
+would either move that rule into what is documented above as pure observation data, or
+invite a caller to re-derive it and diverge. The snapshot reports the front; callers
+choose.
+
+Nothing else changes: the fill is inside the existing `if (options.progress_callback)`
+branch, so the R and Python bindings — which still leave the callback unset — execute
+the same untaken branch as before and are unaffected, bit-for-bit.
+
+### What the binding sends: one string, the lowest-loss member, raw
+
+`rsymbolic2_wasm.cpp` adds one field to the JS object, `expression`, taken from
+`s.tree.back()`. Three choices are worth recording:
+
+- **The last member** is the lowest-loss one — the front is strictly increasing in
+  complexity and strictly decreasing in loss, the same invariant `select_best` relies on
+  when `ModelSelection::Accuracy` returns `front.size() - 1`. It needs no scores and no
+  model_selection, so the GUI gets a well-defined equation without a second copy of the
+  recommendation rule.
+- **One, not all.** Stringifying the whole front costs ~28x more (see below) for output
+  the GUI does not display.
+- **Raw `to_string`, never `display_simplify`.** The simplifier is an e-graph with a
+  10 ms per-call budget (docs/54): up to ~300 ms per epoch over a full front, taken
+  straight out of a single-threaded search. The consequence is deliberate and visible:
+  a mid-run string can differ cosmetically from the finished hero card's rendering of
+  the same tree (`(x0 * x0)` vs `(x0 ^ 2)`).
+
+### What the GUI shows
+
+`#live-expr` on the Pareto card: the label "lowest loss so far" and the raw expression in
+a monospace box that ellipsises. Shown on exactly the condition that shows the
+"updating…" badge (`body.running` + `.live`), written under the same 250 ms throttle as
+the chart redraw so the line and the points always describe the same epoch, and cleared
+by `finishRun()` and `clearResults()`.
+
+What it is *not* is the point. No KaTeX, no copy button, no metrics, and not the hero
+card: a mid-run front is usually immature and the hero card's typography is the page
+saying "this is the answer". Lending that authority to an equation that will be
+overwritten a hundred times is how a screenshot of epoch 3 becomes someone's result. The
+Pareto chart works as a live display because moving points read as convergence and cannot
+be misread as a claim; a formula needs the weight dialled down to earn the same licence.
+
+It sits **above** the chart rather than below it. Below, it shared a line with the
+"updating…" badge (pinned bottom-right) and had to reserve ~100 px for it, which at phone
+width left about a dozen characters before the ellipsis — measured 119 px of usable width
+against 223 px in the final placement, on a 375 px viewport.
+
+### Cost (measured)
+
+Micro-benchmark, g++ 14.3.0 `-O2`, Windows, on a front built by the engine's own
+`gen_random_tree_fixed_size` in the real shape (30 members, complexities 1..30, 465 nodes
+total), median of two runs:
+
+| per epoch | cost |
+| --- | --- |
+| (B) copying the front's trees into the snapshot | **1.2 µs** |
+| (C) `to_string` on one member (what ships) | **2.5 µs** |
+| `to_string` on all 30 members (rejected) | 71 µs |
+
+Against epoch times measured in the browser on the shipped examples — 165 ms (Quadratic,
+40 rows; the shortest epoch of any bundled dataset), 232 ms (Noisy linear), 286 ms
+(Gravity) — the shipped combination is **~0.002 % of the shortest epoch**, or ~0.01 % if
+WASM is assumed 5x slower than native. Stringifying the whole front would still have been
+only ~0.04 %, so this was a tidiness decision, not a rescue. R/Python/native pay nothing
+at all: the callback is unset there and the whole block is skipped.
+
 ## Tests
 
 - `standalone/tests/test_progress_callback.cpp` (registered in
   `standalone/CMakeLists.txt` as ctest `progress_callback`): bit-identity with the
   callback unset vs. attached; fire-count bounded by `ceil(generations /
-  migration_interval)`; per-snapshot shape (`complexity`/`loss` equal length,
-  complexity strictly increasing — the Pareto-front invariant).
+  migration_interval)`; per-snapshot shape (`complexity`/`loss`/`tree` equal length,
+  complexity strictly increasing — the Pareto-front invariant — and `tree[i].size() ==
+  complexity[i]`, which pins the three arrays to one another and would catch a fill loop
+  that fell out of step).
 - `web/wasm/test/parity_test.cjs`: `on_progress` fires at least once on a
   multi-iteration config, and attaching it does not change the recovered expression
   or Pareto losses (same assertions as the standalone test, exercised through the
-  WASM binding). This run also covers the docs/52 display-simplification fields
+  WASM binding). Phase 2 adds: every snapshot carries a non-empty `expression`, its
+  `complexity`/`loss` arrays are non-empty and equal length, and the last front member
+  is the lowest-loss one — the invariant the binding relies on when it takes
+  `front.back()` as the equation to show. This run also covers the docs/52 display-simplification fields
   (`expression_simplified`/`latex_simplified`) for the WASM binding, which had no
   dedicated WASM-level test before.

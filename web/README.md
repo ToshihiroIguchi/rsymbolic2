@@ -90,7 +90,12 @@ Three charts, all live (switching a control re-draws instantly, nothing re-runs)
 
 - **Pareto front** — complexity vs. loss over the archived equations; click a point (or a
   table row) to select an equation, and the whole result column follows it. Also drawn
-  while the search runs, from progress snapshots.
+  while the search runs, from progress snapshots, with the lowest-loss equation found so
+  far printed above it as a provisional line. That line is raw output, not the recommended
+  equation and not display-simplified (docs/53), so it can differ cosmetically from the
+  finished **Best formula** card; while a search is running the other result cards are
+  either dimmed (a previous result, still on screen but stale) or listed as pending, since
+  each of them describes one chosen equation and the run has not chosen yet.
 - **fit** — the selected equation against the data: the fitted curve over the observed
   scatter for a single feature, predicted-vs-actual with a dashed reference line otherwise.
 - **residual** — actual − predicted against predicted, from the `view` dropdown on the same

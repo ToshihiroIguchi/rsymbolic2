@@ -1501,9 +1501,11 @@ SearchResult run_evolution(FeatureColumns X,
             snap.epoch = epoch + 1;
             snap.complexity.reserve(front.size());
             snap.loss.reserve(front.size());
+            snap.tree.reserve(front.size());
             for (const auto& m : front) {
                 snap.complexity.push_back(m.complexity);
                 snap.loss.push_back(m.loss);
+                snap.tree.push_back(m.tree);
             }
             options.progress_callback(snap);
         }
