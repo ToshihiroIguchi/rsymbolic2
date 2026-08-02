@@ -228,7 +228,9 @@ class SymbolicRegressionResult:
         fractional exponent, are ``nan`` both here and in the engine (see ``docs/69``).
         They part only at the edges the engine guards explicitly, where NumPy follows
         IEEE: ``0 ** -1`` and ``(-inf) ** 0.5`` are ``inf`` here and ``nan`` in the
-        engine. It matters only if the prediction inputs reach them.
+        engine, and ``np.log(0)`` is ``-inf`` here and ``nan`` in the engine (the
+        ``safe_log`` guard, ``docs/77``). It matters only if the prediction inputs
+        reach them.
         """
         X = _as_design_matrix(newdata, "newdata")
         if X.shape[1] != self.n_features:
@@ -922,9 +924,14 @@ def symbolic_regression(
         rejects. ``erf``/``sinh``/``cosh`` are physical-science motifs the primitive
         set cannot reach (each needs its argument twice, so a macro cannot express
         it); ``sinh``/``cosh`` are unguarded like ``exp`` and overflow to a
-        non-finite value for a large argument (docs/62).
+        non-finite value for a large argument (docs/62). ``sqrt`` and ``log`` are
+        domain-guarded (SymbolicRegression.jl ``safe_sqrt``/``safe_log``): outside
+        their domain they yield NaN, which rejects the candidate rather than
+        substituting a finite value (docs/69, docs/77).
     binary_ops : sequence of str, default ("add","sub","mul")
-        Allowed binary operators. Recognised: add, sub, mul, div, pow.
+        Allowed binary operators. Recognised: add, sub, mul, div, pow. ``pow`` is
+        domain-guarded the same way (``safe_pow``): where x**y is undefined it
+        yields NaN and the candidate is rejected.
     max_depth : int, default 30
         Maximum tree depth (PySR ``maxdepth``).
     max_nodes : int, default 30

@@ -117,6 +117,11 @@ be handed to PySR in a comparison.
 \eqn{1/x} as a single node (cheaper than \code{div} with a fitted
 numerator).  \code{"inv"} is unguarded like \code{"div"}: a zero argument
 yields a non-finite value and the candidate is rejected by the loss guard.
+\code{"sqrt"} and \code{"log"} are domain-guarded, matching
+\code{SymbolicRegression.jl}'s \code{safe_sqrt}/\code{safe_log}: outside
+their domain (\eqn{x < 0} and \eqn{x \le 0} respectively) they yield
+\code{NaN}, rejecting the candidate rather than substituting a finite
+value.  See \code{docs/69} and \code{docs/77}.
 \code{"erf"}, \code{"sinh"} and \code{"cosh"} cover physical-science motifs
 (diffusion and Maxwell-Boltzmann profiles; Butler-Volmer and double-layer
 forms) that the other operators cannot build, because each needs its argument
@@ -127,9 +132,12 @@ argument overflows and the loss guard rejects the candidate.  See
 \item{binary_ops}{Character vector of binary operators.  Recognised values:
 \code{"add"}, \code{"sub"}, \code{"mul"}, \code{"div"}, \code{"pow"}.
 Default is \code{c("add","sub","mul")}.
-\code{"pow"} uses a safe implementation that avoids \code{NaN} when the
-base is non-positive: \code{x^y} returns 0 for undefined inputs instead
-of \code{NaN}, preventing LM-solver poisoning.}
+\code{"pow"} is domain-guarded, matching \code{SymbolicRegression.jl}'s
+\code{safe_pow}: where \eqn{x^y} is undefined (a negative base under a
+fractional exponent, or 0 to a negative power) it yields \code{NaN}, which
+makes the loss non-finite and so rejects the candidate.  That rejection is
+the purpose of the guard; it does not substitute a finite value.  See
+\code{docs/69} and \code{docs/77}.}
 
 \item{max_depth}{Maximum tree depth for randomly generated expressions
 (default 30, PySR \code{maxdepth}, which defaults to \code{maxsize}).}

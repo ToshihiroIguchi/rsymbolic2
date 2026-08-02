@@ -29,12 +29,16 @@ T apply_unary(UnaryOp op, const T& a) {
     using libm::cos;
     using libm::erf;
     using libm::exp;
-    using libm::log;
     using libm::sin;
     using std::abs;
     using std::cosh;
     using std::sinh;
     using std::tanh;
+    // NOTE: no `using libm::log` either, for the same reason: Log resolves to
+    // rsymbolic::log — the safe_log in dual.hpp — for double as well as for
+    // Dual/MultiDual. That definition calls libm::log internally, so the UCRT redirect
+    // (docs/68) is unaffected; what changes is that the domain guard is no longer
+    // bypassed for the plain-double path (docs/77).
     // NOTE: no `using std::sqrt`. Sqrt resolves to rsymbolic::sqrt — the safe_sqrt in
     // dual.hpp — for double as well as for Dual/MultiDual, exactly like square/recip/pow
     // below. It used to pull in std::sqrt here, which made this path the one place in the

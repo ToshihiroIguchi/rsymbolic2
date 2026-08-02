@@ -244,5 +244,11 @@ is not a regression signal.
 - **`sqrt`'s derivative at exactly 0** stays 0 rather than +Inf, unchanged from before.
 - **The other SR.jl protected operators** (`log2`, `log10`, `log1p`, `asin`, `acos`,
   `acosh`, `atanh`) are not implemented in rsymbolic2 at all, so there is nothing to align.
-  Our `log` is unguarded, which is equivalent in effect: `log(x<=0)` gives NaN or −Inf and
-  both are non-finite, so the candidate is rejected either way.
+
+> **Correction (docs/77).** This section originally continued: "Our `log` is unguarded,
+> which is equivalent in effect: `log(x<=0)` gives NaN or −Inf and both are non-finite, so
+> the candidate is rejected either way." **That was wrong**, and `log` is now guarded.
+> Rejection happens on the *final loss*, not at the operator, and −Inf is not a fixed point
+> of the operator set: `exp(-Inf)` is `0`, `tanh(-Inf)` is `-1`, `1/-Inf` is `-0`. So
+> `exp(log(0))` scored as a finite `0` and the candidate survived, where SR.jl's `safe_log`
+> gives NaN through all three. See `docs/77_safe_log_parity.md`.

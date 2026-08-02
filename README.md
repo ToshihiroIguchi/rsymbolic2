@@ -283,7 +283,7 @@ print(result.predict(X_new))             # ≈ [-1.3, 1.2, 8.7]
 
 ```python
 df = result.to_pandas()      # requires pandas: pip install "./python[pandas]"
-print(df)                    # columns: complexity, loss, score, expression
+print(df)                    # columns: complexity, loss, score, recommended, expression
 
 ax = result.plot()             # requires matplotlib: pip install "./python[plot]"
 ax = result.plot(X=X, y=y)     # the equation against the data, not the front
@@ -326,7 +326,8 @@ result <- symbolic_regression(
 result$expression     # lowest-loss formula, e.g. (((x0 ^ 2) * 2.5) - 1.3)
 result$loss           # training sum-of-squared-errors
 result$recommended    # Pareto "best" trade-off
-result$pareto_front   # data frame: complexity, loss, expression
+result$pareto_front   # data frame: complexity, loss, score, expression, and the
+                      # latex / sympy / *_simplified renderings of each member
 
 print(result)         # compact view: recommended, best, and the Pareto front
 summary(result)       # full front with per-member score and training R-squared
@@ -464,15 +465,24 @@ motifs — diffusion and Maxwell–Boltzmann profiles, Butler–Volmer and doubl
 that no combination of the others can build, because each needs its argument twice
 (`docs/62`). They are opt-in like every other non-default operator.
 
-Two operators are **protected** so that an invalid intermediate value cannot poison the
-least-squares solver with `NaN` (matching SymbolicRegression.jl's `safe_*` semantics):
+Three operators are **domain-guarded**, matching SymbolicRegression.jl's `safe_*`
+semantics: outside its domain each returns **`NaN`**, never a substituted finite value.
 
-- `sqrt(x)` returns `0` for `x < 0`.
-- `pow(x, y)` returns `0` when `x ≤ 0` and the result would be undefined.
+- `sqrt(x)` → `NaN` for `x < 0`.
+- `log(x)` → `NaN` for `x ≤ 0`.
+- `pow(x, y)` → `NaN` where the result would be undefined (a negative base with a
+  fractional exponent, or `0` to a negative power).
 
-> Note: during **prediction**, `pow` uses the host language's ordinary power operator
-> (`**` / `^`), which can return `NaN` for a negative base with a fractional exponent.
-> This only matters if your data domain includes such inputs.
+The `NaN` is the mechanism, not a hazard to be defended against: it makes the candidate's
+loss non-finite, which is precisely how the search **rejects** that candidate. Returning a
+substituted `0` instead — which this project did before [`docs/69`](docs/69_safe_operator_semantics.md)
+and [`docs/77`](docs/77_safe_log_parity.md) — let expressions survive that PySR discards, and
+made `predict()` answer a plausible finite number outside the model's domain.
+
+> Note: during **prediction**, the guarded operators are evaluated by the host language
+> (NumPy / R), which follows IEEE rather than the engine's guards at a few edges — e.g.
+> `log(0)` is `-Inf` and `0 ** -1` is `Inf` there, `NaN` in the engine. It matters only if
+> your prediction inputs actually reach those points.
 
 ### User-defined operators (macro operators)
 
@@ -536,11 +546,13 @@ same names). **Every default below equals PySR's documented default** — see
 | `timeout_seconds` | `0.0` | Wall-clock limit, `0` = none. |
 | `verbosity` | `1` | Matches PySR's default; prints one line per epoch to stderr. `0` = silent. |
 
-**Result object.** Both languages return: `expression` (lowest-loss formula),
-`loss`, `complexity`, `recommended` (Pareto pick), `best_index`, and `pareto_front`
-(complexity / loss / expression). Python additionally exposes `.predict()`,
-`print(result)`, and `.to_pandas()`; R provides S3 `predict()`, `print()`,
-`summary()`, `as.data.frame()`, and `plot()` methods.
+**Result object.** Both languages return: `expression` (lowest-loss formula), `loss`,
+`complexity`, `recommended` (Pareto pick), `best_index`, `n_features`, `n_obs`/`sst` (which
+give R²), and `pareto_front` — one entry per member carrying `complexity`, `loss`, `score`,
+and the `expression` / `latex` / `sympy` renderings plus their `*_simplified` forms.
+Python exposes `.predict()`, `.latex()`, `.sympy()`, `.get_best()`, `.to_pandas()`,
+`.plot()` and `print(result)`; R provides the S3 `predict()`, `print()`, `summary()`,
+`as.data.frame()` and `plot()` methods plus `to_latex()` / `to_sympy()`.
 
 ---
 

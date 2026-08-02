@@ -239,6 +239,25 @@ void test_sqrt_negative() {
     CHECK(!std::isnan(r[3]));  // sqrt(0.75)
 }
 
+// log(c0 + x0) driven to zero and NEGATIVE. The twin of test_sqrt_negative, for the guard
+// docs/69 left off log (docs/77). The gradient path is the subtle half here: it divides by
+// the ARGUMENT, and at exactly 0 that division yields +-Inf rather than NaN, so the NaN
+// must be forced from the value rather than inherited. finite_diff is off for the same
+// reason as sqrt_negative — a NaN value has no finite-difference derivative.
+void test_log_nonpositive() {
+    Tree t = {constant_node(0, 0.5), variable_node(0), binary_node(BinaryOp::Add),
+              unary_node(UnaryOp::Log)};
+    std::vector<std::vector<double>> X = {{2.0}, {-3.0}, {-0.5}, {0.25}};
+    run_case("log_nonpositive", t, X, {0.5}, false);
+
+    const std::vector<double> params = {0.5};
+    const std::vector<double> r = soa_residual(t, to_columns(X), X.size(), params);
+    CHECK(!std::isnan(r[0]));  // log(2.5)
+    CHECK(std::isnan(r[1]));   // log(-2.5) -> NaN, i.e. the candidate is rejected
+    CHECK(std::isnan(r[2]));   // log(0): the boundary is OUT of domain, NaN not -Inf
+    CHECK(!std::isnan(r[3]));  // log(0.75)
+}
+
 // Every unary op: square(exp(c0*x0)) + log(c1+x1) + cos(c2) + tanh(c3*x0) + abs(c4-x1)
 void test_all_unary() {
     Tree t = {
@@ -340,6 +359,7 @@ int main() {
     test_linear();
     test_sin_sqrt();
     test_sqrt_negative();
+    test_log_nonpositive();
     test_all_unary();
     test_inv();
     test_erf_sinh_cosh();

@@ -50,11 +50,12 @@ inline void soa_res_unary(UnaryOp op, double* a, std::size_t P) {
     switch (op) {
         case UnaryOp::Neg:    for (std::size_t p = 0; p < P; ++p) a[p] = -a[p]; break;
         case UnaryOp::Exp:    for (std::size_t p = 0; p < P; ++p) a[p] = libm::exp(a[p]); break;
-        case UnaryOp::Log:    for (std::size_t p = 0; p < P; ++p) a[p] = libm::log(a[p]); break;
+        case UnaryOp::Log:    { for (std::size_t p = 0; p < P; ++p)
+                                  a[p] = rsymbolic::log(a[p]); } break; // safe_log, == dual.hpp
         case UnaryOp::Sin:    for (std::size_t p = 0; p < P; ++p) a[p] = libm::sin(a[p]); break;
         case UnaryOp::Cos:    for (std::size_t p = 0; p < P; ++p) a[p] = libm::cos(a[p]); break;
-        case UnaryOp::Sqrt:   for (std::size_t p = 0; p < P; ++p)
-                                  a[p] = rsymbolic::sqrt(a[p]); break;  // safe_sqrt, == dual.hpp
+        case UnaryOp::Sqrt:   { for (std::size_t p = 0; p < P; ++p)
+                                  a[p] = rsymbolic::sqrt(a[p]); } break; // safe_sqrt, == dual.hpp
         case UnaryOp::Tanh:   for (std::size_t p = 0; p < P; ++p) a[p] = std::tanh(a[p]); break;
         case UnaryOp::Abs:    for (std::size_t p = 0; p < P; ++p) a[p] = std::abs(a[p]); break;
         case UnaryOp::Square: for (std::size_t p = 0; p < P; ++p) a[p] = a[p] * a[p]; break;
@@ -145,8 +146,16 @@ inline void soa_jac_unary(UnaryOp op, double* s, std::size_t P, double* coeff) {
             for (std::size_t p = 0; p < P; ++p) val[p] = coeff[p];
             break;
         case UnaryOp::Log:
-            for (int c = 0; c < N; ++c) { double* gc = g(c); for (std::size_t p = 0; p < P; ++p) gc[p] = gc[p] / val[p]; }
-            for (std::size_t p = 0; p < P; ++p) val[p] = libm::log(val[p]);
+            // multi_dual.hpp::log: out of domain the VALUE and every lane are NaN. The
+            // NaN has to be forced rather than inherited from the division — at val == 0
+            // the gradient division alone gives +/-Inf, and at val < 0 a finite number,
+            // neither of which is NaN. The division still reads the ARGUMENT, so it is
+            // taken before val is overwritten.
+            for (std::size_t p = 0; p < P; ++p) coeff[p] = rsymbolic::log(val[p]);
+            for (int c = 0; c < N; ++c) { double* gc = g(c);
+                for (std::size_t p = 0; p < P; ++p)
+                    gc[p] = std::isnan(coeff[p]) ? coeff[p] : gc[p] / val[p]; }
+            for (std::size_t p = 0; p < P; ++p) val[p] = coeff[p];
             break;
         case UnaryOp::Sin:
             for (std::size_t p = 0; p < P; ++p) coeff[p] = libm::cos(val[p]);

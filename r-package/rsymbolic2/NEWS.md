@@ -1,5 +1,26 @@
 # rsymbolic2 0.1.0.9000 (development)
 
+Guarded operator semantics (docs/69, docs/77):
+
+- **Search behaviour change.** The domain-guarded operators now return `NaN` outside
+  their domain rather than a substituted finite value, matching
+  `SymbolicRegression.jl`'s `safe_sqrt` / `safe_log` / `safe_pow` and so PySR's search.
+  The `NaN` is the mechanism: it makes the candidate's loss non-finite, which is how
+  the search **rejects** that candidate. Returning `0` instead let expressions survive
+  that PySR discards, and made `predict()` answer a plausible finite number outside the
+  model's domain.
+  - `sqrt(x)` and `pow(x, y)` (docs/69).
+  - `log(x)` is now guarded too (docs/77): `log(x)` for `x > 0`, `NaN` otherwise. Only
+    the `x == 0` case changes — IEEE `log` already gave `NaN` for `x < 0` — but `-Inf`
+    is not a fixed point of the operator set, so `exp(log(0))` used to score as a
+    finite `0` and survive, where SR.jl rejects it. `log` and `exp` are both default
+    operators, so this was reachable on the default path.
+- The documented guarantee in earlier manuals ("returns 0 for undefined inputs") was
+  stale text describing the pre-docs/69 behaviour; it has been corrected everywhere.
+- `predict()` evaluates with R's own operators, which follow IEEE rather than these
+  guards at a few edges — `log(0)` is `-Inf` and `0 ^ -1` is `Inf` in R, `NaN` in the
+  engine. It matters only if the prediction inputs reach them.
+
 Expression rendering (docs/71):
 
 - **Display change.** `square`, `inv` and `neg` are now printed as the operators they

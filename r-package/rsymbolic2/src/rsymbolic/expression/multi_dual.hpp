@@ -114,9 +114,18 @@ inline MultiDual<N> exp(const MultiDual<N>& a) {
     return r;
 }
 
+// safe_log: x > 0 ? log(x) : NaN, via dual.hpp's single definition (see it for why the
+// unguarded form was not "equivalent in effect"). Same branch and derivative convention
+// as the Dual overload.
 template <int N>
 inline MultiDual<N> log(const MultiDual<N>& a) {
     MultiDual<N> r;
+    if (a.value <= 0.0) {
+        const double nan = std::numeric_limits<double>::quiet_NaN();
+        r.value = nan;
+        for (int c = 0; c < N; ++c) r.grad[c] = nan;
+        return r;
+    }
     r.value = libm::log(a.value);
     // dual.hpp uses division (a.deriv / a.value); keep division to match bit-for-bit.
     for (int c = 0; c < N; ++c) r.grad[c] = a.grad[c] / a.value;

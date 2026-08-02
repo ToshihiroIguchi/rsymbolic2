@@ -240,6 +240,22 @@ void test_safe_operator_semantics() {
     CHECK(rsymbolic::sqrt(0.0) == 0.0);
     CHECK(close(rsymbolic::sqrt(4.0), 2.0, 1e-15));
 
+    // safe_log(x) = x > 0 ? log(x) : NaN. docs/69 left log unguarded, calling it
+    // "equivalent in effect" because log(x<=0) is non-finite either way. It is not:
+    // rejection happens on the final loss, and a downstream operator maps -Inf back to
+    // a finite value (exp(log(0)) == 0), so the candidate survived where SR.jl rejects
+    // it. See the tree-level cases in test_log_out_of_domain_is_not_rescued (docs/77).
+    CHECK(std::isnan(rsymbolic::log(0.0)));
+    CHECK(std::isnan(rsymbolic::log(-0.0)));   // -0.0 <= 0.0 is true
+    CHECK(std::isnan(rsymbolic::log(-1.0)));
+    CHECK(std::isnan(rsymbolic::log(-std::numeric_limits<double>::infinity())));
+    CHECK(std::isnan(rsymbolic::log(std::numeric_limits<double>::quiet_NaN())));
+    CHECK(close(rsymbolic::log(1.0), 0.0, 1e-15));
+    CHECK(close(rsymbolic::log(std::exp(1.0)), 1.0, 1e-15));
+    // in domain: plain log
+    CHECK(rsymbolic::log(std::numeric_limits<double>::infinity()) ==
+          std::numeric_limits<double>::infinity());
+
     // safe_pow: plain IEEE pow, except 0^negative is NaN rather than +-Inf.
     CHECK(std::isnan(rsymbolic::pow(0.0, -1.0)));    // SR.jl: isinteger, y<0, x==0
     CHECK(std::isnan(rsymbolic::pow(0.0, -0.5)));    // SR.jl: y<0 && x<=0
@@ -306,6 +322,34 @@ void test_safe_operator_semantics() {
     }
 }
 
+// The defect an unguarded log actually caused (docs/77). It is NOT that log(0) is
+// non-finite — it always was — but that -Inf is not a fixed point of the operator set,
+// so the very next node could turn it back into a finite value and the candidate would
+// be scored and kept. SR.jl's safe_log emits NaN, and NaN survives all four of these.
+//
+// `log` and `exp` are both DEFAULT operators, so `exp(log(x))` over data containing an
+// exact zero is a default-path divergence, not an opt-in corner.
+void test_log_out_of_domain_is_not_rescued() {
+    const std::vector<double> c = {};
+    const std::vector<double> zero = {0.0};
+    const std::vector<double> neg = {-1.0};
+
+    const UnaryOp rescuers[] = {UnaryOp::Exp, UnaryOp::Tanh, UnaryOp::Inv, UnaryOp::Neg};
+    for (UnaryOp outer : rescuers) {
+        const Tree tree = {variable_node(0), unary_node(UnaryOp::Log), unary_node(outer)};
+        CHECK(std::isnan(evaluate<double>(tree, zero.data(), c.data())));
+        CHECK(std::isnan(evaluate<double>(tree, neg.data(), c.data())));
+    }
+
+    // In domain the composition is untouched: exp(log(4)) == 4.
+    {
+        const Tree tree = {variable_node(0), unary_node(UnaryOp::Log),
+                           unary_node(UnaryOp::Exp)};
+        const std::vector<double> pos = {4.0};
+        CHECK(close(evaluate<double>(tree, pos.data(), c.data()), 4.0, 1e-12));
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -319,6 +363,7 @@ int main() {
     test_erf_sinh_cosh_value_and_gradient();
     test_pow_value_and_gradient();
     test_safe_operator_semantics();
+    test_log_out_of_domain_is_not_rescued();
 
     if (g_failures == 0) {
         std::printf("All %d checks passed\n", g_checks);

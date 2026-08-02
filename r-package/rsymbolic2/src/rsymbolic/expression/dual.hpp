@@ -55,7 +55,33 @@ inline Dual exp(const Dual& a) {
     return {e, a.deriv * e};
 }
 
+// safe_log, mirroring SymbolicRegression.jl Operators.jl:
+//     safe_log(x) = x > 0 ? log(x) : NaN
+// Same rationale as safe_sqrt below, but the hole this closes is subtler and was missed
+// when safe_sqrt was fixed (docs/69 §7 called an unguarded log "equivalent in effect",
+// on the reasoning that log(x<=0) is non-finite either way so the candidate is rejected
+// either way). That reasoning skips a step: rejection happens on the FINAL loss, not at
+// the operator, and -Inf is not a fixed point of the operator set. A downstream operator
+// can map it back to a finite value, so the candidate survives:
+//     exp(log(0))  = exp(-Inf)  =  0     tanh(log(0)) = tanh(-Inf) = -1
+//     inv(log(0))  = 1/-Inf     = -0
+// where SR.jl produces NaN at the log and NaN through every one of those. Both `log` and
+// `exp` are in the DEFAULT operator set, so `exp(log(x))` over data containing an exact
+// zero is a default-path divergence, not a corner reachable only by opt-in operators.
+//
+// Written as the literal Julia branch (`x <= 0 -> NaN`, else log) rather than a folded
+// `!(x > 0)`: for a NaN argument Julia falls through to log(NaN) = NaN, which is the same
+// answer, and docs/69 §4.1 records that folding these guards is how the pow bug survived.
+inline double log(double x) {
+    if (x <= 0.0) return std::numeric_limits<double>::quiet_NaN();
+    return libm::log(x);
+}
+
 inline Dual log(const Dual& a) {
+    if (a.value <= 0.0) {
+        const double nan = std::numeric_limits<double>::quiet_NaN();
+        return {nan, nan};
+    }
     return {libm::log(a.value), a.deriv / a.value};
 }
 

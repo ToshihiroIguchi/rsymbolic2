@@ -15,8 +15,9 @@
 #' for a negative base under a fractional exponent are \code{NaN} both here and in
 #' the engine (see \code{docs/69}).  They part only at the edges the engine guards
 #' explicitly, where R follows IEEE: \code{0 ^ -1} and \code{(-Inf) ^ 0.5} are
-#' \code{Inf} in R and \code{NaN} in the engine.  It matters only if the prediction
-#' inputs reach them.
+#' \code{Inf} in R and \code{NaN} in the engine, and \code{log(0)} is \code{-Inf}
+#' in R and \code{NaN} in the engine (the \code{safe_log} guard, \code{docs/77}).
+#' It matters only if the prediction inputs reach them.
 #'
 #' An expression that uses no data column -- a bare constant, which the simplest
 #' Pareto-front member usually is -- yields the same value for every row; it is

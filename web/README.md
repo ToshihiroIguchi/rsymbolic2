@@ -29,7 +29,7 @@ bridges.
 web/
   wasm/                     C++ -> WebAssembly binding + build
     rsymbolic2_wasm.cpp     embind bridge (sibling of python/src/rsymbolic2_py.cpp)
-    CMakeLists.txt          emcmake target (compiles the SAME 9 core .cpp, OpenMP off)
+    CMakeLists.txt          emcmake target (compiles the SAME 12 core .cpp, OpenMP off)
     build.ps1 / build.sh    emcc build wrappers
     test/parity_test.cjs    Phase-0 correctness gate (Node)
   app/                      the static site (this is what gets deployed)
@@ -222,13 +222,16 @@ carry a `macro_ops` argument so they reproduce the run.
 
 ## Building the WebAssembly module
 
-Requires the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html).
-Install and activate it once, then put it on PATH for the build shell:
+Requires the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html),
+**pinned to 6.0.2** — the version this project is developed and verified against, and the one
+`.github/workflows/deploy-pages.yml` installs. Use the pin rather than `latest`: the
+bit-identical claim under [Deployment](#deployment) holds only between builds of the *same*
+toolchain, so a local `latest` build can differ from what CI publishes.
 
 ```bash
 # one-time
 git clone https://github.com/emscripten-core/emsdk.git
-cd emsdk && ./emsdk install latest && ./emsdk activate latest
+cd emsdk && ./emsdk install 6.0.2 && ./emsdk activate 6.0.2
 ```
 
 Build (from the repo root), after sourcing the emsdk environment:
