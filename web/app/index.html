@@ -444,6 +444,32 @@
           </section>
         </div>
 
+        <!-- Shown ONLY during a run that has no previous result to fall back on — the first
+             run of a session, or any run after the data changed (docs/53 state c'). In that
+             state the live Pareto card above is promoted alone and every other result card
+             stays hidden, because a progress snapshot carries complexity and loss but no
+             equations, and each of those cards is about one chosen equation. That is the
+             right thing to draw, but on its own it left the column silently short: the user
+             saw one chart, no indication that three more panels exist, and then a sudden
+             four-card layout the instant the run ended. This says what is coming and why.
+
+             Deliberately NOT a .card: the two rules that govern result cards while a run is
+             in flight (hidden until .has-result, dimmed to 0.45 under body.running) would
+             both apply to it and are both wrong here — this block is not a stale result and
+             it exists only while those cards do not. -->
+        <div id="pending-cards" class="pending-cards">
+          <p class="pending-title">Still to come, once the search finishes:</p>
+          <ul class="pending-list">
+            <li>Best formula</li>
+            <li>Predicted vs actual</li>
+            <li>All equations</li>
+            <li>Equation tree</li>
+          </ul>
+          <p class="muted small">Each is about one chosen equation. The live chart above is
+            drawn from progress snapshots, which carry only complexity and loss — no
+            equations — so there is nothing to put in them until the run ends.</p>
+        </div>
+
         <!-- The CSV download belongs to THIS card: paretoCsv() (export.js) writes one row per
              Pareto member with the same columns the table shows, so the file is this table.
              Same head-with-a-download pattern as the tree card below. -->

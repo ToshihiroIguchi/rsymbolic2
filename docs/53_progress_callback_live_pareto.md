@@ -142,6 +142,24 @@ oversight:
   it has nothing in it until the run ends. The class is scoped under
   `:not(.has-result)`, so once a result exists it changes nothing and states (a)–(c)
   are byte-for-byte the behaviour described above.
+- **(c′) addendum: naming the panels that are still missing.** Hiding the other cards
+  is correct — a snapshot carries complexity and loss but no equations, and each of
+  those cards is about one *chosen equation* — but on its own it left the column
+  silently short. A first-time user saw one chart, no indication that three more
+  panels exist, and then a four-card layout appearing all at once the instant the run
+  ended; the reasonable reading was "the other charts are broken" rather than "they
+  need a finished equation". `index.html #pending-cards` (styled in `style.css` beside
+  the three rules above) is a dashed note under the promoted Pareto card that names
+  the four pending panels as ghost chips — Best formula, Predicted vs actual, All
+  equations, Equation tree — and states in one sentence why they are empty. It is
+  scoped to the *same* selector as the (c′) reveal
+  (`#results-area:not(.has-result).has-live`), so it appears and disappears with that
+  reveal and cannot show up in states (a)–(d). It is deliberately **not** a `.card`:
+  the two rules that govern result cards mid-run (hidden until `.has-result`, dimmed
+  to `0.45` under `body.running`) would both apply and are both wrong for it — it is
+  not a stale result, and it exists only while those cards do not. No JS: nothing in
+  `main.js` traverses the result cards, so the four `classList` calls on
+  `#results-area` remain the whole mechanism.
 - **(d) Finished.** `finishRun()` (called from all three end-of-run paths — Stop,
   result, error) removes `body.running`, the Pareto card's `.live` class and the
   `.has-live` reveal of (c′), so a Stop mid-run leaves no live state behind — a first

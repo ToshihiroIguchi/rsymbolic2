@@ -644,6 +644,30 @@ body.has-data #placeholder-run-example { display: none; }
 #results-area:not(.has-result).has-live .charts-row { display: grid; grid-template-columns: 1fr; }
 #results-area:not(.has-result).has-live #pareto-card { display: flex; }
 
+/* ...and, in that same state only, a note under the promoted card naming the panels that
+   are still missing (index.html #pending-cards explains why they are). It is scoped to the
+   exact same selector as the three rules above, so it appears and disappears with the
+   first-run reveal itself: once .has-result exists every card is on screen and the note
+   would be stating the obvious, and outside a run there is nothing to wait for. Ghost
+   chips rather than a bulleted list — dashed outlines read as "a panel goes here", which
+   is what the note is for, and they wrap into one compact row instead of four tall lines. */
+#pending-cards { display: none; }
+#results-area:not(.has-result).has-live #pending-cards {
+  display: block;
+  border: 2px dashed var(--border); border-radius: 10px;
+  padding: 1rem 1.1rem; color: var(--muted);
+}
+.pending-title { margin: 0 0 0.6rem; font-size: 0.85rem; font-weight: 600; }
+.pending-list {
+  display: flex; flex-wrap: wrap; gap: 0.4rem;
+  list-style: none; margin: 0 0 0.7rem; padding: 0;
+}
+.pending-list li {
+  border: 1px dashed var(--border); border-radius: 999px;
+  padding: 0.2rem 0.7rem; font-size: 0.78rem;
+}
+#pending-cards p:last-child { margin: 0; }
+
 /* While a search is running, the previous run's results are stale: dim them and block
    interaction (row/point clicks, copy buttons) until finishRun() removes body.running.
    Interaction is disabled on the whole container (a parent's pointer-events: none already
