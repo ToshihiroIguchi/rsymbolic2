@@ -22,6 +22,7 @@
 #include <emscripten/val.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
@@ -141,6 +142,48 @@ val run(val opts) {
         if (y.size() != n)
             throw std::invalid_argument("y length must equal nrow.");
 
+        // NaN/Inf in the data are rejected rather than carried into the search. The core maps
+        // a non-finite prediction to an infinite loss per candidate, so a single bad point
+        // never stops a run — it starves it, and the loss it reports still looks ordinary
+        // (docs/74). `weights` has been checked this way all along; this is the same check on
+        // the data it weights. The GUI's own intake cannot produce one (a column holding a
+        // non-finite cell is not offered as a feature or target, main.js), so this is the
+        // boundary guard for every other caller, exactly as in the R and Python bridges.
+        for (double v : Xflat)
+            if (!std::isfinite(v))
+                throw std::invalid_argument("X must not contain NaN or infinite values.");
+        for (double v : y)
+            if (!std::isfinite(v))
+                throw std::invalid_argument("y must not contain NaN or infinite values.");
+
+        // Count-like arguments must be positive, checked HERE while they are still signed
+        // ints. Every one of them is assigned to a std::size_t below, so a negative value
+        // does not fail — it wraps to an enormous count. `population_size = -1` reached the
+        // core as ~1.8e19 and came back to the user as the bare std::length_error message
+        // "vector"; `generations = -1` started a run of 1.8e19 generations that nothing short
+        // of closing the tab ends. run_evolution() cannot catch either: by then the sign is
+        // gone and a wrapped -1 is indistinguishable from a deliberate huge request. The R and
+        // Python bridges guard this at the same boundary (docs/74) and the three bridges are
+        // meant to stay symmetric — this is the third one.
+        const int population_size = get_int(opts, "population_size", 27);
+        const int generations     = get_int(opts, "generations", 2800);
+        const int tournament_size = get_int(opts, "tournament_size", 15);
+        const int max_nodes       = get_int(opts, "max_nodes", 30);
+        const int max_depth       = get_int(opts, "max_depth", 30);
+        const int n_populations   = get_int(opts, "n_populations", 31);
+        if (population_size < 1)
+            throw std::invalid_argument("population_size must be a positive integer");
+        if (generations < 1)
+            throw std::invalid_argument("generations must be a positive integer");
+        if (tournament_size < 1)
+            throw std::invalid_argument("tournament_size must be a positive integer");
+        if (max_nodes < 1)
+            throw std::invalid_argument("max_nodes must be a positive integer");
+        if (max_depth < 1)
+            throw std::invalid_argument("max_depth must be a positive integer");
+        if (n_populations < 1)
+            throw std::invalid_argument("n_populations must be a positive integer");
+
         // Flat row-major -> the engine's column-major layout (columns[col][row]).
         rsymbolic::FeatureColumns X;
         X.columns.assign(p, std::vector<double>(n));
@@ -157,8 +200,8 @@ val run(val opts) {
         // --- SearchSpace ------------------------------------------------------------
         SearchSpace space;
         space.num_features = static_cast<int>(p);
-        space.max_depth    = get_int(opts, "max_depth", 30);
-        space.max_nodes    = get_int(opts, "max_nodes", 30);
+        space.max_depth    = max_depth;
+        space.max_nodes    = max_nodes;
 
         std::vector<std::string> unary_ops  = get_str_vec(opts, "unary_ops");
         std::vector<std::string> binary_ops = get_str_vec(opts, "binary_ops");
@@ -217,14 +260,14 @@ val run(val opts) {
         // --- SearchOptions (defaults already match PySR; override what the caller set) -
         SearchOptions o;
         o.space                      = space;
-        o.population_size            = static_cast<std::size_t>(get_int(opts, "population_size", 27));
-        o.generations                = static_cast<std::size_t>(get_int(opts, "generations", 2800));
-        o.tournament_size            = static_cast<std::size_t>(get_int(opts, "tournament_size", 15));
+        o.population_size            = static_cast<std::size_t>(population_size);
+        o.generations                = static_cast<std::size_t>(generations);
+        o.tournament_size            = static_cast<std::size_t>(tournament_size);
         o.target_loss                = get_num(opts, "target_loss", 1e-10);
         o.simplify_expressions       = get_bool(opts, "simplify", true);
         o.crossover_probability      = get_num(opts, "crossover_probability", 0.0259);
         o.seed                       = static_cast<std::uint64_t>(get_num(opts, "seed", 0));
-        o.n_populations              = static_cast<std::size_t>(std::max(1, get_int(opts, "n_populations", 31)));
+        o.n_populations              = static_cast<std::size_t>(std::max(1, n_populations));
         o.timeout_seconds            = get_num(opts, "timeout_seconds", 0.0);
         o.verbosity                  = get_int(opts, "verbosity", 0);  // silent in-browser
         o.optimize_probability       = get_num(opts, "optimize_probability", 0.14);

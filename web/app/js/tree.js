@@ -11,8 +11,12 @@
 // renders it as inline SVG (no plotting library: Chart.js cannot draw trees).
 //
 // Node count caveat: this counts the parse of the *printed* (display-simplified, docs/52)
-// expression, which can be smaller than the `complexity` column — that counts the raw tree
-// the search archived. Same relationship main.js::fmtComplexity renders as "10 → 7".
+// expression, which is usually smaller than the `complexity` column — that counts the raw tree
+// the search archived. Same relationship main.js::fmtComplexity renders as "10 → 7". It can also
+// be LARGER than the simplified count, and routinely is: since docs/71 the engine prints the
+// one-child nodes in notation rather than by name, so a Square the core counts as two nodes
+// (square, x0) prints as "(x0 ^ 2)" and re-parses here as three. The tree draws what is printed,
+// so it counts what is printed; the column's own tooltip states the same both-ways caveat.
 
 import { parseExpression } from "./predict.js";
 

@@ -105,6 +105,15 @@
                     title="Load different data (reopens the file drop zone and example picker)">change</button>
           </div>
 
+          <!-- What the file lost on the way in. Separate from #data-notice below because it
+               answers a different question: that one says what will be FITTED (and offers to
+               change it), this one says what the intake could not use at all. A column with a
+               single blank, "NA" or text cell is not numeric, so it vanishes from Target and
+               Features — silently, until now, while the summary line went on counting it as one
+               of the file's columns. Same for a row whose field count does not match the header.
+               Neither is a failure worth blocking on; both are worth saying. -->
+          <div id="intake-notice" class="data-notice" hidden></div>
+
           <!-- Large-data feedback. The engine is single-threaded here and its heap is fixed
                at 128 MB, so row count decides both how long a run takes and whether it can
                run at all (docs/59). #data-notice carries the warning (or the "we had to
@@ -480,7 +489,7 @@
             <h2>Equation tree</h2>
             <div class="results-head-controls">
               <span id="tree-nodes" class="muted small"
-                    title="Nodes in the equation as printed in the Best formula card. The complexity column counts the raw tree the search archived, which can be larger."></span>
+                    title="Nodes in the equation as printed in the Best formula card, counted as printed. It can differ from the complexity column in either direction: that column counts the raw tree the search archived, which is usually larger — but a node printed in notation rather than by name is drawn as the notation, so square(x0) counts as one node there and three here, as (x0 ^ 2)."></span>
               <button id="download-tree" class="btn small icon-btn" type="button"
                       aria-label="Download tree as SVG" title="Download tree as SVG">
                 <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none"
@@ -549,7 +558,10 @@
           <label>Optimize prob.<input id="optimize_probability" type="number" step="0.01" value="0.14" /></label>
           <label>Crossover prob.<input id="crossover_probability" type="number" step="0.0001" value="0.0259" /></label>
           <label>HOF migration frac.<input id="fraction_replaced_hof" type="number" step="0.0001" value="0.0614" /></label>
-          <label>Max nodes depth<input id="max_depth" type="number" min="1" value="30" /></label>
+          <!-- "Max nodes depth" until it turned up in a validation message and read as a
+               field that does not exist. It is the tree DEPTH limit (max_depth); the node
+               limit is "Max nodes" under Search budget above. -->
+          <label>Max depth<input id="max_depth" type="number" min="1" value="30" /></label>
           <label>Target loss<input id="target_loss" type="number" step="1e-10" value="1e-10" /></label>
           <label>Max evals (0=off)<input id="max_evals" type="number" min="0" value="0" /></label>
           <label>Warmup maxsize by<input id="warmup_maxsize_by" type="number" step="0.05" min="0" value="0" /></label>

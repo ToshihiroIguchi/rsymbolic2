@@ -275,6 +275,37 @@ function assert(cond, msg) {
   assert(badPresets.length === 0,
     `all ${presets.length} shipped macro presets are accepted by the engine`);
 
+  // 2f-bis. Input validation at the bridge boundary, matching the R and Python bridges
+  // (docs/74). Every count below is cast to an unsigned type inside the bridge, so a negative
+  // one does not fail — it wraps to ~1.8e19. Before these guards `population_size = -1` came
+  // back as the bare std::length_error message "vector" and `generations = -1` started a run
+  // of 1.8e19 generations, which in a browser tab is indistinguishable from a hang. The
+  // assertions check the MESSAGE, not just that something failed: the message naming the
+  // argument is the whole point, and "vector" would still be an error.
+  for (const name of ["population_size", "generations", "tournament_size", "max_nodes",
+                      "max_depth", "n_populations"]) {
+    for (const bad of [0, -1]) {
+      const res = runOpts({ [name]: bad });
+      assert(res && typeof res.error === "string" && res.error.includes(name)
+          && res.error.includes("positive"),
+        `${name} = ${bad} is rejected by name (got: ${res && res.error})`);
+    }
+  }
+  // NaN/Inf in the data starve a run rather than stopping it: the core gives a non-finite
+  // prediction an infinite loss per candidate, so the search runs to completion and reports a
+  // loss that looks ordinary. The GUI's intake cannot produce one (a column with a non-finite
+  // cell is offered neither as a feature nor as the target), so this guards every other caller.
+  const nanX = Float64Array.from(flat);
+  nanX[0] = NaN;
+  const rNanX = runOpts({ X: nanX });
+  assert(rNanX && typeof rNanX.error === "string" && rNanX.error.includes("X must not contain"),
+    "NaN in X is rejected");
+  const infY = Float64Array.from(y);
+  infY[0] = Infinity;
+  const rInfY = runOpts({ y: infY });
+  assert(rInfY && typeof rInfY.error === "string" && rInfY.error.includes("y must not contain"),
+    "Inf in y is rejected");
+
   // 2g. The browser's own evaluator (web/app/js/predict.js) must agree with the engine on
   // every operator it re-implements. This matters most for `erf`: R borrows pnorm and Python
   // borrows math.erf, but JavaScript has no error function at all, so predict.js carries its

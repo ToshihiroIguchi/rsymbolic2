@@ -7,6 +7,7 @@
 
 import {
   parseTable, numericColumns, toMatrix, maxRowsForBrowser, sampleTable, strideIndices,
+  firstNonNumericCell,
 } from "./data.js";
 import { EXAMPLES } from "./examples.js";
 import {
@@ -450,6 +451,12 @@ function buildExamples() {
     syncOperatorReset();      // ... and no change event means no delegated listener either
     saveSearchSettingsSoon(); // ticked programmatically, so no change event fires on the boxes
     loadTable(ex.make(), { label: ex.label, kind: "example" });
+    // Back to the placeholder, same as #macro-preset. This is a loader, not a statement of
+    // what is loaded — the data summary line is that. Leaving the picked entry selected broke
+    // it in both directions: a <select> fires no change event when the option already selected
+    // is picked again, so the same example could never be re-loaded after other data replaced
+    // it; and until then the rail sat there naming an example that was no longer the data.
+    sel.value = "";
   });
 }
 
@@ -500,6 +507,7 @@ function loadTable(table, source = null) {
   // same column set, so the provisional table above is enough to build the lists from.
   buildTargetAndFeatures();
   applyRowPolicy(true);
+  renderIntakeNotice();
   // Progressive disclosure: the target/feature controls stay hidden until there is data to
   // model, and loading data collapses the intake block (drop zone + example picker) — the
   // "change" button re-opens it.
@@ -760,6 +768,48 @@ function renderDataNotice(over) {
   el.hidden = false;
 }
 
+// What the intake could not use, said once when the table is loaded. Two independent things
+// silently disappeared before this existed:
+//   * a column holding ONE blank, "NA" or text cell is not numeric, so it is offered neither as
+//     the target nor as a feature — while the summary line still counts it among the columns,
+//     which is what made it invisible. Naming the first offending cell is the point: "x1 is not
+//     numeric" sends the user looking through the whole column, "row 2 is NA" does not.
+//   * a row whose field count does not match the header is dropped by the parser.
+// Neither is worth refusing the file over, so this reports and moves on. Rebuilt only on load:
+// both facts are properties of the parsed file, and nothing the user does afterwards changes
+// them (the target/feature controls cannot reach a column that is not on them).
+const NAMED_DROPPED_COLUMNS = 3; // beyond this, count them instead of listing them
+function renderIntakeNotice() {
+  const el = $("intake-notice");
+  const src = state.sourceTable;
+  const dropped = src.columns
+    .map((name, j) => ({ name, j }))
+    .filter(({ j }) => !state.numeric[j]);
+  const lines = [];
+  if (dropped.length) {
+    const shown = dropped.slice(0, NAMED_DROPPED_COLUMNS).map(({ name, j }) => {
+      const bad = firstNonNumericCell(src, j);
+      if (!bad) return `"${name}"`; // unreachable while `numeric` is derived from the same test
+      const cell = bad.value === "" || bad.value == null ? "blank" : `"${bad.value}"`;
+      return `"${name}" (row ${fmtInt(bad.row)} is ${cell})`;
+    });
+    const rest = dropped.length - shown.length;
+    lines.push(
+      `${dropped.length} of ${src.columns.length} column${src.columns.length === 1 ? "" : "s"} ` +
+      `${dropped.length === 1 ? "is" : "are"} not numeric and cannot be modelled: ` +
+      `${shown.join(", ")}${rest > 0 ? `, and ${fmtInt(rest)} more` : ""}. ` +
+      "A column needs every cell to be a finite number; fix or remove the cell to use it.");
+  }
+  if (src.skippedRows > 0) {
+    lines.push(
+      `${fmtInt(src.skippedRows)} row${src.skippedRows === 1 ? "" : "s"} did not have ` +
+      `${src.columns.length} fields and ${src.skippedRows === 1 ? "was" : "were"} skipped.`);
+  }
+  el.textContent = lines.join(" ");
+  el.classList.toggle("warn", lines.length > 0);
+  el.hidden = lines.length === 0;
+}
+
 function renderDataSummary() {
   const cols = state.table.columns.length;
   const fitted = state.table.rows.length;
@@ -896,6 +946,38 @@ function readConfig() {
     linear_scaling: $("linear_scaling").checked,
     eval_cache: $("eval_cache").checked,
   };
+}
+
+// The numeric fields carry their own lower bounds in the markup (index.html `min`), and those
+// bounds are load-bearing rather than decorative: `min` on a number input constrains the
+// spinner, not what can be typed, and every count below is cast to an unsigned type in the
+// engine — so a negative one does not fail, it wraps. `population_size = -1` used to surface as
+// the bare C++ message "error: vector", and `generations = -1` started a run of 1.8e19
+// generations that nothing short of closing the tab ends. The engine now refuses both at its own
+// boundary (rsymbolic2_wasm.cpp, matching the R and Python bridges); this check is what turns
+// the refusal into a sentence naming the field, before a run is launched at all.
+//
+// Driven off the markup rather than a second table of bounds, so a field added later is covered
+// by the `min` its input already needs. Fields with no `min` (the parity constants, which are
+// meaningful at any magnitude) are skipped.
+function settingError(cfg) {
+  for (const id of Object.keys(DEFAULTS)) {
+    const el = $(id);
+    if (!el.min) continue;
+    const lo = Number(el.min);
+    if (!Number.isFinite(lo) || cfg[id] >= lo) continue;
+    return `${fieldLabel(id)} must be at least ${lo} (it is ${cfg[id]}).`;
+  }
+  return null;
+}
+
+// The field's own visible label, so the message names what the user sees in the dialog rather
+// than the engine's argument name. The label's first child is its text node;
+// annotateSettingsFields() appends the hint AFTER the input, so it cannot be picked up here.
+function fieldLabel(id) {
+  const label = $(id).closest("label");
+  const text = label && label.firstChild ? label.firstChild.textContent.trim() : "";
+  return text || id;
 }
 
 // --- Settings dialog --------------------------------------------------------------
@@ -1184,7 +1266,15 @@ function run() {
   state.targetIndex = parseInt($("target-select").value, 10);
   state.featureIndices = currentFeatureIndices();
   if (state.featureIndices.length === 0) {
-    setStatus("Select at least one feature.");
+    // "Select at least one feature" is only true advice when there IS one to select. With a
+    // one-column file, or a table whose other columns all hold a non-numeric cell, the Features
+    // list is empty and that sentence asks for something the page cannot do — which is the
+    // state a user reaches by pasting a table with one "NA" in it. Say what is actually wrong.
+    const selectable = document.querySelectorAll('input[data-feature="1"]').length;
+    setStatus(selectable
+      ? "Select at least one feature."
+      : "No column is available as an input: a feature must be a numeric column other than the " +
+        "target. Load a table with at least two fully numeric columns.");
     return;
   }
   // The heap ceiling is re-checked here because it depends on settings the user can change
@@ -1217,6 +1307,13 @@ function run() {
   const macroProblem = macroError(config.macro_names, config.macro_bodies);
   if (macroProblem) {
     setStatus(macroProblem);
+    return;
+  }
+  // Same rule for an out-of-range setting: the engine would refuse it, but only after the run
+  // is launched and in its own vocabulary. See settingError().
+  const settingProblem = settingError(config);
+  if (settingProblem) {
+    setStatus(settingProblem);
     return;
   }
   state.config = config;

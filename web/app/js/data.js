@@ -36,10 +36,23 @@ export function parseTable(text) {
     columns = table[0].map((c, j) => (c.trim() || `col${j + 1}`));
     dataRows = table.slice(1);
   }
-  // Keep only rows with the expected width.
-  dataRows = dataRows.filter((r) => r.length === ncol);
-  if (dataRows.length === 0) throw new Error("No data rows found.");
-  return { columns, rows: dataRows };
+  // Keep only rows with the expected width. `skippedRows` reports how many were dropped:
+  // discarding them is the right call (a short row has no unambiguous reading), but doing it
+  // without a word means a file with a stray delimiter loses rows the user never hears about.
+  const kept = dataRows.filter((r) => r.length === ncol);
+  const skippedRows = dataRows.length - kept.length;
+  if (kept.length === 0) throw new Error("No data rows found.");
+  return { columns, rows: kept, skippedRows };
+}
+
+// The first cell that stops a column being usable, as { row, value } (row is 1-based over the
+// data rows, i.e. what the preview shows), or null when the column is fully numeric. Used to
+// say WHY a column was dropped rather than only that it was; short-circuits at the first hit.
+export function firstNonNumericCell({ rows }, j) {
+  for (let i = 0; i < rows.length; i++) {
+    if (!isNumeric(rows[i][j])) return { row: i + 1, value: rows[i][j] };
+  }
+  return null;
 }
 
 // A very small CSV line splitter supporting double-quoted fields with embedded
