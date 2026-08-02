@@ -1905,6 +1905,23 @@ function setStatus(s, announce = true) {
   if (announce) $("status-live").textContent = s;
 }
 function metric(k, v) { return `<span class="k">${k}</span><span>${v}</span>`; }
+// Is a modal <dialog> open? The browser makes everything behind a modal inert for POINTER
+// input, so every button on this page already respects it — but the two document-level
+// shortcuts below are keyboard-only paths that were reachable from behind an open dialog, and
+// both MUTATE state the dialog is meant to own for the duration:
+//   * Ctrl+Enter launched a run that read the settings dialog's UNCOMMITTED fields. That panel
+//     is transactional (openSettings snapshots, all four dismissal paths restore), so Cancel
+//     then discarded the very values the finished run had used — leaving the rail reporting
+//     "2800 generations" beside a result the chip said took 7. The run also started BEHIND the
+//     modal, where its progress bar and its Stop button cannot be reached.
+//   * Ctrl+V replaced the loaded table while the data preview was open, so that dialog went on
+//     showing (and its note went on counting) rows that were no longer loaded.
+// Ctrl+P is deliberately NOT guarded: it prints rather than mutates, and the print stylesheet
+// already hides dialogs (body.has-print-report dialog { display: none }). Blocking it here
+// would only hand the print to the browser's own path, which cannot await the chart images.
+function modalOpen() {
+  return document.querySelector("dialog[open]") !== null;
+}
 // Escapes for BOTH text and attribute contexts (renderTable puts expressions in a title=""),
 // so the quote characters are part of the set even though today's callers cannot produce them.
 function esc(s) {
@@ -1933,6 +1950,10 @@ function init() {
   });
   document.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      // A dialog owns the keyboard while it is open, exactly as it already owns the pointer
+      // (modalOpen). Falling through here started a run on the settings panel's uncommitted
+      // values, behind a modal that hides both the progress bar and Stop.
+      if (modalOpen()) return;
       e.preventDefault();
       if (state.table && !document.body.classList.contains("running")) run();
       return;
@@ -1972,6 +1993,12 @@ function init() {
 
   $("file-input").addEventListener("change", (e) => {
     const file = e.target.files[0];
+    // Clear the control, not just read it: a file input fires `change` only when the chosen
+    // file list DIFFERS from the one it holds, so picking the same path again — the shape of
+    // "I fixed the CSV, load it again" — fired nothing and the page silently kept the old
+    // table. Same defect the example picker had (docs/75 finding 5), same remedy. Safe to do
+    // before the read: `file` is a Blob reference that outlives the input's value.
+    e.target.value = "";
     if (file) loadFile(file);
   });
   // Drag & drop onto the data card's drop zone (clicking it opens #file-input via the label).
@@ -1996,6 +2023,10 @@ function init() {
     const t = e.target;
     const tag = t && t.tagName ? t.tagName.toLowerCase() : "";
     if (tag === "input" || tag === "textarea" || tag === "select" || (t && t.isContentEditable)) return;
+    // Same modality rule as Ctrl+Enter above: loading a table is the one thing this shortcut
+    // does, and doing it behind the open data preview left that dialog describing data the app
+    // no longer holds.
+    if (modalOpen()) return;
     const text = e.clipboardData && e.clipboardData.getData("text");
     if (!text || !text.trim()) return;
     e.preventDefault();

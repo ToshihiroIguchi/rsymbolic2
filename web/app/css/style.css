@@ -211,6 +211,21 @@ body.running.determinate .app-header .progress::before {
 @media (max-width: 1100px) {
   body { height: auto; overflow: visible; }
   .app-header { flex-wrap: wrap; }
+  /* The header already wraps here, but the action GROUP did not: it is a nowrap flex row that
+     also refused to shrink (`flex: none`), so its natural width — status chip + Run + PDF +
+     theme, about 415px, and more while the run timer is printing an ETA — was laid out inside
+     a 375px viewport. The theme toggle sat off the right edge, and since the header is sticky
+     the whole document scrolled sideways at every scroll position. Allowing the group to
+     shrink to the line makes it wrap within the line instead. Run keeps its place next to the
+     chip; PDF and the theme toggle drop to a second right-aligned row. */
+  .header-actions {
+    flex: 0 1 auto; min-width: 0; flex-wrap: wrap; justify-content: flex-end;
+  }
+  /* The chip keeps `white-space: nowrap` (the timer rewrites it five times a second and a
+     wrapping chip would reflow the header on every tick), so below ~320px it can still be
+     wider than its line. Ellipsis is the last resort there — the same text is announced in
+     full through #status-live either way. */
+  .status { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   /* Include the .resized variant so a prior drag can't out-specify this single-column collapse. */
   .layout, .layout.resized { grid-template-columns: 1fr; overflow: visible; }
   .sidebar, .results { overflow: visible; max-height: none; }
@@ -509,9 +524,19 @@ label.modified > .field-hint { color: var(--accent); }
   border: 1px solid var(--border); padding: 0.2rem 0.5rem; text-align: right;
 }
 
-.results-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.5rem; }
+/* Card heading on the left, its view controls on the right. Both rows WRAP: the Pareto card
+   carries two selects (recommend + loss axis) whose labels are `white-space: nowrap`, so the
+   row's natural width is ~392px against a 317px card in the single-column layout — it used to
+   overflow the card, the results column and finally the page, adding a horizontal scrollbar to
+   the whole document on every phone. Wrapping is a no-op at any width where the row fits. */
+.results-head {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 0.6rem; margin-bottom: 0.5rem;
+}
 .results-head h2 { margin: 0; border-bottom: none; padding-bottom: 0; }
-.results-head-controls { display: flex; align-items: center; gap: 0.8rem; }
+.results-head-controls {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.8rem;
+}
 .inline-select { display: flex; align-items: center; gap: 0.3rem; margin: 0; font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
 .inline-select select { width: auto; padding: 0.15rem 0.3rem; font-size: 0.78rem; }
 
