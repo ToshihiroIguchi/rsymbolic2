@@ -140,21 +140,40 @@ rejected: a permission prompt is a poor trade for a signal the tab title already
 
 ## The cost the narration exposed, and its fix
 
-Naming the engine-load phase made it measurable, and the measurement was worse than the
-guess. On the **deployed** site (GitHub Pages, `Cache-Control: max-age=600`, ETag), three
-consecutive runs of the bundled quadratic:
+Naming the engine-load phase made it measurable. The first measurement, on the **deployed**
+site (GitHub Pages, `Cache-Control: max-age=600`, ETag), three consecutive runs of the
+bundled quadratic, looked alarming:
 
 | run | engine load | whole run |
 |---|---|---|
-| 1 (cold cache) | 1,507 ms | 6,055 ms |
-| 2 (warm cache) | **851 ms** | 5,295 ms |
-| 3 (warm cache) | **856 ms** | 5,297 ms |
+| 1 | 1,507 ms | 6,055 ms |
+| 2 | 851 ms | 5,295 ms |
+| 3 | 856 ms | 5,297 ms |
 
-HTTP caching removes the *fetch* and nothing else: the worker spawn, the compile, the
-instantiate and the 128 MiB heap (`-sINITIAL_MEMORY=134217728`, growth disabled) are paid on
-every run, because Stop is `worker.terminate()` and that throws the module away with it. On
-the demo-sized problems this page exists to show, that is ~16 % of the wall clock spent
-before the search starts — in the first impression of an answer-first UI.
+**That reading was wrong as a steady-state number, and the change below was justified with
+it before it was checked.** It was taken on a browser profile that had just loaded the site
+for the first time. Re-measured later in the same session, in the settled cache state, by
+reproducing the old create-at-click design inside the page — spawn a worker, post a run,
+time until the engine reports `stage: "search"` — the per-run engine load is:
+
+```
+28 ms, 24 ms, 25 ms
+```
+
+The decomposition says why, and it is all network:
+
+| | |
+|---|---|
+| engine module | 496,281 bytes |
+| fetch, cache bypassed | **581 ms** |
+| fetch, from cache | 7 ms |
+| `WebAssembly.compile` | 2 ms |
+
+So the honest statement is: **a returning visitor's per-run engine load is ~25 ms — noise —
+and only a first visit pays anything worth moving**, where it is a 496 KB fetch that is
+~580 ms on a desktop connection and worse on mobile data. Stop being `worker.terminate()`
+means the module goes with the worker, so on a first visit that fetch lands between the Run
+click and the first generation.
 
 **Rejected: a persistent worker with engine-side interruption.** `Module.run()` blocks its
 worker thread for the whole search, so a Stop message cannot be received while it runs.
@@ -183,8 +202,8 @@ Ordering matters in one place: all four end-of-run paths call `finishRun()` **be
 and an `onError` fired while `body.running` is still set would overwrite the result being
 rendered. Ending the run first means an idle spare can only ever fail silently.
 
-Measured after the change (`web/serve.py`, i.e. `no-store` — the harshest case, where each
-warm-up re-fetches the whole `.wasm`), quadratic example:
+Measured after the change under `web/serve.py`'s `no-store`, which forces every warm-up to
+re-fetch the whole `.wasm` and so stands in for the cold case, quadratic example:
 
 | when Run is pressed | `loading engine…` shown | whole run |
 |---|---|---|
@@ -192,10 +211,23 @@ warm-up re-fetches the whole `.wasm`), quadratic example:
 | 1.5 s after the previous run | **no** | 3,350 ms |
 | immediately after the previous run | yes, 617 ms | 3,949 ms |
 
-The remaining case is real and left as is: a run started within ~0.6 s of the previous one
-finishing still pays, because that is when its replacement began warming. The chip says so
-when it happens, which is the honest behaviour — and it is the case a human hand rarely
-produces.
+On the deployed site (real caching) no run shows an engine phase at all — seven measured,
+gapped and back-to-back — and the end-to-end overhead beyond the engine's own search time is
+73–113 ms.
+
+The remaining case is real and left as is: on a cold cache, a run started within ~0.6 s of
+the previous one finishing still pays, because that is when its replacement began warming.
+The chip says so when it happens, which is the honest behaviour, and it is a case a human
+hand rarely produces.
+
+**Is it worth keeping?** On the numbers above, not for speed in the steady state: ~25 ms per
+run is nothing, and CLAUDE.md ranks Simplicity above Performance and demands measured
+evidence for the latter. It is kept for two things the measurements do support. The first
+visit — the demo's whole purpose — moves a ~580 ms (and on mobile data, worse) fetch off the
+Run click to the moment data is loaded. And the change is not a complexity cost to carry:
+it replaced four inline `terminate(); state.worker = null;` sites with two named functions
+that own the worker's life, which is where that logic belonged either way. Reverting is a
+clean option if that trade is judged the other way; nothing else depends on it.
 
 **Idle cost of the spare.** Measured as the working set of the automation browser's
 processes: 793 MiB with no data loaded and no spare, 793 MiB with a fully warmed idle spare,

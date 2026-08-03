@@ -33,11 +33,13 @@ function humanError(e) {
 
 self.onmessage = async (ev) => {
   const msg = ev.data;
-  // Warm-up (docs/79): pull the engine in before there is a run to hold up. Measured on the
-  // deployed site, instantiating it costs ~0.85 s on a warm HTTP cache — the fetch is the
-  // part caching removes, the worker spawn, compile, instantiate and 128 MiB heap are not —
-  // and a Stop that is a clean terminate() means every run pays it again. main.js therefore
-  // keeps one idle worker warmed and ready, and this is the message that warms it.
+  // Warm-up (docs/79): pull the engine in before there is a run to hold up. What that saves
+  // depends entirely on the browser's cache, and the honest numbers are small: a cold fetch
+  // of the 496 KB module costs ~580 ms, a cached one ~7 ms, and compiling it ~2 ms — so a
+  // returning visitor's per-run load is ~25 ms (measured) and only a FIRST visit pays
+  // anything worth moving. It is moved because Stop is a clean terminate(), which discards
+  // the module with the worker, so that first-visit cost would otherwise land between the
+  // Run click and the first generation. main.js keeps one idle worker warmed; this warms it.
   //
   // Failures are swallowed on purpose. This runs speculatively, before the user has asked
   // for anything; the run that follows will hit the identical failure and report it through

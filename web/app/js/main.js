@@ -1411,8 +1411,15 @@ function run() {
 // --- The worker, and the spare ------------------------------------------------------
 // One worker exists at a time and it is always warming or warm (docs/79). A run uses the
 // spare rather than creating its own, and every path that ends a run retires the worker it
-// used and starts warming the next one — so the ~0.85 s the engine takes to load is paid
-// while nobody is waiting, instead of between the Run click and the first generation.
+// used and starts warming the next one — so the engine load happens while nobody is waiting
+// rather than between the Run click and the first generation.
+//
+// Be clear about the size of that: measured on the deployed site, a returning visitor's
+// engine load is ~25 ms, which is noise. It is the FIRST visit that pays — a 496 KB fetch,
+// ~580 ms on a desktop connection and worse on mobile data — and that is the visitor an
+// answer-first demo cannot afford to keep waiting after they press Run. Everything else
+// here is a wash, so this exists for the cold case and for having one owner of the worker's
+// life instead of four inline terminate-and-null sites.
 //
 // Retiring after every run is what keeps the two properties the old create-per-run had:
 // Stop stays a plain terminate(), and each run still begins on a pristine module and an
