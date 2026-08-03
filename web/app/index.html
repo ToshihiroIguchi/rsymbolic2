@@ -39,7 +39,7 @@
       <!-- Order matters: the status chip comes BEFORE the Run button. This group is right-
            aligned (margin-left:auto), so an element's position is fixed by the widths of the
            elements AFTER it. With the chip second, its text growing from "" to
-           "31.8s | epoch 118/2800 · ≤ 12m 20s left" pushed Run 253 px to the left, and the
+           "31.8s | generation 1764/2800 · ≤ 12m 20s left" pushed Run 253 px to the left, and the
            200 ms timer rewrite kept it jittering for the whole run — i.e. the target moved
            exactly while it was the "Stop" button someone might need to hit in a hurry. Placed
            after the chip, Run's distance from the right edge is the theme toggle's width plus
@@ -68,8 +68,12 @@
         <button id="theme-toggle" class="btn small theme-toggle" type="button"
                 aria-label="Toggle dark mode" title="Toggle dark mode">&#127769;</button>
       </div>
-      <!-- Indeterminate until the engine's first progress snapshot arrives; from then on the
-           bar tracks epoch/total_epochs through the --progress custom property (main.js). -->
+      <!-- Indeterminate until there is a budget to measure against, then determinate through
+           the --progress custom property (main.js). That budget is the NEAREST of the two the
+           engine enforces: the generation budget, known once the first snapshot arrives, and
+           the wall-clock timeout, known from the moment the search starts (docs\79). Kept
+           aria-hidden: the same progress reaches assistive tech as three spoken milestones
+           through #status-live, and a 5-per-second bar cannot be a second live region. -->
       <div id="progress-bar" class="progress" aria-hidden="true"></div>
     </header>
 
@@ -439,6 +443,20 @@
             <div id="live-expr" class="live-expr">
               <span class="live-expr-label">lowest loss so far</span>
               <code id="live-expr-text"></code>
+            </div>
+            <!-- Convergence trace (docs\79): best loss so far against epoch, for the length
+                 of the run. The chart below shows the CURRENT front and is redrawn from
+                 scratch each epoch, so it cannot distinguish a search that is still
+                 improving from one that plateaued twenty epochs ago — which is the only
+                 question the Stop button asks. Shown and hidden with the live card, like the
+                 line above it.
+
+                 The note is not a caption for the sparkline: it states the same fact in
+                 words (the stall counter), so the answer survives without the canvas — for a
+                 screen reader, and for anyone who cannot read a 40px plot at a glance. -->
+            <div id="live-trace" class="live-trace">
+              <canvas id="live-trace-canvas" aria-hidden="true"></canvas>
+              <span id="live-trace-note" class="live-trace-note muted small"></span>
             </div>
             <div class="chart-box"><canvas id="pareto-canvas"></canvas></div>
           </section>

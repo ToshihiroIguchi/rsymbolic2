@@ -35,7 +35,22 @@ self.onmessage = async (ev) => {
   const msg = ev.data;
   if (msg.type !== "run") return;
   try {
+    // Stage notices (docs/79). Everything between the Run click and the first progress
+    // snapshot used to be one undifferentiated sweep: worker spawn, a ~500 KB WASM fetch,
+    // its compile and instantiate, the data transfer, then a full first epoch. The engine
+    // load is the part that is neither instant nor attributable to the search, and it
+    // happens on EVERY run — the worker is recreated per run so that Stop can be a clean
+    // terminate(), which also throws away the cached module. Naming it is the honest
+    // alternative to hiding it. (`ready`, posted at the bottom of this file, is a weaker
+    // claim: the worker script parsed. getModule() is lazy, so at that point the engine
+    // has not been fetched.)
+    self.postMessage({ type: "stage", stage: "engine" });
     const Module = await getModule();
+    // Posted before Module.run() and after the module resolved, so the main thread can time
+    // the wall clock the way the ENGINE does: run_evolution's timeout_seconds starts here,
+    // not at the Run click, and charging the engine load against it would retire the
+    // progress bar before the run it is describing.
+    self.postMessage({ type: "stage", stage: "search" });
 
     // X arrives already flattened row-major (main.js), transferred rather than copied:
     // structured-cloning an array of row arrays cost a full duplicate of the dataset and

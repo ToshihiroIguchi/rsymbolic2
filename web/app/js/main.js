@@ -12,7 +12,7 @@ import {
 import { EXAMPLES } from "./examples.js";
 import {
   drawPareto, drawPrediction, drawResidual, destroyPlots, destroyPrediction,
-  paretoImage, fitImage, residualImage,
+  drawLossTrace, paretoImage, fitImage, residualImage,
 } from "./plots.js";
 import { renderInto } from "./latex.js";
 import { renderTree, treeSvgStandalone } from "./tree.js";
@@ -251,7 +251,25 @@ const state = {
   epoch: 0,            // epochs completed, from the engine's progress snapshots
   totalEpochs: 0,      // epoch budget the engine reports (an upper bound: it can stop early)
   epochMarks: [],      // performance.now() at each completed epoch, for the ETA's recent rate
+  // In-run progress, all of it display-only (docs/79). The engine's unit is the epoch and
+  // that is what `epoch`/`totalEpochs` above hold; everything below either converts that for
+  // display or records something the engine does not send.
+  stage: null,         // "engine" while the WASM module loads, "search" once run() is called
+  searchT0: 0,         // performance.now() when the engine started — the timeout's own clock
+  lossTrace: [],       // {gen, loss} per epoch: the convergence sparkline's history
+  bestLoss: Infinity,  // lowest loss seen so far, and...
+  lastImproveGen: 0,   // ...the generation it was reached at, for the stall counter
+  announced: 0,        // highest progress milestone already spoken into #status-live
+  titlePct: null,      // last whole percent written to document.title (write only on change;
+                       // null, not -1, so the first indeterminate tick still writes one)
 };
+
+// Restored by finishRun(); the run replaces it with its own progress (docs/79). Read once,
+// at module load, so it survives every later write.
+const BASE_TITLE = document.title;
+// Fractions of the budget announced to assistive tech. Three over a whole run: enough to
+// know it is moving, few enough that a live region stays usable.
+const MILESTONES = [0.25, 0.5, 0.75];
 
 // --- Theme ------------------------------------------------------------------------
 // The <head> inline script already resolved data-theme before first paint; here we only
@@ -269,6 +287,11 @@ function updateThemeToggleIcon() {
   $("theme-toggle").textContent = dark ? "☀" : "🌙";
 }
 function redrawCharts() {
+  // The live sparkline reads its colors at draw time like every other plot, but it is the
+  // one that is not redrawn on a timer the user would notice: its next repaint is a
+  // throttled progress snapshot, which on a slow epoch is many seconds away. Repaint it now
+  // so a mid-run theme toggle does not leave one stale-coloured element on the card.
+  if (document.body.classList.contains("running")) drawLiveTrace();
   if (!state.result) return;
   drawParetoChart();
   if (state.selectedIndex != null) selectEquation(state.selectedIndex);
@@ -1328,12 +1351,28 @@ function run() {
   document.body.classList.add("running"); // shows the header progress bar
   $("pareto-card").classList.remove("live"); // cleared again on the first snapshot's redraw
   state.lastProgressDraw = 0;
-  // Back to the indeterminate sweep until the first snapshot says how long the run is.
+  // Back to the indeterminate sweep until there is a budget to measure against — the first
+  // snapshot's epoch count, or, when a timeout is set, the wall clock from the moment the
+  // engine starts (tick() decides; docs/79).
   state.epoch = 0;
   state.totalEpochs = 0;
   state.epochMarks = [];
+  // Set here rather than waiting for the worker to say so: the module worker's own script
+  // fetch is the first ~0.5 s of this phase (measured), and until it lands nothing can post
+  // a stage at all. That window is engine startup by any honest reading, so the chip should
+  // say so from the first tick instead of showing a bare, unexplained counter.
+  state.stage = "engine";
+  state.searchT0 = 0;
+  state.lossTrace = [];
+  state.bestLoss = Infinity;
+  state.lastImproveGen = 0;
+  state.announced = 0;
+  state.titlePct = null;
+  $("live-trace-note").textContent = "";
+  drawLiveTrace(); // clears the sparkline canvas of the previous run's history
   document.body.classList.remove("determinate");
   $("progress-bar").style.setProperty("--progress", "0%");
+  $("status").title = "";
   state.runStartedAt = new Date(); // wall-clock start, for the report's run summary
   startTimer();
   setStatus("running…");
@@ -1347,6 +1386,7 @@ function run() {
     if (msg.type === "result") onResult(msg.result, msg.elapsed);
     else if (msg.type === "error") onError(msg.message);
     else if (msg.type === "progress") onProgress(msg);
+    else if (msg.type === "stage") onStage(msg.stage);
   };
   state.worker.onerror = (e) => onError(e.message || "worker error");
 
@@ -1401,19 +1441,26 @@ function onResult(result, elapsed) {
   // the progress snapshots is what actually ran, so say that instead when the two disagree.
   const gens = state.config ? state.config.generations : null;
   const early = state.totalEpochs > 0 && state.epoch < state.totalEpochs;
-  // Same three facts the chip is about to turn into a sentence, kept as values: the report
-  // states them too, and re-deriving them from chip text would be reading the UI back.
+  // Generations, not epochs: the sidebar budget, the live chip and this completion chip now
+  // all count in the unit the user set (docs/79). Non-null whenever `early` is, since both
+  // need the epoch budget the snapshots carry.
+  const prog = generationProgress();
+  // Same facts the chip is about to turn into a sentence, kept as values: the report states
+  // them too, and re-deriving them from chip text would be reading the UI back.
   state.run = {
     startedAt: state.runStartedAt || new Date(),
     elapsed,
     stoppedEarly: early,
     epoch: state.epoch,
     totalEpochs: state.totalEpochs,
+    generation: prog ? prog.gen : null,
+    totalGenerations: prog ? prog.total : gens,
     source: state.dataSource,
   };
   const el = $("status");
   if (early) {
-    setStatus(`${elapsed.toFixed(2)}s | stopped early: epoch ${state.epoch}/${state.totalEpochs}`);
+    setStatus(`${elapsed.toFixed(2)}s | stopped early: ` +
+              `generation ${fmtInt(prog.gen)}/${fmtInt(prog.total)}`);
     el.title = `Ended before the configured budget of ${fmtInt(gens)} generations ` +
                "(target loss, timeout or max evals).";
   } else {
@@ -1436,6 +1483,7 @@ function onError(message) {
 
 function finishRun() {
   stopTimer();
+  document.title = BASE_TITLE; // the tab stops reporting a run that is over (docs/79)
   document.body.classList.remove("running", "determinate");
   $("pareto-card").classList.remove("live"); // Stop/error/result all end the live state
   // The first-run reveal lasts exactly as long as the run: a finished run is revealed by
@@ -1447,6 +1495,7 @@ function finishRun() {
   // stopped or failed run leaves no result to overwrite it, and a provisional formula that
   // survived into the idle card would be indistinguishable from an answer.
   $("live-expr-text").textContent = "";
+  $("live-trace-note").textContent = ""; // same rule for the stall counter beside it
   setRunButton(false);
 }
 
@@ -1465,30 +1514,79 @@ function onProgress(msg) {
   $("results-area").classList.add("has-live");
   const now = performance.now();
   // Progress accounting is separate from the redraw throttle below: every epoch must be
-  // timed even when its chart redraw is skipped, or the ETA's rate is computed from a
-  // fraction of the epochs. The status line itself is written by the run timer (one owner,
-  // see startTimer) — this only records what it will read.
+  // timed and traced even when its chart redraw is skipped, or the ETA's rate is computed
+  // from a fraction of the epochs and the convergence trace grows holes. Neither the status
+  // line nor the progress bar is written here — the run timer owns both (see startTimer);
+  // this only records what it will read.
   if (msg.epoch > state.epoch) {
     state.epoch = msg.epoch;
     state.totalEpochs = msg.total_epochs || state.totalEpochs;
     state.epochMarks.push(now);
     if (state.epochMarks.length > 6) state.epochMarks.shift();
-    if (state.totalEpochs > 0) {
-      document.body.classList.add("determinate");
-      const frac = Math.min(1, state.epoch / state.totalEpochs);
-      $("progress-bar").style.setProperty("--progress", `${(frac * 100).toFixed(1)}%`);
-    }
+    recordTrace(msg.loss);
   }
   if (now - state.lastProgressDraw < 250) return;
   state.lastProgressDraw = now;
   drawPareto($("pareto-canvas"), { complexity: msg.complexity, loss: msg.loss, score: null }, {
     logLoss: logLossEnabled(),
   });
+  drawLiveTrace();
+  $("live-trace-note").textContent = traceNote();
   // Written under the same throttle as the chart, not on every snapshot, so the line and
   // the points above it always describe the SAME epoch. The engine sends the lowest-loss
   // member (rsymbolic2_wasm.cpp), raw — no display simplification mid-run, so this string
   // can differ cosmetically from the one the finished hero card shows for the same tree.
   if (msg.expression) $("live-expr-text").textContent = msg.expression;
+}
+
+// Which phase of the run the worker is in (docs/79). The gap between the Run click and the
+// first snapshot is not idle time — it is a worker spawn, a ~500 KB WASM fetch, its compile
+// and instantiate, then a first full epoch — and it used to be indistinguishable from a
+// stalled UI. `search` also starts the clock the wall-clock timeout is measured against:
+// the engine's own deadline begins when run_evolution does, not when the user clicked.
+function onStage(stage) {
+  state.stage = stage;
+  if (stage === "search") state.searchT0 = performance.now();
+}
+
+// One point per epoch for the convergence sparkline: the best (lowest) loss on the front,
+// which every snapshot already carries. The hall of fame is global and monotone, so this
+// series only ever descends — the flat stretches are the information.
+function recordTrace(loss) {
+  if (!loss || loss.length === 0) return;
+  // A loop, not Math.min(...loss): the same reason plots.js spells its span out (a spread
+  // puts every element on the call stack), and the front is bounded but not tiny.
+  let best = Infinity;
+  for (let i = 0; i < loss.length; i++) if (loss[i] < best) best = loss[i];
+  if (best === Infinity) return;
+  const prog = generationProgress();
+  const gen = prog ? prog.gen : state.epoch;
+  state.lossTrace.push({ gen, loss: best });
+  // A budget of a few million generations would otherwise accumulate tens of thousands of
+  // points for a 34px canvas. Halving keeps the whole span visible (which a sliding window
+  // would not) at the cost of resolution nobody can see at that size.
+  if (state.lossTrace.length > 1200) {
+    state.lossTrace = state.lossTrace.filter((_, i) => i % 2 === 0);
+  }
+  if (best < state.bestLoss) {
+    state.bestLoss = best;
+    state.lastImproveGen = gen;
+  }
+}
+
+function drawLiveTrace() {
+  drawLossTrace($("live-trace-canvas"), state.lossTrace);
+}
+
+// The sparkline's fact, in words — so it survives without the canvas (screen readers, and
+// anyone not squinting at a 34px plot). The stall counter is the actual answer to the only
+// question asked mid-run: is this still finding anything, or is it time to press Stop?
+function traceNote() {
+  if (state.lossTrace.length === 0) return "";
+  const cur = state.lossTrace[state.lossTrace.length - 1];
+  const stalled = cur.gen - state.lastImproveGen;
+  return `best loss ${fmt(state.bestLoss)} · ` +
+         (stalled > 0 ? `no improvement for ${fmtInt(stalled)} generations` : "improving");
 }
 
 // One morphing header button: "▶ Run" when idle, "■ Stop" (danger red) while a search is
@@ -1500,37 +1598,147 @@ function setRunButton(running) {
   btn.disabled = !running && !state.table;
 }
 
-// One writer for the status line while a run is in flight. The epoch/ETA figures live in
-// `state` and are read from here rather than written by onProgress, because this interval
-// would overwrite anything onProgress printed within 200 ms of it.
+// One writer for every in-flight display: the status line, the header bar, the tab title and
+// the milestone announcements. The figures live in `state` and are read from here rather
+// than written by onProgress, because this interval would overwrite anything onProgress
+// printed within 200 ms of it — and because with a wall-clock timeout the bar has to keep
+// advancing between snapshots, which a snapshot-driven bar cannot do (docs/79).
 function startTimer() {
   state.t0 = performance.now();
-  state.timer = setInterval(() => {
-    const secs = (performance.now() - state.t0) / 1000;
-    let line = `${secs.toFixed(1)}s`;
-    if (state.totalEpochs > 0) line += ` | epoch ${state.epoch}/${state.totalEpochs}`;
-    const eta = estimateRemaining();
-    if (eta != null) line += ` · ≤ ${formatDuration(eta)} left`;
-    setStatus(line, false); // ticking text: never announced (see setStatus)
-  }, 200);
+  state.timer = setInterval(tick, 200);
 }
 function stopTimer() {
   if (state.timer) clearInterval(state.timer);
   state.timer = null;
 }
 
-// Seconds still to run, or null when there is not enough evidence yet. Deliberately based
-// on the RECENT epoch rate, not the whole run: early epochs carry small trees and are much
-// cheaper than later ones, so an average over the whole run reads far too optimistic at the
-// start. Nothing is shown before three epochs for the same reason. It stays an upper bound —
-// target_loss, the timeout and max_evals can all end the run sooner.
+function tick() {
+  const secs = (performance.now() - state.t0) / 1000;
+  const frac = progressFraction();
+  updateProgressBar(frac);
+  updateTitle(frac);
+  announceMilestone(frac);
+  // Before the engine exists there is no search to report on, and saying "generation 0" of a
+  // run that has not started would be the same lie the bare sweep told.
+  if (state.stage === "engine") {
+    setStatus(`${secs.toFixed(1)}s | loading engine…`, false);
+    return;
+  }
+  let line = `${secs.toFixed(1)}s`;
+  const prog = generationProgress();
+  if (prog) {
+    line += ` | generation ${fmtInt(prog.gen)}/${fmtInt(prog.total)}`;
+    // The cadence, stated once the numbers it explains are on screen: progress arrives one
+    // migration epoch at a time, so the counter advances in steps of 28 (the shipped
+    // migration_interval) rather than continuously. Nothing else in the UI says this —
+    // migration_interval is not an exposed setting.
+    const el = $("status");
+    if (!el.title) {
+      el.title = `Updated every ${fmtInt(prog.per)} generations (one migration epoch).`;
+    }
+  }
+  const eta = estimateRemaining();
+  if (eta != null) line += ` · ≤ ${formatDuration(eta)} left`;
+  setStatus(line, false); // ticking text: never announced (see setStatus)
+}
+
+// How far through the run we are, 0..1, or null while nothing measurable is known yet (the
+// bar stays on its indeterminate sweep). Two budgets can end a run and the honest fraction
+// is the NEARER deadline, so this takes the max: a 60 s timeout on a 2800-generation budget
+// is 100 % done at 60 s whatever the epoch counter says. `target_loss` and `max_evals` can
+// also stop the run and neither is predictable — hence "≤" on the ETA, and hence the
+// convergence trace, which is what makes an imminent target_loss stop visible.
+function progressFraction() {
+  let frac = null;
+  if (state.totalEpochs > 0) frac = Math.min(1, state.epoch / state.totalEpochs);
+  const limit = timeoutSeconds();
+  if (limit > 0 && state.searchT0 > 0) {
+    const used = Math.min(1, (performance.now() - state.searchT0) / 1000 / limit);
+    frac = frac == null ? used : Math.max(frac, used);
+  }
+  return frac;
+}
+
+function timeoutSeconds() {
+  const t = state.config ? Number(state.config.timeout_seconds) : 0;
+  return Number.isFinite(t) && t > 0 ? t : 0;
+}
+
+function updateProgressBar(frac) {
+  if (frac == null) return; // no budget to measure against yet: keep sweeping
+  document.body.classList.add("determinate");
+  $("progress-bar").style.setProperty("--progress", `${(frac * 100).toFixed(1)}%`);
+}
+
+// The tab title carries the run, for the case the whole page cannot: a search whose own ETA
+// example is twelve minutes will spend most of that in a background tab. Written only when
+// the whole percent changes — this runs five times a second, and document.title is not free.
+// finishRun() restores BASE_TITLE. The Notification API was considered and rejected: a
+// permission prompt is a steep price for a signal the tab already shows.
+function updateTitle(frac) {
+  const pct = frac == null ? -1 : Math.floor(frac * 100);
+  if (pct === state.titlePct) return;
+  state.titlePct = pct;
+  document.title = pct < 0 ? `running · ${BASE_TITLE}` : `${pct}% · ${BASE_TITLE}`;
+}
+
+// Three spoken checkpoints over a run. The chip itself cannot be a live region (it rewrites
+// five times a second — see setStatus), which left assistive tech with "running…" and then
+// silence until the result. During a run the milestones own #status-live; outside one, the
+// discrete messages do. Monotone by construction, so a fraction that jitters cannot repeat
+// an announcement.
+function announceMilestone(frac) {
+  if (frac == null) return;
+  let reached = 0;
+  for (const m of MILESTONES) if (frac >= m) reached = m;
+  if (reached <= state.announced) return;
+  state.announced = reached;
+  const eta = estimateRemaining();
+  $("status-live").textContent = `search ${Math.round(reached * 100)}% complete` +
+    (eta != null ? `, about ${formatDuration(eta)} left` : "");
+}
+
+// Generations for display, epochs underneath. The engine counts epochs (one per
+// migration_interval generations) and the snapshots say nothing else, but the user set a
+// budget in generations and the sidebar reports it in generations — so the chip that tracks
+// it must too. `generations / total_epochs` recovers the interval exactly when the budget
+// divides by it (2800/100 = 28) and closely otherwise; the clamp keeps a rounding artefact
+// from printing 2801/2800 on the last epoch.
+function generationProgress() {
+  if (!(state.totalEpochs > 0) || !state.config) return null;
+  const total = Number(state.config.generations);
+  if (!Number.isFinite(total) || total <= 0) return null;
+  const per = total / state.totalEpochs;
+  return { gen: Math.min(total, Math.round(state.epoch * per)), total, per: Math.round(per) };
+}
+
+// Seconds still to run, or null when there is not enough evidence yet — the nearer of the
+// two deadlines, for the same reason progressFraction() takes the max of them. It stays an
+// upper bound: target_loss and max_evals can end the run sooner than either.
 function estimateRemaining() {
+  const byEpoch = epochRemaining();
+  const byTimeout = timeoutRemaining();
+  if (byEpoch == null) return byTimeout;
+  if (byTimeout == null) return byEpoch;
+  return Math.min(byEpoch, byTimeout);
+}
+
+// Deliberately based on the RECENT epoch rate, not the whole run: early epochs carry small
+// trees and are much cheaper than later ones, so an average over the whole run reads far too
+// optimistic at the start. Nothing is shown before three epochs for the same reason.
+function epochRemaining() {
   if (state.totalEpochs <= 0 || state.epochMarks.length < 3) return null;
   const marks = state.epochMarks;
   const perEpoch = (marks[marks.length - 1] - marks[0]) / (marks.length - 1);
   const remaining = Math.max(0, state.totalEpochs - state.epoch);
   if (!(perEpoch > 0)) return null;
   return (perEpoch * remaining) / 1000;
+}
+
+function timeoutRemaining() {
+  const limit = timeoutSeconds();
+  if (limit <= 0 || state.searchT0 <= 0) return null;
+  return Math.max(0, limit - (performance.now() - state.searchT0) / 1000);
 }
 
 function formatDuration(seconds) {

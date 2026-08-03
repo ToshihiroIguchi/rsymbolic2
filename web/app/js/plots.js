@@ -140,6 +140,84 @@ export function drawPareto(canvas, front, opts = {}) {
   paretoChart = new Chart(canvas.getContext("2d"), paretoConfig(front, themeColors(), opts));
 }
 
+// --- Convergence sparkline (docs/79) ----------------------------------------------
+// Best loss so far against epoch, drawn while a search runs. This is the one thing the
+// Pareto card could not say: it shows the CURRENT front, redrawn from scratch each epoch,
+// so a search that stopped improving twenty epochs ago looks exactly like one that is
+// still finding things — and "is it still improving?" is the only question the Stop
+// button asks.
+//
+// Deliberately NOT a Chart.js chart, for three reasons. It is the one plot here that
+// carries history, so the destroy-and-rebuild every other draw*() does (and must do, to
+// pick up a theme change) would throw away the very thing being drawn. At 40 px tall it
+// wants no axes, ticks, legend or tooltip, which is most of what Chart.js is. And it
+// redraws up to four times a second for the length of a run, where a bare polyline costs
+// microseconds. Colors are still read from the CSS variables at draw time, so a mid-run
+// theme toggle lands here the same way it lands on the real charts.
+//
+// `trace` is [{gen, loss}, ...], oldest first, one entry per completed epoch.
+export function drawLossTrace(canvas, trace) {
+  const cs = getComputedStyle(document.documentElement);
+  const accent = cs.getPropertyValue("--accent").trim();
+  const grid = cs.getPropertyValue("--chart-grid").trim();
+
+  // Size the backing store to the CSS box at device resolution. Done on every draw rather
+  // than once: the card is inside a resizable pane (the sidebar gutter is draggable) and
+  // this canvas has no ResizeObserver of its own.
+  const cssW = Math.max(1, Math.round(canvas.clientWidth));
+  const cssH = Math.max(1, Math.round(canvas.clientHeight));
+  const dpr = window.devicePixelRatio || 1;
+  if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+  }
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+  if (!trace || trace.length === 0) return;
+
+  // log10, because losses cross many orders of magnitude within a single run — on a linear
+  // axis everything after the first good epoch is flat against the bottom. Non-positive and
+  // non-finite losses are FLOORED rather than skipped: a perfect fit legitimately reaches 0
+  // (target_loss is 1e-10 by default), and dropping those points would put a phantom gap in
+  // the line at exactly the most interesting moment.
+  const FLOOR = 1e-300;
+  const v = trace.map((p) => Math.log10(Math.max(Number.isFinite(p.loss) ? p.loss : FLOOR, FLOOR)));
+  let lo = Infinity, hi = -Infinity;
+  for (const x of v) { if (x < lo) lo = x; if (x > hi) hi = x; }
+  const pad = 3;                       // keeps the 2px stroke off the top and bottom edges
+  const h = Math.max(1, cssH - pad * 2);
+  const range = hi - lo;
+  // A flat trace (one point, or no improvement yet) has no range to scale against; draw it
+  // down the middle rather than dividing by zero.
+  const yOf = (x) => (range > 0 ? pad + h - ((x - lo) / range) * h : pad + h / 2);
+  const xOf = (i) => (trace.length > 1 ? (i / (trace.length - 1)) * cssW : cssW / 2);
+
+  ctx.strokeStyle = grid;              // baseline, so an empty-looking flat trace still reads
+  ctx.lineWidth = 1;                   // as a chart rather than as a rendering failure
+  ctx.beginPath();
+  ctx.moveTo(0, cssH - 0.5);
+  ctx.lineTo(cssW, cssH - 0.5);
+  ctx.stroke();
+
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 2;
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  for (let i = 0; i < v.length; i++) {
+    const x = xOf(i), y = yOf(v[i]);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // The head of the trace, marked: on a long flat stretch it is the only way to see which
+  // end is "now".
+  ctx.fillStyle = accent;
+  ctx.beginPath();
+  ctx.arc(xOf(v.length - 1), yOf(v[v.length - 1]), 2.5, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 // Span of two series, ignoring non-finite entries. Written as a loop on purpose: the
 // obvious `Math.min(...y, ...yhat)` spreads every row onto the call stack and throws
 // RangeError once the dataset passes ~100k rows (measured), which used to make the fit

@@ -700,6 +700,23 @@ body.running #results-area #pareto-card.live .live-expr {
   display: flex; align-items: baseline; gap: 0.45rem;
   margin-bottom: 0.45rem; min-width: 0;
 }
+/* Convergence sparkline + its stall counter (docs/79). Same visibility condition as the
+   provisional formula above, for the same reason: both describe a run in flight and neither
+   may outlive it. The canvas is sized in CSS and the backing store is matched to it at
+   device resolution on every draw (plots.js drawLossTrace) — it has no ResizeObserver, and
+   the pane it sits in is user-resizable. 34px is enough to read a trend and small enough
+   that it never competes with the Pareto chart below for the card's attention. */
+.live-trace { display: none; }
+body.running #results-area #pareto-card.live .live-trace {
+  display: block;
+  margin-bottom: 0.5rem;
+}
+.live-trace canvas {
+  display: block;
+  width: 100%;
+  height: 34px;
+}
+.live-trace-note { display: block; margin-top: 0.15rem; }
 .live-expr-label { flex: none; font-size: 0.72rem; color: var(--muted); }
 .live-expr code {
   flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

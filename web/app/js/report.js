@@ -272,8 +272,11 @@ function runBlock(parent, ctx) {
   parent.appendChild(definitions([
     ["started", formatStamp(run.startedAt)],
     ["elapsed", `${run.elapsed.toFixed(2)} s`],
+    // Generations, matching the chip and the settings rail (docs/79). Progress arrives one
+    // migration epoch at a time, so this lands on a multiple of migration_interval; the
+    // budget it is measured against is the one the user actually set.
     ["ended", run.stoppedEarly
-      ? `early, at epoch ${fmtInt(run.epoch)} of ${fmtInt(run.totalEpochs)} ` +
+      ? `early, at generation ${fmtInt(run.generation)} of ${fmtInt(run.totalGenerations)} ` +
         "(target loss, timeout or max evals)"
       : `completed the configured budget of ${fmtInt(ctx.config.generations)} generations`],
     ["evaluations", evalText],
