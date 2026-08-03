@@ -25,7 +25,10 @@
 #'
 #' @param object An object of class \code{"rsymbolic2"} returned by
 #'   \code{\link{symbolic_regression}}.
-#' @param newdata New input features. For a model fitted via the matrix
+#' @param newdata New input features. Omitted, the training data stored on the
+#'   object is used and the result is the vector of fitted values, exactly as
+#'   \code{\link[stats]{fitted}} returns (this needs \code{keep_data = TRUE}, the
+#'   default, at fit time). For a model fitted via the matrix
 #'   interface, a numeric matrix (or coercible to one) with \code{object$n_features}
 #'   columns in the same order as the training matrix \code{X}. For a model fitted
 #'   via the \code{\link{symbolic_regression}} formula interface, a
@@ -58,7 +61,84 @@
 #'
 #' @export
 predict.rsymbolic2 <- function(object, newdata, expression = NULL, ...) {
-    X <- design_matrix(object, newdata)
+    # No newdata: predict on the data the model was fitted to, which is what
+    # predict(fit) means for every other R regression object. Routed through
+    # fitted() so the two cannot disagree.
+    if (missing(newdata) || is.null(newdata))
+        return(stats::fitted(object, expression = expression))
+    eval_on_matrix(design_matrix(object, newdata), object, expression)
+}
+
+#' Fitted values from a symbolic regression fit
+#'
+#' Evaluate a fitted expression on the training data stored on the object, which
+#' requires the fit to have been made with \code{keep_data = TRUE} (the default).
+#'
+#' @param object An object of class \code{"rsymbolic2"} returned by
+#'   \code{\link{symbolic_regression}}.
+#' @param expression Which fitted expression to evaluate. \code{NULL} (default)
+#'   uses \code{object$recommended}; otherwise an expression string, e.g.
+#'   \code{object$expression} for the lowest-loss model or any row of
+#'   \code{object$pareto_front$expression}.
+#' @param ... Ignored (present for S3 compatibility).
+#'
+#' @return Numeric vector of fitted values, one per training observation.
+#'
+#' @examples
+#' \donttest{
+#' X <- matrix(seq(-3, 3, length.out = 20), ncol = 1)
+#' y <- 2 * X[, 1] + 1
+#' res <- symbolic_regression(X, y, population_size = 200L, generations = 40L,
+#'                            seed = 1L)
+#' head(fitted(res))
+#' head(residuals(res))
+#' }
+#'
+#' @export
+fitted.rsymbolic2 <- function(object, expression = NULL, ...) {
+    eval_on_matrix(training_matrix(object, "fitted"), object, expression)
+}
+
+#' Residuals from a symbolic regression fit
+#'
+#' The training response minus the fitted values, which requires the fit to have
+#' been made with \code{keep_data = TRUE} (the default).
+#'
+#' @inheritParams fitted.rsymbolic2
+#'
+#' @return Numeric vector of residuals, one per training observation.
+#'
+#' @export
+residuals.rsymbolic2 <- function(object, expression = NULL, ...) {
+    y <- object$y
+    if (is.null(y))
+        stop("this model was fitted with keep_data = FALSE, so it carries no training ",
+             "response to take residuals against. Re-fit with keep_data = TRUE, or ",
+             "compute y - predict(object, newdata) yourself.", call. = FALSE)
+    as.numeric(y) - eval_on_matrix(training_matrix(object, "residuals"), object, expression)
+}
+
+# The stored training features, or an error that says how to get them. Shared by
+# fitted(), residuals(), predict() with no newdata, and plot(type = "fit") so the
+# keep_data contract is stated once.
+training_matrix <- function(object, what) {
+    X <- object$X
+    if (is.null(X))
+        stop("this model was fitted with keep_data = FALSE, so it carries no training ",
+             "data for ", what, "() to evaluate. Re-fit with keep_data = TRUE (the ",
+             "default), or call predict(object, newdata = <features>) instead.",
+             call. = FALSE)
+    as.matrix(X)
+}
+
+# Evaluate one fitted expression on an already-built numeric design matrix.
+#
+# Deliberately takes a matrix rather than user `newdata`: design_matrix() requires a
+# data.frame for formula-fitted models (docs/61 C2), which is right for predict() but
+# wrong for fitted(), where the stored `object$X` is a matrix and no name matching is
+# needed or possible. Keeping the evaluation here means predict() and fitted() cannot
+# drift apart.
+eval_on_matrix <- function(X, object, expression) {
     p <- ncol(X)
 
     # NULL evaluates the recommended (Pareto "best") model, matching PySR / the

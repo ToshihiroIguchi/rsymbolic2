@@ -176,11 +176,13 @@ test_that("the fit plot draws a data-free (constant) expression", {
   expect_true(all(built$data[[2]]$y == 4.2))
 })
 
-test_that("the fit plot rejects missing or mismatched data", {
+test_that("the fit plot rejects half-supplied or mismatched data", {
   skip_if_not_installed("ggplot2")
   f <- fit_1d()
-  expect_error(plot(f$res, type = "fit"), "needs the data")
-  expect_error(plot(f$res, type = "fit", newdata = f$X), "needs the data")
+  # Neither half supplied is no longer an error: it draws against the training data
+  # kept by keep_data = TRUE (docs/81 P2). One half alone still cannot be read.
+  expect_s3_class(plot(f$res, type = "fit"), "ggplot")
+  expect_error(plot(f$res, type = "fit", newdata = f$X), "both halves")
   expect_error(
     plot(f$res, type = "fit", newdata = f$X, y = f$y[1:5]),
     "value\\(s\\) but newdata has"

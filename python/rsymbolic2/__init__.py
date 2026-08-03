@@ -20,6 +20,7 @@ Example
 from __future__ import annotations
 
 import ast
+import inspect
 import math
 import re
 import warnings
@@ -29,7 +30,7 @@ import numpy as np
 
 from ._core import symbolic_regression_cpp
 
-__all__ = ["symbolic_regression", "SymbolicRegressionResult"]
+__all__ = ["symbolic_regression", "SymbolicRegressionResult", "SymbolicRegressor"]
 __version__ = "0.1.0"
 
 # Recognised operator names (kept in sync with the C++ bridge parsers). `_UNARY_OPS` is
@@ -47,7 +48,53 @@ _BINARY_OPS = {"add", "sub", "mul", "div", "pow"}
 _LARGE_DATA_ROWS = 10000
 
 
-def _as_design_matrix(a, name: str) -> np.ndarray:
+def _column_names(a) -> Optional[list]:
+    """Column names of a labelled tabular input (pandas DataFrame), else None.
+
+    Duck-typed on `.columns` so pandas stays an optional extra: rsymbolic2 never imports
+    it. Anything without column labels — an ndarray, a list of lists — has no names to
+    check against, and returns None rather than inventing any.
+    """
+    columns = getattr(a, "columns", None)
+    return None if columns is None else [str(c) for c in columns]
+
+
+def _is_numeric_dtype(dtype) -> bool:
+    """Whether a column dtype holds numbers, pandas extension dtypes included.
+
+    `np.dtype(dtype)` raises TypeError on pandas' own dtypes (StringDtype, Categorical,
+    nullable Int64), so the numpy test alone cannot answer this. pandas is imported
+    lazily here — it stays an optional extra, and this line is only ever reached because
+    the caller already handed us one of its objects (the same idiom as `to_pandas()`).
+    """
+    try:
+        from pandas.api.types import is_numeric_dtype  # optional extra, already in use
+
+        return bool(is_numeric_dtype(dtype))
+    except ImportError:
+        pass
+    try:
+        np_dtype = np.dtype(dtype)
+    except TypeError:
+        return False  # an extension dtype numpy cannot even name is not a numeric one
+    return bool(np.issubdtype(np_dtype, np.number) or np.issubdtype(np_dtype, np.bool_))
+
+
+def _non_numeric_columns(a) -> list:
+    """Names of a DataFrame's non-numeric columns, for an error message that names them.
+
+    Returns an empty list for anything that is not a labelled table, in which case the
+    caller falls back to the blanket message: there is nothing more specific to say.
+    """
+    names = _column_names(a)
+    dtypes = getattr(a, "dtypes", None)
+    if names is None or dtypes is None:
+        return []
+    return [name for name, dtype in zip(names, list(dtypes))
+            if not _is_numeric_dtype(dtype)]
+
+
+def _as_design_matrix(a, name: str, *, require_finite: bool = False) -> np.ndarray:
     """Coerce feature input to a float (n_samples, n_features) matrix.
 
     A 1-D input is one *column* (n samples of a single feature) — the reading the R
@@ -56,16 +103,83 @@ def _as_design_matrix(a, name: str) -> np.ndarray:
     features: guessing between the two from the shape alone is how a silently wrong
     prediction gets made, so a caller with a single multi-feature sample passes an
     explicit `(1, n_features)` array.
+
+    `require_finite` applies scikit-learn's `check_array` rule at the point of coercion.
+    It is on for prediction inputs and off for the training path, which runs its own
+    finiteness check after the shape checks so that a shape mistake is reported as one.
     """
-    arr = np.asarray(a, dtype=float)
+    try:
+        arr = np.asarray(a, dtype=float)
+    except (TypeError, ValueError) as exc:
+        # np.asarray's own message names the offending *value* ("could not convert string
+        # to float: 'red'") but not the column it sits in, which is what the caller has to
+        # go and fix. Name the columns when the input carries labels (docs/81 P3).
+        bad = _non_numeric_columns(a)
+        if bad:
+            raise ValueError(
+                f"{name} must be numeric; non-numeric column(s): {', '.join(bad)}. "
+                "rsymbolic2 discovers transformations itself and does not dummy-code "
+                "categorical inputs, because that would enlarge the search space with "
+                "columns you did not choose. Encode them explicitly first, e.g. "
+                f"pandas.get_dummies({name}, columns={bad!r})."
+            ) from exc
+        raise ValueError(f"{name} must be numeric: {exc}") from exc
     if arr.ndim == 1:
-        return arr.reshape(-1, 1)
-    if arr.ndim != 2:
+        arr = arr.reshape(-1, 1)
+    elif arr.ndim != 2:
         raise ValueError(
             f"{name} must be 1-D (a single column) or 2-D (n_samples, n_features); "
             f"got a {arr.ndim}-D array."
         )
+    if require_finite and not np.all(np.isfinite(arr)):
+        raise ValueError(
+            f"{name} must not contain NaN or infinite values. Drop the incomplete rows "
+            f"first (for example {name}.dropna() for a DataFrame, or "
+            f"{name}[np.isfinite({name}).all(axis=1)] for an array)."
+        )
     return arr
+
+
+def _check_feature_names(fitted: Optional[Sequence[str]], newdata, name: str) -> None:
+    """Refuse a feature-name mismatch between the fit and prediction inputs (docs/81 P1).
+
+    Only fires when *both* sides carry names: the fit captured them from a DataFrame, and
+    `newdata` is a DataFrame too. Then the lists must be equal, in order.
+
+    It refuses rather than reordering. Reordering by name is R's rule, and it follows from
+    the R formula interface binding columns by name; Python's fit binds by *position* —
+    `feature_names` is metadata captured on the way past, not the thing the model was
+    built on — so permuting the caller's columns would invent a guarantee the fit never
+    made. scikit-learn refuses here for the same reason.
+
+    When only one side has names nothing is checked and nothing is said. scikit-learn
+    warns in that case; staying quiet is a deliberate divergence, because
+    `predict(X_test.to_numpy())` is an ordinary idiom and there is nothing to verify
+    either way.
+    """
+    if fitted is None:
+        return
+    supplied = _column_names(newdata)
+    if supplied is None or list(supplied) == list(fitted):
+        return
+    if sorted(supplied) == sorted(fitted):
+        detail = ("the same names in a different order: pass the columns in the fitted "
+                  "order, e.g. " f"{name}[{list(fitted)!r}]")
+    else:
+        missing = [n for n in fitted if n not in supplied]
+        extra = [n for n in supplied if n not in fitted]
+        detail = "; ".join(
+            part for part in (
+                f"missing: {missing}" if missing else "",
+                f"unexpected: {extra}" if extra else "",
+            ) if part
+        )
+    raise ValueError(
+        f"{name} feature names do not match those seen during fitting.\n"
+        f"  fitted:   {list(fitted)}\n"
+        f"  supplied: {list(supplied)}\n"
+        f"  {detail}"
+    )
 
 
 def _as_target_vector(a, name: str) -> np.ndarray:
@@ -287,7 +401,15 @@ class SymbolicRegressionResult:
             training-side rule — so a model fitted on one feature can be predicted
             from a plain 1-D array, and a multi-feature model raises rather than
             silently reading the same array as one row. Must have
-            :attr:`n_features` columns in the same order as the training ``X``.
+            :attr:`n_features` columns in the same order as the training ``X``, and
+            must contain no NaN or infinite values (scikit-learn's ``check_array``
+            rule; the R package follows ``predict.lm`` and propagates ``NA`` instead).
+
+            When the fit captured :attr:`feature_names` (``X`` was a DataFrame) *and*
+            ``newdata`` is a DataFrame too, the column names must match in order —
+            a mismatch raises rather than being silently reordered, because this
+            interface binds columns by position (docs/81 P1). If either side carries
+            no names, nothing is checked.
         expression : str, optional
             Which expression to evaluate. Defaults to :attr:`recommended` (the
             Pareto "best"). Pass :attr:`expression` for the lowest-loss model, or any
@@ -305,7 +427,8 @@ class SymbolicRegressionResult:
         ``safe_log`` guard, ``docs/77``). It matters only if the prediction inputs
         reach them.
         """
-        X = _as_design_matrix(newdata, "newdata")
+        _check_feature_names(self.feature_names, newdata, "newdata")
+        X = _as_design_matrix(newdata, "newdata", require_finite=True)
         if X.shape[1] != self.n_features:
             raise ValueError(
                 f"newdata has {X.shape[1]} column(s) but the model was fitted on "
@@ -646,11 +769,11 @@ class SymbolicRegressionResult:
             )
         # A 1-D X is one column here (the single-feature case this view exists for),
         # never one row: y pairs with the rows, so a row vector could not be plotted.
-        Xa = np.asarray(X, dtype=float)
-        if Xa.ndim == 1:
-            Xa = Xa.reshape(-1, 1)
+        # `predict` is handed the caller's original object, not this coerced copy, so a
+        # DataFrame still gets its feature names checked (docs/81 P1).
+        Xa = _as_design_matrix(X, "X")
         ya = np.asarray(y, dtype=float).ravel()
-        yhat = self.predict(Xa, expression=expression)
+        yhat = self.predict(X, expression=expression)
         if ya.shape[0] != yhat.shape[0]:
             raise ValueError(
                 f"y has {ya.shape[0]} value(s) but X has {Xa.shape[0]} row(s)."
@@ -944,6 +1067,7 @@ def symbolic_regression(
     macro_ops: Optional[Mapping[str, str]] = None,
     timeout_seconds: float = 0.0,
     verbosity: int = 1,
+    variable_names: Optional[Sequence[str]] = None,
 ) -> SymbolicRegressionResult:
     """Discover a mathematical expression that fits ``y`` from ``X``.
 
@@ -957,7 +1081,10 @@ def symbolic_regression(
     X : array-like, shape (n_samples, n_features)
         Input features. A 1-D array is treated as a single column (n samples of one
         feature), never as one row of several features. Must have at least one row
-        and one column, and must contain no NaN or infinite values.
+        and one column, and must contain no NaN or infinite values. A pandas
+        DataFrame is accepted and its column names are kept as
+        :attr:`~SymbolicRegressionResult.feature_names`; every column must be
+        numeric, since rsymbolic2 does not dummy-code categorical inputs.
     y : array-like, shape (n_samples,)
         Target values; ``len(y)`` must equal ``X.shape[0]``, with no NaN or infinite
         values. A ``(n, 1)`` column vector is accepted as the same single target;
@@ -1158,6 +1285,15 @@ def symbolic_regression(
         the C++ core to ``stderr``; redirect the process ``stderr`` to log it.
         The compact one-liner rendering differs from PySR's live table; only the
         on/off default is matched.
+    variable_names : sequence of str, optional
+        Display-only names for the columns of ``X``, one per feature (PySR
+        ``fit(variable_names=)``). Takes precedence over names read off a pandas
+        DataFrame, and is the only way to name the columns of a plain array. They
+        appear in ``repr()``, :meth:`~SymbolicRegressionResult.latex` and the plots,
+        and are checked by :meth:`~SymbolicRegressionResult.predict` against a
+        DataFrame's columns; the fitted expression strings stay 0-based
+        (``x0, x1, ...``) and prediction is otherwise unaffected. A list of the wrong
+        length raises.
 
     Returns
     -------
@@ -1190,8 +1326,13 @@ def symbolic_regression(
     # Capture display-only column names before coercion (pandas DataFrame carries
     # them in `.columns`). They are surfaced in repr() as an `x0 = name` legend and
     # never fed back into the evaluable expression strings, which stay 0-based.
-    columns = getattr(X, "columns", None)
-    feature_names = [str(c) for c in columns] if columns is not None else None
+    # An explicit `variable_names` wins over names read off a DataFrame: it is the only
+    # way an ndarray caller can name their columns, and PySR's `fit(variable_names=)` has
+    # the same precedence. Its length is checked against X below, once the shape is known.
+    feature_names = (
+        [str(n) for n in variable_names] if variable_names is not None
+        else _column_names(X)
+    )
 
     X_arr = _as_design_matrix(X, "X")
     y_arr = _as_target_vector(y, "y")
@@ -1211,10 +1352,21 @@ def symbolic_regression(
     # loss can still look ordinary (a NaN in X gave a finite-looking loss and a nonsense
     # expression). `weights` has been checked this way all along; this is the same check
     # on the data it weights (docs/74).
+    #
+    # rsymbolic2 has no `na.action`-style option: dropping rows is a decision worth making
+    # visibly, so the message says how (docs/81 P3) rather than doing it silently.
     if not np.all(np.isfinite(X_arr)):
-        raise ValueError("X must not contain NaN or infinite values.")
+        raise ValueError(
+            "X must not contain NaN or infinite values. Drop the incomplete rows first, "
+            "keeping y aligned: for example df = df.dropna() before splitting into X "
+            "and y, or mask = np.isfinite(X).all(axis=1) & np.isfinite(y) then X[mask], "
+            "y[mask]."
+        )
     if not np.all(np.isfinite(y_arr)):
-        raise ValueError("y must not contain NaN or infinite values.")
+        raise ValueError(
+            "y must not contain NaN or infinite values. Drop the incomplete rows first, "
+            "keeping X aligned: for example mask = np.isfinite(y) then X[mask], y[mask]."
+        )
 
     # Count-like arguments must be positive. Each is cast to an unsigned type in the C++
     # core, so a negative value wraps to an enormous count; population_size = -1 then
@@ -1395,7 +1547,198 @@ def symbolic_regression(
         macro_bodies,
     )
     if feature_names is not None and len(feature_names) != int(X_arr.shape[1]):
+        if variable_names is not None:
+            # An explicit name list of the wrong length is a caller mistake, not a shape
+            # coincidence: say so rather than discarding what was asked for.
+            raise ValueError(
+                f"variable_names has {len(feature_names)} name(s) but X has "
+                f"{int(X_arr.shape[1])} column(s)."
+            )
         feature_names = None  # shape changed (e.g. 1-D promoted); drop mismatched names
     return SymbolicRegressionResult(
         raw, n_features=int(X_arr.shape[1]), feature_names=feature_names
     )
+
+
+class SymbolicRegressor:
+    """An estimator-shaped wrapper around :func:`symbolic_regression`.
+
+    It exists for one reason: code written against PySR's
+    ``PySRRegressor(...).fit(X, y)`` should port without being restructured. Every
+    hyperparameter is a keyword to the constructor, the search runs in :meth:`fit`, and
+    the fitted :class:`SymbolicRegressionResult` is available as :attr:`result_`.
+
+    **scikit-learn is not imported and is not a dependency.** The estimator protocol
+    (``fit``/``predict``/``score``/``get_params``/``set_params``) is implemented by duck
+    typing, which is all ``sklearn.base.clone``, ``train_test_split`` and
+    ``cross_val_score`` require.
+
+    Two things it deliberately does *not* recommend, despite being mechanically possible:
+
+    ``Pipeline`` with a scaler
+        ``make_pipeline(StandardScaler(), SymbolicRegressor())`` returns an expression in
+        *standardised* coordinates. The interpretable expression in the caller's own
+        variables is symbolic regression's entire product, so putting a scaler in front
+        throws away the reason to run it.
+    ``GridSearchCV`` over the hyperparameters
+        rsymbolic2's defaults are PySR's defaults by policy, not by tuning, and replacing
+        them with values chosen by a local search is the thing that policy exists to
+        prevent. One default fit is also 2800 generations over 31 populations.
+
+    Cross-validating the *default* configuration for an honest generalisation estimate is
+    a different matter, and works: ``cross_val_score(SymbolicRegressor(generations=200),
+    X, y)``. Note that the search is stochastic, so repeated fits differ unless ``seed``
+    is fixed — spread across seeds is a real part of the answer (CLAUDE.md, Benchmarking).
+
+    Examples
+    --------
+    >>> from rsymbolic2 import SymbolicRegressor
+    >>> model = SymbolicRegressor(generations=40, population_size=200, seed=1)
+    >>> model.fit(X, y)                      # doctest: +SKIP
+    >>> model.predict(X_test)                # doctest: +SKIP
+    >>> model.score(X_test, y_test)          # doctest: +SKIP
+    >>> print(model.result_.recommended)     # doctest: +SKIP
+
+    Attributes
+    ----------
+    result_ : SymbolicRegressionResult
+        The full search result, set by :meth:`fit`. Everything the functional interface
+        returns — the Pareto front, LaTeX/SymPy renderings, plots — is reached through it.
+    n_features_in_ : int
+        Number of features seen during :meth:`fit`.
+    feature_names_in_ : Optional[list[str]]
+        Feature names seen during :meth:`fit`, when ``X`` carried them.
+    """
+
+    # The hyperparameters are exactly `symbolic_regression`'s keyword-only arguments,
+    # read from its signature rather than copied. A second hand-maintained list of ~40
+    # names would drift from the function the moment one of them changed, and the
+    # divergence would be silent.
+    @classmethod
+    def _param_names(cls) -> tuple:
+        return tuple(
+            name for name, p in inspect.signature(symbolic_regression).parameters.items()
+            if p.kind is inspect.Parameter.KEYWORD_ONLY
+        )
+
+    def __init__(self, **params):
+        unknown = sorted(set(params) - set(self._param_names()))
+        if unknown:
+            raise TypeError(
+                f"unknown parameter(s) for SymbolicRegressor: {', '.join(unknown)}. "
+                f"Valid parameters: {', '.join(self._param_names())}."
+            )
+        # Stored verbatim, and returned verbatim by get_params(): sklearn.base.clone()
+        # reconstructs an estimator with `klass(**est.get_params())` and then checks that
+        # each value is the *same object* it passed in, which only holds if nothing here
+        # normalises or copies them.
+        self._params = dict(params)
+        for name, value in self._params.items():
+            setattr(self, name, value)
+
+    def get_params(self, deep: bool = True) -> dict:
+        """Return the hyperparameters set on this estimator (``deep`` is accepted and
+        ignored: rsymbolic2 has no nested estimators)."""
+        return dict(self._params)
+
+    def set_params(self, **params):
+        """Set hyperparameters, returning ``self``."""
+        unknown = sorted(set(params) - set(self._param_names()))
+        if unknown:
+            raise ValueError(
+                f"Invalid parameter(s) for SymbolicRegressor: {', '.join(unknown)}."
+            )
+        self._params.update(params)
+        for name, value in params.items():
+            setattr(self, name, value)
+        return self
+
+    def fit(self, X, y, weights=None, variable_names=None):
+        """Run the search, and return ``self``.
+
+        ``weights`` keeps rsymbolic2's (and PySR's) spelling rather than scikit-learn's
+        ``sample_weight``; the functional interface, the R package and PySR all call it
+        ``weights``, and one library speaking two names for the same vector is worse than
+        differing from a convention it does not otherwise claim to implement.
+        """
+        call = dict(self._params)
+        if weights is not None:
+            call["weights"] = weights
+        if variable_names is not None:
+            call["variable_names"] = variable_names
+        self.result_ = symbolic_regression(X, y, **call)
+        self.n_features_in_ = self.result_.n_features
+        self.feature_names_in_ = self.result_.feature_names
+        return self
+
+    def predict(self, X, *, expression: Optional[str] = None) -> np.ndarray:
+        """Evaluate the fitted expression on ``X``. See
+        :meth:`SymbolicRegressionResult.predict` for the column-name and finiteness
+        rules."""
+        return self._fitted().predict(X, expression=expression)
+
+    def score(self, X, y, sample_weight=None) -> float:
+        """Coefficient of determination :math:`R^2` of the prediction on ``X``, ``y``.
+
+        The scikit-learn convention: 1.0 is a perfect fit, 0.0 is the accuracy of always
+        predicting the mean of ``y``, and it can be negative. Computed on the data passed
+        in, so it is a held-out figure when held-out data is passed — unlike
+        ``result_.pareto_front[...]["r_squared"]``, which is always training-set.
+
+        ``sample_weight`` follows scikit-learn's spelling here because it names a scoring
+        weight, not the fit weights (`fit(weights=)`).
+        """
+        y_true = _as_target_vector(y, "y")
+        y_pred = self.predict(X)
+        w = (np.ones_like(y_true) if sample_weight is None
+             else np.asarray(sample_weight, dtype=float).ravel())
+        if w.shape != y_true.shape:
+            raise ValueError("sample_weight must have the same length as y.")
+        mean = float(np.sum(w * y_true) / np.sum(w))
+        ss_res = float(np.sum(w * (y_true - y_pred) ** 2))
+        ss_tot = float(np.sum(w * (y_true - mean) ** 2))
+        if ss_tot <= 0.0:
+            # Constant y: R^2 is undefined (the denominator is zero). scikit-learn returns
+            # 1.0 for an exact prediction and 0.0 otherwise; matching that is less
+            # surprising than a NaN, and symbolic_regression() has already warned.
+            return 1.0 if ss_res <= 0.0 else 0.0
+        return 1.0 - ss_res / ss_tot
+
+    # scikit-learn >= 1.6 routes every estimator through `get_tags()`, which reads this
+    # method and raises AttributeError without it -- so `clone()` works on a plain
+    # duck-typed object but `cross_val_score()` does not. This is the one scikit-learn
+    # internal protocol implemented here, and the import stays inside the method: it runs
+    # only when scikit-learn is already driving, so scikit-learn is still not a dependency
+    # (docs/81 P5). If a future version changes the Tags dataclass, this degrades to the
+    # pre-1.6 behaviour rather than breaking the estimator for callers not using it.
+    def __sklearn_tags__(self):
+        try:
+            from sklearn.utils import RegressorTags, Tags, TargetTags
+        except ImportError:  # pragma: no cover - scikit-learn absent or older than 1.6
+            raise AttributeError("__sklearn_tags__ requires scikit-learn >= 1.6")
+        return Tags(
+            estimator_type="regressor",
+            target_tags=TargetTags(required=True),
+            transformer_tags=None,
+            regressor_tags=RegressorTags(),
+            classifier_tags=None,
+            # The search is stochastic unless `seed` is fixed: two fits on identical data
+            # can return different expressions, which is a fact about symbolic regression
+            # rather than a defect, and scikit-learn's checks need to be told.
+            non_deterministic=True,
+        )
+
+    def _fitted(self) -> SymbolicRegressionResult:
+        result = getattr(self, "result_", None)
+        if result is None:
+            raise RuntimeError(
+                "This SymbolicRegressor is not fitted yet. Call fit(X, y) first."
+            )
+        return result
+
+    def __repr__(self) -> str:
+        args = ", ".join(f"{k}={v!r}" for k, v in sorted(self._params.items()))
+        state = ""
+        if getattr(self, "result_", None) is not None:
+            state = f"  # fitted: {self.result_.recommended}"
+        return f"SymbolicRegressor({args}){state}"

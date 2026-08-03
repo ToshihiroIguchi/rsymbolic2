@@ -545,14 +545,56 @@ same names). **Every default below equals PySR's documented default** — see
 | `seed` | `0` | Random seed (`0` = nondeterministic). |
 | `timeout_seconds` | `0.0` | Wall-clock limit, `0` = none. |
 | `verbosity` | `1` | Matches PySR's default; prints one line per epoch to stderr. `0` = silent. |
+| `variable_names` | `None` | *(Python)* Display-only names for the columns of `X`; overrides a DataFrame's column names and is the only way to name a plain array's columns. R uses `colnames(X)` or the formula. |
+| `keep_data` | `TRUE` | *(R)* Store the training `X`/`y` on the result, which is what makes `fitted()`, `residuals()`, `predict(fit)` and `plot(fit, type = "fit")` work — as `lm()` keeps its model frame. `FALSE` for very large inputs. |
 
 **Result object.** Both languages return: `expression` (lowest-loss formula), `loss`,
 `complexity`, `recommended` (Pareto pick), `best_index`, `n_features`, `n_obs`/`sst` (which
 give R²), and `pareto_front` — one entry per member carrying `complexity`, `loss`, `score`,
 and the `expression` / `latex` / `sympy` renderings plus their `*_simplified` forms.
 Python exposes `.predict()`, `.latex()`, `.sympy()`, `.get_best()`, `.to_pandas()`,
-`.plot()` and `print(result)`; R provides the S3 `predict()`, `print()`, `summary()`,
-`as.data.frame()` and `plot()` methods plus `to_latex()` / `to_sympy()`.
+`.plot()` and `print(result)`; R provides the S3 `predict()`, `fitted()`, `residuals()`,
+`print()`, `summary()`, `as.data.frame()` and `plot()` methods plus `to_latex()` /
+`to_sympy()`.
+
+**Input conventions.** Each language follows its own ecosystem's rules rather than the
+other's ([docs/81](docs/81_regression_input_conventions.md)):
+
+- **R** binds columns by *name* in the formula interface, so `predict()` accepts a
+  `data.frame` in any column order; it keeps the training data (`keep_data = TRUE`) so
+  the `fitted`/`residuals`/`predict(fit)` vocabulary works; and non-finite values in
+  `newdata` propagate as `NA`, as `predict.lm()` does.
+- **Python** binds columns by *position*. When the fit captured feature names (a pandas
+  DataFrame, or `variable_names=`) *and* `newdata` is a DataFrame, the names must match
+  in order — a mismatch raises rather than being silently reordered, which is
+  scikit-learn's rule; non-finite `newdata` is refused, as `check_array` does; and the
+  result object stores no training data, as scikit-learn estimators do not.
+
+Neither language dummy-codes categorical inputs or drops rows with missing values: both
+refuse, naming the column and the fix. Encoding and row selection are decisions worth
+making visibly, and a dummy-coded column the user did not choose only enlarges the
+search space.
+
+**Estimator-shaped Python wrapper.** `SymbolicRegressor` wraps `symbolic_regression()`
+in a `fit`/`predict`/`score`/`get_params`/`set_params` object, so code written against
+PySR's `PySRRegressor(...).fit(X, y)` ports without restructuring. scikit-learn is *not*
+a dependency (the protocol is duck-typed), and `clone`, `train_test_split` and
+`cross_val_score` work:
+
+```python
+from rsymbolic2 import SymbolicRegressor
+
+model = SymbolicRegressor(binary_ops=["add", "sub", "mul"], seed=1).fit(X_train, y_train)
+model.score(X_test, y_test)      # held-out R^2
+model.result_.recommended        # the full search result is still there
+```
+
+Two things it does not recommend, despite working: a `Pipeline` with a scaler in front
+returns an expression in *standardised* coordinates, throwing away the interpretability
+that is the reason to run symbolic regression at all; and `GridSearchCV` over these
+hyperparameters searches away from the PySR-identical defaults this project exists to
+match. Cross-validating the *default* configuration for an honest generalisation
+estimate is a different thing, and is fine.
 
 ---
 

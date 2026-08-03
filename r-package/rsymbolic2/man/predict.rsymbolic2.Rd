@@ -10,7 +10,10 @@
 \item{object}{An object of class \code{"rsymbolic2"} returned by
 \code{\link{symbolic_regression}}.}
 
-\item{newdata}{New input features. For a model fitted via the matrix
+\item{newdata}{New input features. Omitted, the training data stored on the
+object is used and the result is the vector of fitted values, exactly as
+\code{\link[stats]{fitted}} returns (this needs \code{keep_data = TRUE}, the
+default, at fit time). For a model fitted via the matrix
 interface, a numeric matrix (or coercible to one) with \code{object$n_features}
 columns in the same order as the training matrix \code{X}. For a model fitted
 via the \code{\link{symbolic_regression}} formula interface, a

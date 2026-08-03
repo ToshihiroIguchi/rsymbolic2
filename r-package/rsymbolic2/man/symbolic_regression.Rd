@@ -48,6 +48,7 @@ symbolic_regression(X, ...)
   macro_ops = NULL,
   timeout_seconds = 0,
   verbosity = 1L,
+  keep_data = TRUE,
   ...
 )
 
@@ -374,6 +375,16 @@ R's \code{sink()}/\code{capture.output()}; redirect the process \code{stderr}
 at launch to log it. The rendering (a compact one-liner) differs from PySR's
 live table; only the on/off default is matched.}
 
+\item{keep_data}{Retain the training data on the returned object (default
+\code{TRUE}), storing the coerced numeric feature matrix as \code{X} and the
+response as \code{y}. This is what lets \code{\link[stats]{fitted}},
+\code{\link[stats]{residuals}}, \code{\link{predict.rsymbolic2}} with no
+\code{newdata}, and \code{\link{plot.rsymbolic2}} with no data work on the result
+-- the same reason \code{\link[stats]{lm}} keeps its model frame by default. Set
+\code{FALSE} for very large inputs, or when the object is to be serialised without
+the data; those four entry points then raise an error telling the caller to re-fit
+or to pass the data explicitly. The search itself is unaffected either way.}
+
 \item{formula}{A two-sided formula such as \code{y ~ x1 + x2} or \code{y ~ .}
 naming the response and the predictor columns in \code{data}. Predictors
 must be bare variables (see Details).}
@@ -434,6 +445,9 @@ A list of class \code{"rsymbolic2"} with elements:
       has none. Display-only metadata used by \code{print}/\code{summary} to
       show an \code{x0 = name} legend; the fitted expression strings stay
       0-based (\code{x0, x1, ...}) and prediction is unaffected.}
+    \item{X, y}{The training data, present only when \code{keep_data = TRUE}
+      (the default). \code{X} is the coerced numeric matrix the search saw, not
+      the caller's data frame.}
   }
 }
 \description{

@@ -56,3 +56,6 @@ Thumbs.db
 # Favicon master image is a regenerable build source (scripts/generate_favicon.py),
 # not a runtime asset -- keep it out of the deployed web/app.
 web/app/icon-1024.png
+
+# Test artifacts: ggplot2 opens a device when tests draw, leaving an empty Rplots.pdf
+Rplots.pdf

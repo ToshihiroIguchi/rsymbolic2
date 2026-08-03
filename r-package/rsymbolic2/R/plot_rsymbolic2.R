@@ -23,24 +23,27 @@
 #'     archived, before the display-only simplification.}
 #' }
 #'
-#' The result object stores no training data (only \code{n_obs} and \code{sst},
-#' from which \code{summary()} derives R-squared), so \code{type = "fit"}
-#' requires the data to be passed back in via \code{newdata} and \code{y}.
-#' Supplying both without naming \code{type} selects \code{"fit"}.
+#' \code{type = "fit"} draws against the training data stored on the object when
+#' neither \code{newdata} nor \code{y} is given, which needs \code{keep_data = TRUE}
+#' (the default) at fit time.  Pass \emph{both} to plot against other data --
+#' held-out data, to inspect generalisation.  Supplying both without naming
+#' \code{type} selects \code{"fit"}.
 #'
 #' Requires the \pkg{ggplot2} package.
 #'
 #' @param x An object of class \code{"rsymbolic2"} returned by
 #'   \code{\link{symbolic_regression}}.
 #' @param y Observed target values for \code{type = "fit"}, one per row of
-#'   \code{newdata}.  Ignored by \code{type = "pareto"}.
+#'   \code{newdata}.  \code{NULL} (default) with \code{newdata} also \code{NULL}
+#'   uses the stored training data.  Ignored by \code{type = "pareto"}.
 #' @param type Which plot to draw: \code{"pareto"} (default), \code{"fit"} or
 #'   \code{"tree"}.
 #' @param newdata Input features for \code{type = "fit"}, in the form
 #'   \code{\link{predict.rsymbolic2}} accepts: a numeric matrix for a
 #'   matrix-fitted model, or a \code{data.frame} holding the formula's predictor
-#'   columns for a formula-fitted one.  Pass the training data to inspect the
-#'   fit, or held-out data to inspect generalisation.
+#'   columns for a formula-fitted one.  \code{NULL} (default) with \code{y} also
+#'   \code{NULL} uses the training data stored on the object; pass both to
+#'   inspect generalisation on held-out data.
 #' @param expression Which fitted expression to draw for \code{type = "fit"} or
 #'   \code{type = "tree"}.  \code{NULL} (default) uses \code{x$recommended} (for
 #'   \code{"tree"}, its display-simplified form when the fit carries one);
@@ -128,14 +131,27 @@ pareto_plot <- function(object, log_loss, label_exprs) {
 # single-feature overlay is the more direct reading, but it only exists when
 # there is one x-axis to draw; predicted-vs-actual is the general fallback.
 fit_plot <- function(object, newdata, y, expression) {
-    if (is.null(newdata) || is.null(y))
-        stop('plot(type = "fit") needs the data to compare against: pass both ',
-             "newdata = <features> and y = <observed target>. The result object ",
-             "stores no training data.")
-
-    X    <- design_matrix(object, newdata)
-    yhat <- stats::predict(object, newdata, expression = expression)
-    y    <- as.numeric(y)
+    # No data supplied: draw the fit against the data it was trained on, which is what
+    # plot(fit) means for an R regression object. Available whenever the fit kept its
+    # data (keep_data = TRUE, the default); training_matrix() raises with instructions
+    # when it did not (docs/81 P2). Supplying both arguments still plots held-out data.
+    if (is.null(newdata) && is.null(y)) {
+        X <- training_matrix(object, "plot")
+        if (is.null(object$y))
+            stop("this model was fitted with keep_data = FALSE, so it carries no ",
+                 "training response to plot against. Re-fit with keep_data = TRUE, or ",
+                 "pass newdata = <features> and y = <observed target>.", call. = FALSE)
+        y    <- as.numeric(object$y)
+        yhat <- eval_on_matrix(X, object, expression)
+    } else {
+        if (is.null(newdata) || is.null(y))
+            stop('plot(type = "fit") needs both halves of the data: pass newdata = ',
+                 "<features> and y = <observed target>, or neither to use the training ",
+                 "data stored on the object.", call. = FALSE)
+        X    <- design_matrix(object, newdata)
+        yhat <- stats::predict(object, newdata, expression = expression)
+        y    <- as.numeric(y)
+    }
     if (length(y) != length(yhat))
         stop(sprintf("y has %d value(s) but newdata has %d row(s).",
                      length(y), length(yhat)))

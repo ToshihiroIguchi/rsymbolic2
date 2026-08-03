@@ -8,10 +8,12 @@ test_that("result has the documented structure", {
     generations    = 10L,
     seed           = 1L
   )
+  # `X` and `y` are the training data retained by keep_data = TRUE, the default
+  # (docs/81 P2); they are what fitted()/residuals()/predict(fit) evaluate on.
   expect_named(res, c("expression", "loss", "complexity", "recommended",
                       "expression_simplified", "recommended_simplified",
                       "best_index", "pareto_front", "n_obs", "sst",
-                      "n_evals", "eval_counts", "n_features"))
+                      "n_evals", "eval_counts", "X", "y", "n_features"))
   expect_identical(res$n_obs, 12L)
   expect_true(is.finite(res$sst) && res$sst > 0)
   expect_type(res$expression, "character")

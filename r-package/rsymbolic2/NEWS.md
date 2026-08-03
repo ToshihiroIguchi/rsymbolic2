@@ -1,5 +1,21 @@
 # rsymbolic2 0.1.0.9000 (development)
 
+Regression-object conventions (docs/81). The search is untouched; these are all
+interface changes.
+
+- **New: `fitted()` and `residuals()` methods**, and `predict(object)` with no
+  `newdata` now returns the fitted values instead of an "argument missing" error.
+  `plot(type = "fit")` likewise draws against the training data when given none.
+- **New: `keep_data` argument** (default `TRUE`), which stores the training `X` and
+  `y` on the result and is what makes the four entry points above work — the reason
+  `lm()` keeps its model frame by default. `keep_data = FALSE` restores the previous
+  data-free object; the four entry points then raise an error saying so.
+- **Better refusal messages.** A non-numeric data frame column is now named
+  (`as.matrix()` had already turned every column character by the time the old
+  blanket "X must be numeric" fired), and the non-finite `X`/`y` errors say how to
+  drop the incomplete rows. There is deliberately still no `na.action`: dropping rows
+  is a decision worth making visibly.
+
 Invalid and degenerate data (docs/80). None of these changes the search; each fires
 before `run_evolution()` is reached, and ordinary data is unaffected.
 

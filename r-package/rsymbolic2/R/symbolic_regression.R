@@ -325,6 +325,15 @@
 #'   at launch to log it. The rendering (a compact one-liner) differs from PySR's
 #'   live table; only the on/off default is matched.
 #'
+#' @param keep_data Retain the training data on the returned object (default
+#'   \code{TRUE}), storing the coerced numeric feature matrix as \code{X} and the
+#'   response as \code{y}. This is what lets \code{\link[stats]{fitted}},
+#'   \code{\link[stats]{residuals}}, \code{\link{predict.rsymbolic2}} with no
+#'   \code{newdata}, and \code{\link{plot.rsymbolic2}} with no data work on the result
+#'   -- the same reason \code{\link[stats]{lm}} keeps its model frame by default. Set
+#'   \code{FALSE} for very large inputs, or when the object is to be serialised without
+#'   the data; those four entry points then raise an error telling the caller to re-fit
+#'   or to pass the data explicitly. The search itself is unaffected either way.
 #' @return A list of class \code{"rsymbolic2"} with elements:
 #'   \describe{
 #'     \item{expression}{Best expression found, as an infix string.}
@@ -377,6 +386,9 @@
 #'       has none. Display-only metadata used by \code{print}/\code{summary} to
 #'       show an \code{x0 = name} legend; the fitted expression strings stay
 #'       0-based (\code{x0, x1, ...}) and prediction is unaffected.}
+#'     \item{X, y}{The training data, present only when \code{keep_data = TRUE}
+#'       (the default). \code{X} is the coerced numeric matrix the search saw, not
+#'       the caller's data frame.}
 #'   }
 #'
 #' @examples
@@ -497,8 +509,24 @@ symbolic_regression.default <- function(
     macro_ops             = NULL,
     timeout_seconds       = 0,
     verbosity             = 1L,
+    keep_data             = TRUE,
     ...
 ) {
+    # Name the offending columns BEFORE as.matrix() collapses a mixed data frame to a
+    # character matrix, after which every column looks equally non-numeric and the message
+    # can only say "X must be numeric" (docs/81 P3). The formula method has named its
+    # columns all along; this closes the gap for the matrix spelling.
+    if (is.data.frame(X)) {
+        nonnum <- !vapply(X, function(col) is.numeric(col) || is.logical(col), logical(1))
+        if (any(nonnum))
+            stop("X must be numeric; non-numeric column(s): ",
+                 paste(names(X)[nonnum], collapse = ", "),
+                 ". rsymbolic2 discovers transformations itself and does not dummy-code ",
+                 "categorical inputs, because that would enlarge the search space with ",
+                 "columns you did not choose. Encode them explicitly first, e.g. ",
+                 "model.matrix(~ f - 1, data)[, -1].", call. = FALSE)
+    }
+
     X <- as.matrix(X)
     # A logical matrix is legitimate data -- a 0/1 indicator column -- but is.numeric() is
     # FALSE for it, so the character guard below rejected it too. It only ever fired on a
@@ -523,7 +551,10 @@ symbolic_regression.default <- function(
     # C++ bridge guards this too; checking here is what names the argument.
     if (ncol(X) == 0L) stop("X must have at least one column")
     if (nrow(X) != length(y)) stop("nrow(X) must equal length(y)")
-    if (!is.numeric(X)) stop("X must be numeric")
+    if (!is.numeric(X))
+        stop("X must be numeric. rsymbolic2 discovers transformations itself and does ",
+             "not dummy-code categorical inputs; encode them explicitly first, e.g. ",
+             "model.matrix(~ f - 1, data)[, -1].", call. = FALSE)
 
     # NA/NaN/Inf in the data are rejected rather than carried into the search. The core
     # maps a non-finite prediction to an infinite loss per candidate, so a single bad
@@ -531,10 +562,19 @@ symbolic_regression.default <- function(
     # reported loss can still look ordinary (an NA in X gave a plausible-looking finite
     # loss and a nonsense expression). `weights` has been checked this way all along;
     # this is the same check on the data it weights (docs/74).
+    #
+    # There is deliberately no `na.action`: dropping rows is a decision worth making
+    # visibly, and na.exclude's padded-prediction semantics are not worth the maintenance.
+    # So the message says how to do it instead (docs/81 P3).
     if (anyNA(X) || !all(is.finite(X)))
-        stop("X must not contain NA, NaN or infinite values")
+        stop("X must not contain NA, NaN or infinite values. Drop the incomplete rows ",
+             "first, keeping y aligned -- for example ok <- stats::complete.cases(X) & ",
+             "is.finite(y); X[ok, , drop = FALSE] and y[ok], or na.omit(data) before ",
+             "splitting.", call. = FALSE)
     if (anyNA(y) || !all(is.finite(y)))
-        stop("y must not contain NA, NaN or infinite values")
+        stop("y must not contain NA, NaN or infinite values. Drop the incomplete rows ",
+             "first, keeping X aligned -- for example ok <- is.finite(y); ",
+             "X[ok, , drop = FALSE] and y[ok].", call. = FALSE)
 
     # Count-like arguments must be positive integers. Each is cast to an unsigned type in
     # the C++ core, so a negative value wraps to an enormous count; population_size = -1
@@ -732,6 +772,16 @@ symbolic_regression.default <- function(
         macro_names,
         macro_bodies
     )
+    # Retaining the training data is what makes the R generic vocabulary work on the
+    # returned object: fitted(), residuals(), predict() with no newdata, and plot() with
+    # no data handed back. lm() keeps the model frame for exactly this reason (docs/81 P2).
+    # `keep_data = FALSE` restores the older, data-free object for very wide or long
+    # inputs. The stored X is the coerced numeric matrix the search actually saw, not the
+    # caller's data frame, so it round-trips through fitted() without re-coercion.
+    if (isTRUE(keep_data)) {
+        result$X <- X
+        result$y <- y
+    }
     result$n_features <- ncol(X)
     # Display-only feature names: the column names of X, kept so print()/summary()
     # can show an "x0 = name" legend. The fitted expression strings remain 0-based
