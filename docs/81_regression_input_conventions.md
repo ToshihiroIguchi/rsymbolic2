@@ -112,8 +112,9 @@ Refusals are correct (docs/80) but currently state only what is wrong.
 ### P4 — Python `variable_names=` at fit time, and a finiteness check in `predict`
 
 - `symbolic_regression(..., variable_names=None)`: an explicit sequence of length
-  `n_features`, overriding names taken from a DataFrame. PySR has this; today an ndarray
-  caller can only supply names later, per display call.
+  `n_features`, overriding names taken from a DataFrame. PySR has this
+  (`sr.py:2161`, keyword-only on `fit`); today an ndarray caller can only supply names
+  later, per display call.
 - `predict` rejects non-finite `newdata`, matching scikit-learn's `check_array` default
   and the finiteness rule the training path already enforces.
 
@@ -123,8 +124,15 @@ R deliberately gets neither: `colnames(X)` and the formula already name columns,
 ### P5 — A thin `SymbolicRegressor` class in Python
 
 Provided for **one** reason: callers migrating from `PySRRegressor(...).fit(X, y)` should
-not have to restructure their code. It is not a claim of scikit-learn ecosystem
-integration, and the documentation will say so:
+not have to restructure their code. Checked against the installed source rather than
+assumed: `class PySRRegressor(MultiOutputMixin, RegressorMixin, BaseEstimator)`
+(`sr.py:257`), with `fit(X, y, *, Xresampled, weights, variable_names, ...)`
+(`sr.py:2154`). `SymbolicRegressor.fit(X, y, weights=None, variable_names=None)` is a
+strict subset of that signature with identical spellings — which is also why `weights`
+is *not* renamed to scikit-learn's `sample_weight` on `fit`, though `score` does use
+`sample_weight`, because there it names a scoring weight rather than the fit weights.
+
+It is not a claim of scikit-learn ecosystem integration, and the documentation says so:
 
 - A `Pipeline` with a scaler in front returns an expression **in standardised
   coordinates**, destroying the interpretability that is symbolic regression's entire
@@ -171,9 +179,20 @@ the trailing-underscore convention (`result_`, `n_features_in_`, `feature_names_
 
 ## Explicit non-goals
 
-`na.action` / `subset` in R; automatic dummy coding in either language; renaming `seed`
-to `random_state` (it would diverge from PySR and break existing callers); a scikit-learn
+`na.action` / `subset` in R; automatic dummy coding in either language; a scikit-learn
 dependency; and any change to defaults, search behaviour, or files under `src/`.
+
+Renaming `seed` to `random_state` is also out of scope, but for a narrower reason than
+"it would diverge from PySR" — checked against the installed source, PySR *does* use
+`random_state` (`sr.py:894`, alongside a separate `deterministic` flag), so a rename
+would move *towards* it. The reasons not to are that it would break every existing
+caller in both languages, and that the two are not the same parameter: PySR's
+`random_state` also accepts a `numpy.random.RandomState` and only yields reproducible
+runs together with `deterministic=True`, whereas rsymbolic2's `seed` is a plain integer
+(`0` = nondeterministic) that seeds a bit-deterministic island model on its own. Adopting
+the name would promise semantics this package does not implement. Nothing is at stake for
+parity either way: CLAUDE.md's rule binds default *values* and search behaviour, not
+parameter spellings.
 
 ## Verification (results)
 
