@@ -259,6 +259,7 @@ plan uses the standalone harness**, with flags recorded explicitly.
 | `-ffast-math` | Unsafe here independently of determinism: the search uses IEEE NaN/Inf as control flow (`sse_current` returns `kInf` on non-finite; `clamp_finite` protects the normal equations; the HOF and `evolve_island` reject non-finite losses). `-ffinite-math-only` folds `std::isfinite` to true and disables all of it |
 | Raising `n_threads` further | Islands are the only unit of parallelism, capped at `n_populations` = 31 (`resolve_team_size`); measured in `docs/37` |
 | Removing the bit-identity clause from CLAUDE.md | Considered and rejected 2026-07-26 (§0) |
+| GPU offload (CUDA / OpenCL / SYCL / Vulkan) | Screened **NO-GO** in `docs/78` (2026-08-02) against §7.1/§7.2/§7.6 and `docs/36`: the child loss is consumed synchronously by the next evolution step so the round trip cannot be hidden, one dispatch is only ~15 k node x point ops, and the hot path is Float64 transcendentals — the axis consumer GPUs are weakest on, with Float32 already closed by `docs/36`. Vendor-neutral routes also fail Platform Constraints (Windows `nvcc` needs MSVC; R uses Rtools/MinGW) |
 
 ## 7. Measurement results (2026-07-26)
 
