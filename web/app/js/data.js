@@ -95,6 +95,37 @@ export function numericColumns({ columns, rows }) {
   return columns.map((_, j) => rows.every((r) => isNumeric(r[j])));
 }
 
+// Numeric columns whose every cell holds the same value. A degenerate column is legal data
+// the engine runs on happily, so this reports rather than refuses (docs/80) — but the two
+// roles differ sharply: as the TARGET it makes the whole run meaningless (zero variance, so
+// every constant fits perfectly and R² is undefined, which is why the results panel shows
+// "—"), while as a FEATURE it only enlarges the search space. Non-numeric columns are
+// skipped: they are already reported, by name, as unusable.
+export function constantColumns({ columns, rows }, numeric) {
+  return columns.map((_, j) => {
+    if (!numeric[j]) return false;
+    const first = Number(rows[0][j]);
+    return rows.every((r) => Number(r[j]) === first);
+  });
+}
+
+// Numeric columns whose sum of squares about the mean overflows to a non-finite value. The
+// cells are each finite (that is what makes the column numeric), but the SSE loss computed
+// from them is not, so the loss, R² and score the run reports are all meaningless. Uses the
+// same two-pass mean-then-SST formula the core does, so a column flagged here is exactly one
+// the engine cannot score.
+export function overflowingColumns({ columns, rows }, numeric) {
+  return columns.map((_, j) => {
+    if (!numeric[j]) return false;
+    let sum = 0;
+    for (const r of rows) sum += Number(r[j]);
+    const mean = sum / rows.length;
+    let sst = 0;
+    for (const r of rows) { const d = Number(r[j]) - mean; sst += d * d; }
+    return !Number.isFinite(sst);
+  });
+}
+
 // Extract X (2-D array of numbers, feature columns in the given order) and y (1-D) from
 // a parsed table given a target column index and a list of feature column indices.
 export function toMatrix({ rows }, targetIndex, featureIndices) {

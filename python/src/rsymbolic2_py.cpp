@@ -16,6 +16,7 @@
 #include <pybind11/stl.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
@@ -137,6 +138,11 @@ py::dict symbolic_regression_cpp(
         throw std::invalid_argument("nrow(X) must equal length(y).");
     if (n == 0)
         throw std::invalid_argument("X must have at least one row.");
+    // No feature columns means there is no function of X to discover: the search can only
+    // return a constant, and did so silently as expression "1" (docs/80). Checked at the
+    // bridge so the guard holds for any caller, as with the count-like arguments below.
+    if (p == 0)
+        throw std::invalid_argument("X must have at least one column.");
 
     auto Xv = X.unchecked<2>();
     // Column-major, the engine's native layout: it MOVES these columns into its Dataset,
@@ -264,7 +270,21 @@ py::dict symbolic_regression_cpp(
                 "weights must have length nrow(X) (= length(y)).");
         auto wv = weights.unchecked<1>();
         opts.weights.resize(n);
-        for (std::size_t i = 0; i < n; ++i) opts.weights[i] = wv(i);
+        // A weight vector that is non-negative but sums to zero makes the weighted SSE
+        // identically 0, so every candidate ties at a perfect loss and the winner is
+        // whichever one the tournament happened to hold — "loss = 0.0" reported for a search
+        // that never happened (docs/80). Checked at the bridge so it holds for any caller.
+        double wsum_in = 0.0;
+        for (std::size_t i = 0; i < n; ++i) {
+            const double w = wv(i);
+            if (!std::isfinite(w) || w < 0.0)
+                throw std::invalid_argument("weights must be non-negative and finite.");
+            opts.weights[i] = w;
+            wsum_in += w;
+        }
+        if (wsum_in <= 0.0)
+            throw std::invalid_argument(
+                "weights must not be all zero; their sum must be positive.");
     }
 
     // --- Run the search (release the GIL: this is a long pure-C++ computation that

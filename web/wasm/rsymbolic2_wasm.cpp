@@ -295,6 +295,20 @@ val run(val opts) {
         if (!weights.empty()) {
             if (weights.size() != n)
                 throw std::invalid_argument("weights must have length nrow.");
+            // A weight vector that is non-negative but sums to zero makes the weighted SSE
+            // identically 0, so every candidate ties at a perfect loss and the winner is
+            // whichever one the tournament happened to hold — "loss = 0" reported for a
+            // search that never happened (docs/80). The GUI exposes no weights, so this is
+            // a guard for any other caller of the module, matching the R/Python bridges.
+            double wsum_in = 0.0;
+            for (const double w : weights) {
+                if (!std::isfinite(w) || w < 0.0)
+                    throw std::invalid_argument("weights must be non-negative and finite.");
+                wsum_in += w;
+            }
+            if (wsum_in <= 0.0)
+                throw std::invalid_argument(
+                    "weights must not be all zero; their sum must be positive.");
             o.weights = weights;
         }
 

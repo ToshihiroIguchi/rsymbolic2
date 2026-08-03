@@ -18,11 +18,38 @@
 #' effect: no design matrix is built and the constant offset, if any, is found by
 #' the search.
 #'
+#' @section Degenerate data:
+#' Some datasets are legal but carry no information for the search to find. These
+#' are not refused -- the run is well defined and the caller may know exactly what
+#' they are doing -- but each raises a \code{\link[base]{warning}}, because the
+#' result would otherwise look like an ordinary answer (\code{docs/80}):
+#' \itemize{
+#'   \item a constant \code{y} (zero variance, using the weighted variance when
+#'     \code{weights} is given): every constant fits it perfectly, so no expression
+#'     is better than any other and \code{r_squared} is undefined. A single-row
+#'     dataset lands here by construction.
+#'   \item a constant feature column: it cannot explain any variation in \code{y},
+#'     so it only enlarges the search space.
+#'   \item a \code{y} whose total sum of squares is not finite: the values are each
+#'     finite, but the sum-of-squares loss computed from them overflows, so the
+#'     reported \code{loss} and \code{r_squared} are meaningless. Rescaling
+#'     \code{y} fixes it and costs nothing.
+#' }
+#' Data with no defensible reading is refused instead, naming the argument: an
+#' \code{X} with no rows or no columns, an all-zero \code{weights} vector, a
+#' non-finite value in \code{X} or \code{y}, and a non-numeric or factor input.
+#'
 #' @param X Numeric matrix of input features (rows = observations, columns =
-#'   features). A numeric vector is treated as a single-column matrix. Passing a
-#'   \code{formula} as the first argument dispatches to the formula method.
+#'   features). A numeric vector is treated as a single-column matrix; a logical
+#'   matrix is read as \code{0}/\code{1}. Must have at least one row and one
+#'   column, and must not contain \code{NA}, \code{NaN} or infinite values.
+#'   Passing a \code{formula} as the first argument dispatches to the formula
+#'   method.
 #' @param y Numeric vector of target values; \code{length(y)} must equal
-#'   \code{nrow(X)}.
+#'   \code{nrow(X)}, and it must not contain \code{NA}, \code{NaN} or infinite
+#'   values. A constant \code{y} is accepted with a warning: it has zero
+#'   variance, so no expression can explain it and \code{r_squared} is
+#'   \code{NA} (see Degenerate data).
 #' @param formula A two-sided formula such as \code{y ~ x1 + x2} or \code{y ~ .}
 #'   naming the response and the predictor columns in \code{data}. Predictors
 #'   must be bare variables (see Details).
@@ -127,7 +154,9 @@
 #'   least-squares fit (PySR \code{weights}); \code{NULL} (default) fits unweighted.
 #'   When supplied, \code{length(weights)} must equal \code{length(y)} and the loss
 #'   becomes the weighted SSE \eqn{\sum_i w_i (\hat y_i - y_i)^2}. Weights must be
-#'   non-negative.
+#'   finite and non-negative, and at least one must be positive: an all-zero vector
+#'   makes every candidate's loss identically \code{0}, so the search would report a
+#'   perfect fit it never found, and is rejected.
 #' @param batching Evaluate the evolution and constant-optimisation passes on a
 #'   random subsample of \code{batch_size} rows per iteration instead of the full
 #'   dataset (PySR \code{batching}; default \code{FALSE}). This is the lever for
@@ -379,6 +408,53 @@ symbolic_regression <- function(X, ...) {
 # place so the prose and the message cannot drift apart.
 LARGE_DATA_ROWS <- 10000L
 
+# Warn about the three exact, checkable degeneracies a dataset can carry (docs/80). No
+# invented thresholds: each condition is either true or false of the data, and each one makes
+# a specific reported number meaningless.
+#
+# `weights` is the already-validated vector (length 0 = unweighted), so the weighted mean and
+# SST below use the same formula compute_y_norm() uses in the core -- a dataset that is
+# constant under the core's own weighting is the one worth naming.
+check_degenerate_data <- function(X, y, weights) {
+    w    <- if (length(weights) == length(y)) weights else rep(1, length(y))
+    sw   <- sum(w)
+    mu   <- sum(w * y) / sw
+    sst  <- sum(w * (y - mu)^2)
+
+    if (!is.finite(sst)) {
+        # The data itself is finite (checked above) but its squares are not, so the SSE loss
+        # and every figure derived from it (R^2, score) overflow. Rescaling y is the fix, and
+        # it costs the user nothing: symbolic regression is not scale-bound.
+        warning("y's scale overflows the sum-of-squares loss (its total sum of squares is ",
+                "not finite), so the reported loss and R-squared are meaningless. ",
+                "Rescale y (for example y / max(abs(y))) before fitting.", call. = FALSE)
+    } else if (sst <= 0) {
+        # Zero variance: every constant fits perfectly, so no expression is better than any
+        # other and R^2 (1 - loss/sst) is undefined -- which is why summary() prints NA for
+        # it. This says why. A single-row dataset lands here too, by construction.
+        warning("y is constant (zero variance), so no expression can explain it and ",
+                "R-squared is undefined. The search will return an arbitrary constant.",
+                call. = FALSE)
+    }
+
+    # A constant feature cannot explain any variation in y, so it only enlarges the search
+    # space. Named as "x0 (colname)" because the fitted expression strings are 0-based.
+    const <- which(vapply(seq_len(ncol(X)),
+                          function(j) all(X[, j] == X[1L, j]), logical(1)))
+    if (length(const) > 0L) {
+        nm <- colnames(X)
+        lab <- paste0("x", const - 1L,
+                      if (!is.null(nm)) paste0(" (", nm[const], ")") else "")
+        warning(if (length(const) == 1L) "feature " else "features ",
+                paste(lab, collapse = ", "),
+                if (length(const) == 1L) " is constant" else " are constant",
+                " and cannot explain any variation in y; dropping ",
+                if (length(const) == 1L) "that column " else "those columns ",
+                "shrinks the search space.", call. = FALSE)
+    }
+    invisible(NULL)
+}
+
 #' @rdname symbolic_regression
 #' @export
 symbolic_regression.default <- function(
@@ -424,6 +500,13 @@ symbolic_regression.default <- function(
     ...
 ) {
     X <- as.matrix(X)
+    # A logical matrix is legitimate data -- a 0/1 indicator column -- but is.numeric() is
+    # FALSE for it, so the character guard below rejected it too. It only ever fired on a
+    # PURELY logical X: as.matrix() on a data frame mixing a logical column with a numeric
+    # one promotes to numeric, so the same column was accepted or refused depending on what
+    # sat next to it. Python has always accepted it (np.asarray(..., dtype=float)).
+    # Promoting here makes the two interfaces and the two R spellings agree (docs/80).
+    if (is.logical(X)) storage.mode(X) <- "double"
     # Reject a factor y BEFORE coercing. as.numeric() on a factor returns its level
     # CODES, not the values it displays, so factor(c(100, 20, 3)) would train on
     # c(1, 2, 3) — a wrong answer with no error anywhere. X is already protected by
@@ -435,6 +518,10 @@ symbolic_regression.default <- function(
     y <- as.numeric(y)
 
     if (nrow(X) == 0L) stop("X must have at least one row")
+    # No feature columns means there is no function of X to discover: the search can only
+    # ever return a constant, which it did -- silently, as expression "1" (docs/80). The
+    # C++ bridge guards this too; checking here is what names the argument.
+    if (ncol(X) == 0L) stop("X must have at least one column")
     if (nrow(X) != length(y)) stop("nrow(X) must equal length(y)")
     if (!is.numeric(X)) stop("X must be numeric")
 
@@ -527,7 +614,22 @@ symbolic_regression.default <- function(
             stop("weights must have the same length as y")
         if (any(!is.finite(weights)) || any(weights < 0))
             stop("weights must be non-negative and finite")
+        # Non-negative and finite was not enough: with every weight zero the weighted SSE is
+        # identically 0, so every candidate ties at a perfect loss and the returned
+        # expression is whichever one the tournament happened to hold. "loss = 0" is the
+        # most confidence-inspiring number this API prints, and there it means the opposite
+        # (docs/80).
+        if (sum(weights) <= 0)
+            stop("weights must not be all zero; their sum must be positive")
     }
+
+    # Degeneracies: legal datasets the search runs on happily and returns a plausible result
+    # for, but about which it cannot say anything. Warnings, not errors -- the run is
+    # well-defined and a wide table with a constant column is ordinary -- but nothing else on
+    # screen says the answer does not mean what it looks like. Kept as warning() rather than
+    # message() to separate them from the large-data advisory below, which suggests a faster
+    # way to do what was asked rather than doubting the answer (docs/80).
+    check_degenerate_data(X, y, weights)
 
     # Opt-in dimensional analysis (PySR X_units / y_units / dimensional_constraint_penalty /
     # dimensionless_constants_only; docs/46). All default-off: with X_units = NULL the search

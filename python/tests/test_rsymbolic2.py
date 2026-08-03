@@ -910,3 +910,91 @@ def test_non_positive_counts_are_rejected(name, value):
     kwargs[name] = value
     with pytest.raises(ValueError, match=name):
         symbolic_regression(X, y, **kwargs)
+
+
+# --- docs/80: unusable data is refused, degenerate data warns ------------------------
+
+_SMALL = dict(population_size=6, generations=5, n_populations=2, seed=1, verbosity=0)
+
+
+def test_X_with_no_columns_is_rejected():
+    """Silently returned the constant expression "1".
+
+    With no features there is no function of X to discover, so any result is arbitrary.
+    """
+    with pytest.raises(ValueError, match="at least one column"):
+        symbolic_regression(np.zeros((10, 0)), np.arange(10.0), **_SMALL)
+
+
+def test_all_zero_weights_are_rejected():
+    """Non-negative and finite, but the weighted SSE is then identically 0.
+
+    Every candidate ties at a perfect loss, so the winner is whatever the tournament
+    happened to hold -- reported as ``loss=0.0``, the most confidence-inspiring number
+    this API prints.
+    """
+    X = np.linspace(-3, 3, 10).reshape(-1, 1)
+    y = 2 * X[:, 0] + 1
+    with pytest.raises(ValueError, match="all zero"):
+        symbolic_regression(X, y, weights=np.zeros(10), **_SMALL)
+    # Only the sum has to be positive; the rest may be zero.
+    w = np.zeros(10)
+    w[:2] = 1.0
+    symbolic_regression(X, y, weights=w, **_SMALL)
+    # ...and the degeneracy check reads the same weights the core does, so weighting all
+    # but one point out of existence is a zero-variance target and says so.
+    w1 = np.zeros(10)
+    w1[0] = 1.0
+    with pytest.warns(UserWarning, match="constant"):
+        symbolic_regression(X, y, weights=w1, **_SMALL)
+
+
+def test_multi_output_y_is_rejected_rather_than_flattened():
+    """``ravel()`` on an (n, k) target interleaves k unrelated series.
+
+    When the flattened length happens to match nrow(X) every downstream length check
+    passed and the search fitted the interleaving -- a wrong answer with nothing to
+    suggest it.
+    """
+    X = np.linspace(-3, 3, 12).reshape(-1, 1)
+    with pytest.raises(ValueError, match="single target"):
+        symbolic_regression(X, np.arange(12.0).reshape(6, 2), **_SMALL)
+    # An (n, 1) column vector is the same single target written differently: still fine.
+    y = (2 * X[:, 0] + 1).reshape(-1, 1)
+    res = symbolic_regression(X, y, **_SMALL)
+    assert res.n_features == 1
+
+
+def test_constant_target_warns_but_still_runs():
+    X = np.linspace(-3, 3, 10).reshape(-1, 1)
+    with pytest.warns(UserWarning, match="constant"):
+        res = symbolic_regression(X, np.full(10, 5.0), **_SMALL)
+    # The warning explains exactly the case that already made R^2 undefined.
+    assert res.sst == 0.0
+    assert res.pareto_front[0]["r_squared"] is None
+
+
+def test_constant_feature_warns_and_is_named_zero_based():
+    X = np.column_stack([np.full(10, 2.0), np.linspace(-3, 3, 10)])
+    with pytest.warns(UserWarning, match=r"feature x0 is constant"):
+        symbolic_regression(X, X[:, 1], **_SMALL)
+
+
+def test_overflowing_y_scale_warns():
+    X = np.linspace(-3, 3, 10).reshape(-1, 1)
+    y = (2 * X[:, 0] + 1) * 1e200
+    with pytest.warns(UserWarning, match="overflows the sum-of-squares loss"):
+        symbolic_regression(X, y, **_SMALL)
+
+
+def test_ordinary_data_raises_no_degeneracy_warning(recwarn):
+    X = np.linspace(-3, 3, 10).reshape(-1, 1)
+    symbolic_regression(X, 2 * X[:, 0] + 1, **_SMALL)
+    assert [str(w.message) for w in recwarn] == []
+
+
+def test_boolean_X_is_accepted():
+    """A 0/1 indicator column is legitimate data; R now agrees (docs/80)."""
+    X = np.array([[True], [False]] * 5)
+    res = symbolic_regression(X, np.array([2.0, 5.0] * 5), **_SMALL)
+    assert res.n_features == 1

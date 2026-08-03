@@ -77,12 +77,18 @@ test_that("the display methods survive a fit with no recommendation", {
 test_that("summary reports NA R-squared for a constant target (SST = 0)", {
   X <- matrix(seq(-3, 3, length.out = 12), ncol = 1)
   y <- rep(2.5, 12)
-  res <- symbolic_regression(
-    X, y,
-    unary_ops       = character(0),
-    population_size = 50L,
-    generations     = 5L,
-    seed            = 1L
+  # The zero-variance target this test is built on is exactly what the docs/80 degeneracy
+  # warning is for, so expect it here rather than silencing it: the NA below is the
+  # consequence the warning describes.
+  expect_warning(
+    res <- symbolic_regression(
+      X, y,
+      unary_ops       = character(0),
+      population_size = 50L,
+      generations     = 5L,
+      seed            = 1L
+    ),
+    "constant (zero variance)", fixed = TRUE
   )
   expect_identical(res$sst, 0)
   s <- summary(res)

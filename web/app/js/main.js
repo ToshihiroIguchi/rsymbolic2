@@ -7,7 +7,7 @@
 
 import {
   parseTable, numericColumns, toMatrix, maxRowsForBrowser, sampleTable, strideIndices,
-  firstNonNumericCell,
+  firstNonNumericCell, constantColumns, overflowingColumns,
 } from "./data.js";
 import { EXAMPLES } from "./examples.js";
 import {
@@ -806,10 +806,28 @@ function renderDataNotice(over) {
 //     which is what made it invisible. Naming the first offending cell is the point: "x1 is not
 //     numeric" sends the user looking through the whole column, "row 2 is NA" does not.
 //   * a row whose field count does not match the header is dropped by the parser.
-// Neither is worth refusing the file over, so this reports and moves on. Rebuilt only on load:
-// both facts are properties of the parsed file, and nothing the user does afterwards changes
-// them (the target/feature controls cannot reach a column that is not on them).
+//   * a column holding the SAME value in every row is fully numeric, so it is offered as both
+//     target and feature — and the engine runs on it without complaint. Picked as the target
+//     it voids the run (zero variance: every constant fits perfectly and R² is undefined,
+//     which is all the results panel's "—" ever said); picked as a feature it only enlarges
+//     the search space. Same for a column whose sum of squares overflows to infinity: each
+//     cell is finite, but nothing computed from them is (docs/80).
+// None is worth refusing the file over, so this reports and moves on. Rebuilt only on load:
+// every fact here is a property of the parsed file, and nothing the user does afterwards
+// changes them (the target/feature controls cannot reach a column that is not on them).
 const NAMED_DROPPED_COLUMNS = 3; // beyond this, count them instead of listing them
+
+// `Column "a" is` / `Columns "a", "b" and 2 more are` — the shared opening of the degeneracy
+// lines, so both read as sentences and both stop listing at the same width the dropped-column
+// line does. Returns null when the flag vector picks nothing, which is the common case.
+function namedColumns(src, flags) {
+  const hit = src.columns.map((name, j) => ({ name, j })).filter(({ j }) => flags[j]);
+  if (hit.length === 0) return null;
+  const shown = hit.slice(0, NAMED_DROPPED_COLUMNS).map(({ name }) => `"${name}"`);
+  const rest = hit.length - shown.length;
+  const list = shown.join(", ") + (rest > 0 ? `, and ${fmtInt(rest)} more` : "");
+  return `${hit.length === 1 ? "Column" : "Columns"} ${list} ${hit.length === 1 ? "is" : "are"}`;
+}
 function renderIntakeNotice() {
   const el = $("intake-notice");
   const src = state.sourceTable;
@@ -835,6 +853,21 @@ function renderIntakeNotice() {
     lines.push(
       `${fmtInt(src.skippedRows)} row${src.skippedRows === 1 ? "" : "s"} did not have ` +
       `${src.columns.length} fields and ${src.skippedRows === 1 ? "was" : "were"} skipped.`);
+  }
+  // Both degeneracy lines name the columns and then say what each role costs, because the
+  // default target is the last numeric column and nothing else would connect the two facts.
+  const constant = namedColumns(src, constantColumns(src, state.numeric));
+  if (constant) {
+    lines.push(
+      `${constant} constant (the same value in every row). As the target that makes the ` +
+      "run meaningless — every constant fits perfectly, so R² is undefined; as an input " +
+      "it cannot explain anything and only enlarges the search.");
+  }
+  const overflowing = namedColumns(src, overflowingColumns(src, state.numeric));
+  if (overflowing) {
+    lines.push(
+      `${overflowing} on a scale whose sum of squares overflows to infinity. The loss and ` +
+      "R² computed from it are meaningless — rescale the column before fitting.");
   }
   el.textContent = lines.join(" ");
   el.classList.toggle("warn", lines.length > 0);

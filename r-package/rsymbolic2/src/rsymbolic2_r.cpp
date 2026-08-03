@@ -11,6 +11,8 @@
 
 #include <cpp11.hpp>
 
+#include <cmath>
+
 #include "rsymbolic/evolution/macro_op.hpp"
 #include "rsymbolic/evolution/mutation_weights.hpp"
 #include "rsymbolic/evolution/search_space.hpp"
@@ -129,6 +131,10 @@ cpp11::writable::list symbolic_regression_cpp(
     // which at large n exceeded the data itself.
     const int n = X.nrow();
     const int p = X.ncol();
+    // No feature columns means there is no function of X to discover: the search can only
+    // return a constant, and did so silently as expression "1" (docs/80). Checked at the
+    // bridge so the guard holds for any caller, as with the count-like arguments below.
+    if (p < 1) cpp11::stop("X must have at least one column");
     rsymbolic::FeatureColumns X_cpp;
     X_cpp.columns.assign(static_cast<std::size_t>(p),
                          std::vector<double>(static_cast<std::size_t>(n)));
@@ -252,6 +258,18 @@ cpp11::writable::list symbolic_regression_cpp(
         if (weights.size() != y.size())
             cpp11::stop("weights must have length nrow(X) (= length(y)); got %d, expected %d.",
                         static_cast<int>(weights.size()), static_cast<int>(y.size()));
+        // A weight vector that is non-negative but sums to zero makes the weighted SSE
+        // identically 0, so every candidate ties at a perfect loss and the winner is
+        // whichever one the tournament happened to hold — "loss = 0" reported for a search
+        // that never happened (docs/80). Checked at the bridge so it holds for any caller.
+        double wsum_in = 0.0;
+        for (const double w : weights) {
+            if (!std::isfinite(w) || w < 0.0)
+                cpp11::stop("weights must be non-negative and finite");
+            wsum_in += w;
+        }
+        if (wsum_in <= 0.0)
+            cpp11::stop("weights must not be all zero; their sum must be positive");
         opts.weights.assign(weights.begin(), weights.end());
     }
 

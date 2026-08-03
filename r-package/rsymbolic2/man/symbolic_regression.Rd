@@ -55,15 +55,21 @@ symbolic_regression(X, ...)
 }
 \arguments{
 \item{X}{Numeric matrix of input features (rows = observations, columns =
-features). A numeric vector is treated as a single-column matrix. Passing a
-\code{formula} as the first argument dispatches to the formula method.}
+features). A numeric vector is treated as a single-column matrix; a logical
+matrix is read as \code{0}/\code{1}. Must have at least one row and one
+column, and must not contain \code{NA}, \code{NaN} or infinite values.
+Passing a \code{formula} as the first argument dispatches to the formula
+method.}
 
 \item{...}{For the generic and the formula method, further arguments (such as
 \code{population_size}, \code{seed}, \code{weights}) passed on to the default
 method; ignored by the default method itself.}
 
 \item{y}{Numeric vector of target values; \code{length(y)} must equal
-\code{nrow(X)}.}
+\code{nrow(X)}, and it must not contain \code{NA}, \code{NaN} or infinite
+values. A constant \code{y} is accepted with a warning: it has zero
+variance, so no expression can explain it and \code{r_squared} is
+\code{NA} (see Degenerate data).}
 
 \item{population_size}{Number of candidate expressions kept in each island
 population (default 27, PySR \code{population_size}).}
@@ -246,7 +252,9 @@ knee but only among members within 1.5x of the most accurate loss.}
 least-squares fit (PySR \code{weights}); \code{NULL} (default) fits unweighted.
 When supplied, \code{length(weights)} must equal \code{length(y)} and the loss
 becomes the weighted SSE \eqn{\sum_i w_i (\hat y_i - y_i)^2}. Weights must be
-non-negative.}
+finite and non-negative, and at least one must be positive: an all-zero vector
+makes every candidate's loss identically \code{0}, so the search would report a
+perfect fit it never found, and is rejected.}
 
 \item{batching}{Evaluate the evolution and constant-optimisation passes on a
 random subsample of \code{batch_size} rows per iteration instead of the full
@@ -444,6 +452,29 @@ discovering such structure is the job of the search itself. An intercept term
 effect: no design matrix is built and the constant offset, if any, is found by
 the search.
 }
+\section{Degenerate data}{
+
+Some datasets are legal but carry no information for the search to find. These
+are not refused -- the run is well defined and the caller may know exactly what
+they are doing -- but each raises a \code{\link[base]{warning}}, because the
+result would otherwise look like an ordinary answer (\code{docs/80}):
+\itemize{
+  \item a constant \code{y} (zero variance, using the weighted variance when
+    \code{weights} is given): every constant fits it perfectly, so no expression
+    is better than any other and \code{r_squared} is undefined. A single-row
+    dataset lands here by construction.
+  \item a constant feature column: it cannot explain any variation in \code{y},
+    so it only enlarges the search space.
+  \item a \code{y} whose total sum of squares is not finite: the values are each
+    finite, but the sum-of-squares loss computed from them overflows, so the
+    reported \code{loss} and \code{r_squared} are meaningless. Rescaling
+    \code{y} fixes it and costs nothing.
+}
+Data with no defensible reading is refused instead, naming the argument: an
+\code{X} with no rows or no columns, an all-zero \code{weights} vector, a
+non-finite value in \code{X} or \code{y}, and a non-numeric or factor input.
+}
+
 \examples{
 \donttest{
 # Single-variable linear: y = 2.5*x + 1.7

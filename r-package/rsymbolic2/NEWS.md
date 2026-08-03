@@ -1,5 +1,25 @@
 # rsymbolic2 0.1.0.9000 (development)
 
+Invalid and degenerate data (docs/80). None of these changes the search; each fires
+before `run_evolution()` is reached, and ordinary data is unaffected.
+
+- **Refused, naming the argument** — datasets with no defensible reading, which the
+  engine previously ran on and returned a plausible-looking result for:
+  - an `X` with no columns (it silently returned the constant expression `"1"`);
+  - an all-zero `weights` vector (the weighted SSE is then identically `0`, so every
+    candidate tied at a perfect loss and the "best" expression was whichever one the
+    tournament happened to hold — reported as `loss = 0`).
+  Both are also guarded in the C++ bridge, so the refusal holds for any caller.
+- **Warned about, but still run** — legal datasets the search cannot say anything
+  about, each of which made a reported number meaningless with nothing on screen to
+  say so: a constant `y` (zero variance, which is exactly why `summary()` prints `NA`
+  for `r_squared`), a constant feature column, and a `y` whose total sum of squares
+  overflows to non-finite. See `?symbolic_regression`, section "Degenerate data".
+- **Accepted** — a logical `X` is now read as `0`/`1` instead of being rejected by the
+  `is.numeric()` guard. The rejection only ever fired on a *purely* logical matrix,
+  since `as.matrix()` promotes a logical column sitting next to a numeric one, and
+  Python has always accepted it.
+
 Guarded operator semantics (docs/69, docs/77):
 
 - **Search behaviour change.** The domain-guarded operators now return `NaN` outside

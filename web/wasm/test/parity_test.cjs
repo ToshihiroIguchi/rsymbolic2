@@ -316,6 +316,23 @@ function assert(cond, msg) {
   const rInfY = runOpts({ y: infY });
   assert(rInfY && typeof rInfY.error === "string" && rInfY.error.includes("y must not contain"),
     "Inf in y is rejected");
+  // A weight vector that is non-negative but sums to zero makes the weighted SSE identically
+  // 0, so every candidate ties at a perfect loss and the winner is whatever the tournament
+  // happened to hold — a search that never happened, reported as loss = 0 (docs/80). The GUI
+  // exposes no weights, so like the count guards above this holds for every other caller.
+  const rZeroW = runOpts({ weights: new Float64Array(y.length) });
+  assert(rZeroW && typeof rZeroW.error === "string" && rZeroW.error.includes("all zero"),
+    "all-zero weights are rejected");
+  const negW = new Float64Array(y.length).fill(1);
+  negW[0] = -1;
+  const rNegW = runOpts({ weights: negW });
+  assert(rNegW && typeof rNegW.error === "string" && rNegW.error.includes("non-negative"),
+    "a negative weight is rejected");
+  // One positive weight is enough: only the SUM has to be positive.
+  const oneW = new Float64Array(y.length);
+  oneW[0] = 1;
+  const rOneW = runOpts({ weights: oneW });
+  assert(rOneW && !rOneW.error, "a single positive weight is accepted");
 
   // 2g. The browser's own evaluator (web/app/js/predict.js) must agree with the engine on
   // every operator it re-implements. This matters most for `erf`: R borrows pnorm and Python

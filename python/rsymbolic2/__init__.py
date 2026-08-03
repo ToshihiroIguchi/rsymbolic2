@@ -67,6 +67,79 @@ def _as_design_matrix(a, name: str) -> np.ndarray:
         )
     return arr
 
+
+def _as_target_vector(a, name: str) -> np.ndarray:
+    """Coerce the target to a 1-D float vector, refusing a multi-output target.
+
+    A `(n, 1)` column vector is the same single target written differently, so it is
+    flattened silently. Anything wider is not: `ravel()` on an `(n, k)` array interleaves
+    k unrelated series into one vector of length n*k, and when that length happens to
+    match `nrow(X)` every length check downstream passes and the search dutifully fits the
+    interleaving (docs/80). rsymbolic2 fits one target; several are several runs.
+    """
+    arr = np.asarray(a, dtype=float)
+    if arr.ndim > 1 and int(np.prod(arr.shape[1:])) > 1:
+        raise ValueError(
+            f"{name} must be a single target: a 1-D array, or 2-D with one column; got "
+            f"shape {arr.shape}. Fit one column at a time rather than passing several."
+        )
+    return arr.ravel()
+
+
+def _check_degenerate_data(X: np.ndarray, y: np.ndarray, w: np.ndarray) -> None:
+    """Warn about the three exact, checkable degeneracies a dataset can carry (docs/80).
+
+    No invented thresholds: each condition is either true or false of the data, and each
+    one makes a specific reported number meaningless. Warnings rather than errors — the
+    run is well-defined and a wide table with a constant column is ordinary — but nothing
+    else the caller sees says the answer does not mean what it looks like.
+
+    `w` is the already-validated weight vector (empty = unweighted); the weighted mean and
+    SST below use the same formula `compute_y_norm()` uses in the core, so a dataset that
+    is constant under the core's own weighting is the one named.
+    """
+    weights = w if w.size == y.size else np.ones_like(y)
+    with np.errstate(over="ignore", invalid="ignore"):
+        mu = float(np.sum(weights * y) / np.sum(weights))
+        sst = float(np.sum(weights * (y - mu) ** 2))
+
+    if not math.isfinite(sst):
+        # The data itself is finite (checked by the caller) but its squares are not, so the
+        # SSE loss and everything derived from it (R^2, score) overflow. Rescaling y costs
+        # nothing: symbolic regression is not scale-bound.
+        warnings.warn(
+            "y's scale overflows the sum-of-squares loss (its total sum of squares is not "
+            "finite), so the reported loss and R-squared are meaningless. Rescale y (for "
+            "example y / np.max(np.abs(y))) before fitting.",
+            UserWarning,
+            stacklevel=3,
+        )
+    elif sst <= 0.0:
+        # Zero variance: every constant fits perfectly, so no expression is better than any
+        # other and R^2 (1 - loss/sst) is undefined — which is why `r_squared` is None. This
+        # says why. A single-row dataset lands here too, by construction.
+        warnings.warn(
+            "y is constant (zero variance), so no expression can explain it and R-squared "
+            "is undefined. The search will return an arbitrary constant.",
+            UserWarning,
+            stacklevel=3,
+        )
+
+    # A constant feature cannot explain any variation in y, so it only enlarges the search
+    # space. Named "x0" because the fitted expression strings are 0-based.
+    const = np.flatnonzero(np.all(X == X[0], axis=0))
+    if const.size:
+        names = ", ".join(f"x{j}" for j in const)
+        verb = "is" if const.size == 1 else "are"
+        warnings.warn(
+            f"feature{'' if const.size == 1 else 's'} {names} {verb} constant and cannot "
+            "explain any variation in y; dropping "
+            f"{'that column' if const.size == 1 else 'those columns'} shrinks the search "
+            "space.",
+            UserWarning,
+            stacklevel=3,
+        )
+
 ArrayLike = Union[np.ndarray, Sequence[float], Sequence[Sequence[float]]]
 
 
@@ -883,9 +956,15 @@ def symbolic_regression(
     ----------
     X : array-like, shape (n_samples, n_features)
         Input features. A 1-D array is treated as a single column (n samples of one
-        feature), never as one row of several features.
+        feature), never as one row of several features. Must have at least one row
+        and one column, and must contain no NaN or infinite values.
     y : array-like, shape (n_samples,)
-        Target values; ``len(y)`` must equal ``X.shape[0]``.
+        Target values; ``len(y)`` must equal ``X.shape[0]``, with no NaN or infinite
+        values. A ``(n, 1)`` column vector is accepted as the same single target;
+        a wider array is refused rather than flattened, because rsymbolic2 fits one
+        target at a time. A constant ``y`` is accepted with a warning: it has zero
+        variance, so no expression can explain it and ``r_squared`` is None (see
+        Degenerate data below).
     population_size : int, default 27
         Candidate expressions per island (PySR ``population_size``).
     n_populations : int, default 31
@@ -976,8 +1055,10 @@ def symbolic_regression(
     model_selection : {"best", "accuracy", "score"}, default "best"
         Which Pareto member is reported as ``recommended`` (PySR ``model_selection``).
     weights : array-like, optional
-        Per-point non-negative weights for a weighted least-squares fit (PySR
-        ``weights``); None fits unweighted.
+        Per-point weights for a weighted least-squares fit (PySR ``weights``); None
+        fits unweighted. Must be finite and non-negative, with at least one positive:
+        an all-zero vector makes every candidate's loss identically 0, so the search
+        would report a perfect fit it never found, and is refused.
     batching : bool, default False
         Evaluate the evolution and constant-optimisation passes on a random subsample
         of ``batch_size`` rows per iteration instead of the full dataset (PySR
@@ -1083,6 +1164,28 @@ def symbolic_regression(
     SymbolicRegressionResult
         Best expression, Pareto front, and a :meth:`~SymbolicRegressionResult.predict`
         method.
+
+    Notes
+    -----
+    **Degenerate data.** Some datasets are legal but carry no information for the
+    search to find. These are not refused — the run is well defined and the caller
+    may know exactly what they are doing — but each raises a ``UserWarning``, because
+    the result would otherwise look like an ordinary answer (docs/80):
+
+    * a constant ``y`` (zero variance, using the weighted variance when ``weights``
+      is given): every constant fits it perfectly, so no expression is better than
+      any other and ``r_squared`` is undefined. A single-row dataset lands here by
+      construction.
+    * a constant feature column: it cannot explain any variation in ``y``, so it only
+      enlarges the search space.
+    * a ``y`` whose total sum of squares is not finite: the values are each finite,
+      but the sum-of-squares loss computed from them overflows, so the reported
+      ``loss`` and ``r_squared`` are meaningless. Rescaling ``y`` fixes it and costs
+      nothing.
+
+    Data with no defensible reading raises ``ValueError`` instead, naming the
+    argument: an ``X`` with no rows or no columns, an all-zero ``weights`` vector, a
+    non-finite value in ``X`` or ``y``, and a multi-column ``y``.
     """
     # Capture display-only column names before coercion (pandas DataFrame carries
     # them in `.columns`). They are surfaced in repr() as an `x0 = name` legend and
@@ -1091,9 +1194,14 @@ def symbolic_regression(
     feature_names = [str(c) for c in columns] if columns is not None else None
 
     X_arr = _as_design_matrix(X, "X")
-    y_arr = np.asarray(y, dtype=float).ravel()
+    y_arr = _as_target_vector(y, "y")
     if X_arr.shape[0] == 0:
         raise ValueError("X must have at least one row.")
+    # No feature columns means there is no function of X to discover: the search can only
+    # ever return a constant, which it did — silently, as expression "1" (docs/80). The C++
+    # bridge guards this too; checking here is what names the argument.
+    if X_arr.shape[1] == 0:
+        raise ValueError("X must have at least one column.")
     if X_arr.shape[0] != y_arr.shape[0]:
         raise ValueError("X.shape[0] must equal len(y).")
 
@@ -1152,6 +1260,17 @@ def symbolic_regression(
             raise ValueError("weights must have the same length as y.")
         if not np.all(np.isfinite(weights_arr)) or np.any(weights_arr < 0):
             raise ValueError("weights must be non-negative and finite.")
+        # Non-negative and finite was not enough: with every weight zero the weighted SSE
+        # is identically 0, so every candidate ties at a perfect loss and the returned
+        # expression is whichever one the tournament happened to hold. "loss = 0.0" is the
+        # most confidence-inspiring number this API prints, and there it means the
+        # opposite (docs/80).
+        if float(np.sum(weights_arr)) <= 0.0:
+            raise ValueError(
+                "weights must not be all zero; their sum must be positive."
+            )
+
+    _check_degenerate_data(X_arr, y_arr, weights_arr)
 
     mw_dict = {} if mutation_weights is None else {str(k): float(v) for k, v in mutation_weights.items()}
 
