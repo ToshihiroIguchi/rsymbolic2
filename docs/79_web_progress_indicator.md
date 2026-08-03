@@ -121,8 +121,8 @@ bar has to advance between snapshots, so a snapshot-driven bar could no longer b
 it means "the worker script parsed", which is a different (and weaker) claim.
 
 Note this exposes a real cost rather than hiding one: a fresh worker per run (needed for
-Stop == `terminate()`) reloads the engine every run. Making that a visible 0.2–0.5 s beat
-is the point; changing it is out of scope here.
+Stop == `terminate()`) reloads the engine every run. Naming it is what made it measurable —
+see "The cost the narration exposed" below, which then removes it.
 
 ### 5 · Coarse announcements (gap 5)
 
@@ -137,6 +137,72 @@ most a live region can carry without becoming what the original comment refused 
 `42% · rsymbolic2` while determinate, `running · rsymbolic2` before that, restored by
 `finishRun()`. Written only when the integer percent changes. The Notification API was
 rejected: a permission prompt is a poor trade for a signal the tab title already carries.
+
+## The cost the narration exposed, and its fix
+
+Naming the engine-load phase made it measurable, and the measurement was worse than the
+guess. On the **deployed** site (GitHub Pages, `Cache-Control: max-age=600`, ETag), three
+consecutive runs of the bundled quadratic:
+
+| run | engine load | whole run |
+|---|---|---|
+| 1 (cold cache) | 1,507 ms | 6,055 ms |
+| 2 (warm cache) | **851 ms** | 5,295 ms |
+| 3 (warm cache) | **856 ms** | 5,297 ms |
+
+HTTP caching removes the *fetch* and nothing else: the worker spawn, the compile, the
+instantiate and the 128 MiB heap (`-sINITIAL_MEMORY=134217728`, growth disabled) are paid on
+every run, because Stop is `worker.terminate()` and that throws the module away with it. On
+the demo-sized problems this page exists to show, that is ~16 % of the wall clock spent
+before the search starts — in the first impression of an answer-first UI.
+
+**Rejected: a persistent worker with engine-side interruption.** `Module.run()` blocks its
+worker thread for the whole search, so a Stop message cannot be received while it runs.
+Reading a stop flag synchronously needs `SharedArrayBuffer` + `Atomics`, which needs
+COOP/COEP headers, which **GitHub Pages cannot send** — the design is not implementable on
+the deployment target. Unwinding through the progress callback was also rejected: it would
+break docs/53's "pure observation, return value never read" contract and drive a JS
+exception through C++.
+
+**Implemented: keep the disposable worker, but warm the next one in advance.** One worker
+exists at a time (`ensureWorker`/`retireWorker` in main.js, `{type:"warm"}` in worker.js).
+It is created and told to load the engine when the *data* is loaded — the moment Run becomes
+pressable — and every path that ends a run (result, error, Stop, data change) retires the
+worker it used and immediately starts warming its replacement. Both properties of the old
+create-per-run design survive: Stop is still a plain `terminate()`, and every run still
+starts on a pristine module and an untouched heap.
+
+Two deliberate details. If the spare is not warm yet, `run()` uses it anyway — the run
+message simply queues behind the worker's own `await getModule()`, exactly as every run did
+before, so there is no readiness check and no waiting state. And a failed warm-up is
+swallowed in the worker: it is speculative work nobody asked for, and the run that follows
+hits the identical failure and reports it through the normal error path.
+
+Ordering matters in one place: all four end-of-run paths call `finishRun()` **before**
+`retireWorker()`. `ensureWorker()`'s replacement reports a load failure through `onError`,
+and an `onError` fired while `body.running` is still set would overwrite the result being
+rendered. Ending the run first means an idle spare can only ever fail silently.
+
+Measured after the change (`web/serve.py`, i.e. `no-store` — the harshest case, where each
+warm-up re-fetches the whole `.wasm`), quadratic example:
+
+| when Run is pressed | `loading engine…` shown | whole run |
+|---|---|---|
+| 1.5 s after loading the data | **no** | 3,466 ms |
+| 1.5 s after the previous run | **no** | 3,350 ms |
+| immediately after the previous run | yes, 617 ms | 3,949 ms |
+
+The remaining case is real and left as is: a run started within ~0.6 s of the previous one
+finishing still pays, because that is when its replacement began warming. The chip says so
+when it happens, which is the honest behaviour — and it is the case a human hand rarely
+produces.
+
+**Idle cost of the spare.** Measured as the working set of the automation browser's
+processes: 793 MiB with no data loaded and no spare, 793 MiB with a fully warmed idle spare,
+i.e. **no measurable resident cost**. The 128 MiB is reserved address space whose pages are
+untouched until a search runs, so the OS never backs them. After three runs the figure was
+814 MiB — one dirtied heap's residue and normal variance, not the 3 × 128 MiB that a leak
+would show, which is the evidence that retirement actually frees what it replaces.
 
 ## Verification
 
@@ -178,6 +244,13 @@ stroke sampled off the canvas moves `#4f8dff` → `#2563eb` while `body.running`
 
 Console clean (0 errors, 0 warnings) across every run; the one warning seen was
 `getImageData … willReadFrequently` from the test harness's own pixel sampling, not the app.
+
+**Worker lifecycle.** Stop mid-run (`1.2s | generation 28/2,800` → "stopped") followed by a
+new run, which came up warm; a data change *while a run was in flight* (the run is killed,
+the chip returns to "data loaded — press Run", `body.running` cleared) followed by a warm run
+on the new table. The `onError` path was not provoked deliberately — no honest way to force
+an OOM under the row cap — but it retires through the same `retireWorker()` the two verified
+paths use, and nothing else in it changed.
 
 **Search behaviour is untouched by construction**: nothing outside `web/app/` changed, no
 file under `web/wasm/` was touched, the vendored `.wasm` is the same binary, and no new code

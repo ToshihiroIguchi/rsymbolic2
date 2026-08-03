@@ -33,17 +33,29 @@ function humanError(e) {
 
 self.onmessage = async (ev) => {
   const msg = ev.data;
+  // Warm-up (docs/79): pull the engine in before there is a run to hold up. Measured on the
+  // deployed site, instantiating it costs ~0.85 s on a warm HTTP cache — the fetch is the
+  // part caching removes, the worker spawn, compile, instantiate and 128 MiB heap are not —
+  // and a Stop that is a clean terminate() means every run pays it again. main.js therefore
+  // keeps one idle worker warmed and ready, and this is the message that warms it.
+  //
+  // Failures are swallowed on purpose. This runs speculatively, before the user has asked
+  // for anything; the run that follows will hit the identical failure and report it through
+  // the normal error path, where there is someone waiting for an answer. An error chip on a
+  // page where nobody has pressed Run would be noise from a request the user never made.
+  if (msg.type === "warm") {
+    getModule().catch(() => {});
+    return;
+  }
   if (msg.type !== "run") return;
   try {
     // Stage notices (docs/79). Everything between the Run click and the first progress
     // snapshot used to be one undifferentiated sweep: worker spawn, a ~500 KB WASM fetch,
-    // its compile and instantiate, the data transfer, then a full first epoch. The engine
-    // load is the part that is neither instant nor attributable to the search, and it
-    // happens on EVERY run — the worker is recreated per run so that Stop can be a clean
-    // terminate(), which also throws away the cached module. Naming it is the honest
-    // alternative to hiding it. (`ready`, posted at the bottom of this file, is a weaker
-    // claim: the worker script parsed. getModule() is lazy, so at that point the engine
-    // has not been fetched.)
+    // its compile and instantiate, the data transfer, then a full first epoch. On a warmed
+    // worker getModule() is already resolved and these two stages land in the same
+    // millisecond; the "engine" stage is what an unwarmed run (the spare was not ready yet)
+    // still shows, honestly. (`ready`, posted at the bottom of this file, is a weaker claim:
+    // the worker script parsed. getModule() is lazy, so at that point nothing is loaded.)
     self.postMessage({ type: "stage", stage: "engine" });
     const Module = await getModule();
     // Posted before Module.run() and after the module resolved, so the main thread can time

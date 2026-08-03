@@ -243,7 +243,8 @@ const state = {
   runStartedAt: null, // Date the in-flight run was launched
   selectedIndex: null,
   treeSvg: null, // the rendered <svg> of the selected equation's tree, for the SVG download
-  worker: null,
+  worker: null,        // the one live worker: warming, warm and idle, or running a search
+
   settingsSnapshot: null, // field values captured when the settings dialog opened (Cancel restores them)
   timer: null,
   t0: 0,
@@ -514,8 +515,8 @@ function loadTable(table, source = null) {
   // New data invalidates everything downstream of it, including a search still in flight:
   // its result would render against the table it can no longer be read as describing.
   if (document.body.classList.contains("running")) {
-    if (state.worker) { state.worker.terminate(); state.worker = null; }
     finishRun();
+    retireWorker();
   }
   clearResults();
   state.sourceTable = table;
@@ -538,6 +539,12 @@ function loadTable(table, source = null) {
   document.body.classList.remove("editing-data");
   $("run-btn").disabled = false;
   $("data-summary").disabled = false;
+  // Start the engine loading now (docs/79). Here rather than at page load, because this is
+  // the moment Run becomes pressable: a visitor who is only reading the page never pays for
+  // an idle 128 MiB heap, and anyone who can press Run has had it warming since before they
+  // could. If it is still loading when they do, the run queues behind it exactly as it
+  // always did.
+  ensureWorker();
   setStatus("data loaded — press Run");
 }
 
@@ -701,8 +708,8 @@ function reapplyRowPolicy() {
   applyRowPolicy(false);
   if (fittedSignature() === before) return;
   if (document.body.classList.contains("running")) {
-    if (state.worker) { state.worker.terminate(); state.worker = null; }
     finishRun();
+    retireWorker();
     setStatus("stopped — the data changed");
   }
   clearResults();
@@ -1377,18 +1384,11 @@ function run() {
   startTimer();
   setStatus("running…");
 
-  // Fresh worker per run so Stop == terminate is clean.
-  if (state.worker) state.worker.terminate();
-  state.worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
-  state.worker.onmessage = (ev) => {
-    const msg = ev.data;
-    if (msg.type === "ready") return;
-    if (msg.type === "result") onResult(msg.result, msg.elapsed);
-    else if (msg.type === "error") onError(msg.message);
-    else if (msg.type === "progress") onProgress(msg);
-    else if (msg.type === "stage") onStage(msg.stage);
-  };
-  state.worker.onerror = (e) => onError(e.message || "worker error");
+  // The spare, warmed when the data was loaded and replaced after every run — so the engine
+  // is normally already in it (ensureWorker). If it is not ready yet the run message simply
+  // queues behind the worker's own `await getModule()`, which is exactly what every run used
+  // to do, so there is nothing to wait for and no readiness to check.
+  const worker = ensureWorker();
 
   // Flatten here and TRANSFER the buffers: posting the array-of-row-arrays structure-clones
   // the whole dataset into the worker (a second copy, ~0.3 s of main-thread time at 500k
@@ -1402,18 +1402,66 @@ function run() {
     for (let j = 0; j < ncol; j++) flat[i * ncol + j] = row[j];
   }
   const yFlat = Float64Array.from(y);
-  state.worker.postMessage(
+  worker.postMessage(
     { type: "run", X: flat, y: yFlat, nrow, ncol, options: config },
     [flat.buffer, yFlat.buffer],
   );
 }
 
-function stop() {
+// --- The worker, and the spare ------------------------------------------------------
+// One worker exists at a time and it is always warming or warm (docs/79). A run uses the
+// spare rather than creating its own, and every path that ends a run retires the worker it
+// used and starts warming the next one — so the ~0.85 s the engine takes to load is paid
+// while nobody is waiting, instead of between the Run click and the first generation.
+//
+// Retiring after every run is what keeps the two properties the old create-per-run had:
+// Stop stays a plain terminate(), and each run still begins on a pristine module and an
+// untouched heap rather than inheriting whatever the last one left behind.
+function ensureWorker() {
+  if (state.worker) return state.worker;
+  const w = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
+  w.onmessage = (ev) => {
+    const msg = ev.data;
+    if (msg.type === "ready") return;
+    // Nothing but a run produces these, and a run that is over has already had its worker
+    // retired — so a message arriving outside one belongs to a run that was abandoned, and
+    // acting on it would write a dead run's result over the live UI.
+    if (!document.body.classList.contains("running")) return;
+    if (msg.type === "result") onResult(msg.result, msg.elapsed);
+    else if (msg.type === "error") onError(msg.message);
+    else if (msg.type === "progress") onProgress(msg);
+    else if (msg.type === "stage") onStage(msg.stage);
+  };
+  w.onerror = (e) => {
+    if (document.body.classList.contains("running")) {
+      onError(e.message || "worker error");
+      return;
+    }
+    // The spare failed while idle (its script would not load). Drop it silently and let the
+    // next run report the failure through the normal path, for the same reason worker.js
+    // swallows a failed warm-up: the user has not asked for anything yet.
+    w.terminate();
+    if (state.worker === w) state.worker = null;
+  };
+  state.worker = w;
+  w.postMessage({ type: "warm" });
+  return w;
+}
+
+// Drop the current worker and immediately begin warming its replacement. Every caller is a
+// point where the worker must not be reused: it finished a run, it failed, it was stopped,
+// or the data underneath it changed.
+function retireWorker() {
   if (state.worker) {
     state.worker.terminate();
     state.worker = null;
   }
-  finishRun();
+  ensureWorker();
+}
+
+function stop() {
+  finishRun();     // before retiring, for the ordering reason given in onResult()
+  retireWorker();
   restoreResultCharts();
   setStatus(state.result ? "stopped — showing the previous result" : "stopped");
 }
@@ -1429,7 +1477,12 @@ function restoreResultCharts() {
 }
 
 function onResult(result, elapsed) {
+  // finishRun() first, then retire: ensureWorker()'s replacement reports a load failure
+  // through onError, and onError while body.running is still set would overwrite the very
+  // result being rendered here. Ending the run before the replacement exists means a spare
+  // can only ever fail silently, which is what the idle case is supposed to do.
   finishRun();
+  retireWorker();
   state.result = result;
   // Compact completion chip: elapsed time and the configured generation budget, e.g.
   // "0.57s | generations: 2800". Use config.generations (what the Settings summary shows), not
@@ -1473,10 +1526,11 @@ function onResult(result, elapsed) {
 }
 
 function onError(message) {
-  // An OOM abort leaves the module dead but the worker alive, holding its 128 MB heap until
-  // the next run replaces it. Drop it now; run() creates a fresh worker anyway.
-  if (state.worker) { state.worker.terminate(); state.worker = null; }
+  // An OOM abort leaves the module dead but the worker alive, holding its 128 MB heap. Drop
+  // it — a dead module cannot serve the next run, and the replacement warms in its place.
+  // After finishRun(), for the ordering reason given in onResult().
   finishRun();
+  retireWorker();
   restoreResultCharts(); // same stale-live-front hazard as stop()
   setStatus("error: " + message);
 }
