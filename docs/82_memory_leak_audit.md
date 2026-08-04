@@ -1,8 +1,9 @@
 # 82 — Memory-leak audit of the shipped code
 
 Whether rsymbolic2 can leak memory, answered by reading the ownership model and then
-proving it dynamically with AddressSanitizer / LeakSanitizer on the C++ core, the R
-package, and the Python extension.
+proving it dynamically with AddressSanitizer / LeakSanitizer on all four things that ship:
+the C++ core, the R package, the Python extension, and the WebAssembly build behind the
+web GUI.
 
 The short answer is **no leak was found anywhere**, and the interesting content of this
 document is not that verdict but the evidence standard behind it: a clean sanitizer run
@@ -49,6 +50,7 @@ Flags: `-fsanitize=address -fno-omit-frame-pointer -g -O1`, `ASAN_OPTIONS=detect
 | C++ core | `diag_search_digest` (real `run_evolution`: islands, migration, batching, strong-simplify) — 656 lines, matching the recorded Linux golden | none |
 | **R** | `testthat` **FAIL 0 / WARN 0 / SKIP 0 / PASS 409** | **1 byte in 1 allocation** |
 | **Python** | `pytest` **109 passed, 7 skipped** | see §2.2 |
+| **WASM** | the shipped embind bridge driven from Node, 0/2/8 real searches | **none** (see §2.3) |
 
 ### 2.1 R
 
@@ -81,6 +83,36 @@ Byte-for-byte identical. A leak inside the search leaks once per run and would r
 linearly; this does not move at all. Independently, **no leak record names
 `rsymbolic2/_core`** in any run.
 
+### 2.3 WASM
+
+Emscripten 6.0.2 (the version CI pins) supports `-fsanitize=leak`, so the WASM build gets
+the same treatment rather than an argument by analogy with the native one. Two things make
+it different from the other layers:
+
+- **The shipped bridge has no `main()`.** The module is created, called from JS, and the
+  process ends without the runtime exiting, so LeakSanitizer's `atexit` hook never fires.
+  The check has to be requested explicitly via `__lsan_do_recoverable_leak_check()`, which
+  reports and returns without terminating — so several searches can be checked in one
+  process.
+- **`web/wasm/rsymbolic2_wasm.cpp` was not modified.** The on-demand check and the
+  positive control live in a separate diagnostic file linked alongside the unmodified
+  bridge, so the thing measured is the real entry point rather than a copy of it.
+
+Driven through the real `Module.run()` on the quadratic example (`y = 2.5x² - 1.3`,
+recovered to loss 2.2e-10, so these are complete searches, not smoke tests):
+
+| Searches | `lsan_check()` |
+|---|---|
+| 0 | 0 — no leaks |
+| 2 | 0 — no leaks |
+| 8 | 0 — no leaks |
+| 2, then a deliberate `malloc` | **1 — `Direct leak of 4321 byte(s)`, stack naming `do_leak()`** |
+
+The last row is the point. Proving LeakSanitizer fires in a standalone `main()` under
+emscripten would not have established that the on-demand check works inside a
+MODULARIZE/embind module with no runtime exit — and that configuration is exactly what the
+three clean rows above rest on. The control runs last so it cannot contaminate them.
+
 ## 3. What nearly produced a false verdict
 
 Five defects in the measurement, each of which would have yielded a confident and wrong
@@ -111,6 +143,11 @@ answer. They are recorded because the next person to run this will hit the same 
 5. **An A/B where the B arm never ran.** The first fit-vs-no-fit comparison passed
    `niterations=`/`random_state=` (PySR's spellings, not ours — ours are `generations=`
    and `seed=`), so it raised `TypeError` and measured a traceback instead of a search.
+6. **A WASM verdict from a detector never shown to work in that configuration.** The first
+   WASM run reported "no leaks" three times before any control had been run *inside the
+   embind module* — and a module with no `main()` is precisely where the leak check might
+   silently do nothing. It does work, but that was worth establishing rather than assuming
+   (§2.3).
 
 ## 4. Reproducing it
 
@@ -146,10 +183,31 @@ LD_PRELOAD="$PRE" ASAN_OPTIONS="$OPT" python -m pytest python/tests -q
 `log_path` matters: without it the sanitizer writes to stderr and buries pytest's and
 testthat's own summaries, which is how the truncated first run went unnoticed.
 
+For WASM, compile the shipped bridge and the core with `-fsanitize=leak` plus one extra
+translation unit exporting the on-demand check, and drive it from Node:
+
+```bash
+source /path/to/emsdk/emsdk_env.sh
+emcc -fsanitize=leak -g -O1 -fexceptions -I r-package/rsymbolic2/src \
+     web/wasm/rsymbolic2_wasm.cpp leakcheck.cpp <the 13 core .cpp> \
+     -lembind -sMODULARIZE=1 -sEXPORT_NAME=createRsymbolic2Module \
+     -sINITIAL_MEMORY=134217728 -sSTACK_SIZE=8388608 -sENVIRONMENT=node -o rsym_lsan.cjs
+```
+
+where `leakcheck.cpp` is just
+
+```cpp
+extern "C" int __lsan_do_recoverable_leak_check(void);
+EMSCRIPTEN_BINDINGS(x) { emscripten::function("lsan_check", &lsan_check); }
+```
+
+`-sSTACK_SIZE` has to be raised from the emscripten default: the core's tree walks recurse,
+and the default stack is far smaller than a native one.
+
 ## 5. What this does not cover, and the failure modes that remain
 
-The audit covers leaks. It does not cover the memory-related failures that are actually
-reachable in this codebase, both already documented:
+The audit covers leaks in all four shipped artefacts. It does not cover the memory-related
+failures that are actually reachable in this codebase, both already documented:
 
 - **`std::bad_alloc` inside an OpenMP region is fatal, not a leak.** `evolutionary_search.cpp`
   has no `try`/`catch`, and an exception cannot propagate out of an OpenMP structured
@@ -158,4 +216,6 @@ reachable in this codebase, both already documented:
 - **The WASM heap is fixed at 128 MB with growth disabled** (docs/51), so exhaustion there
   is a hard failure, and emscripten's allocator does not return freed memory to the OS —
   resident size alone reads like a leak when it is not (docs/79 measured 814 MB and
-  concluded exactly that).
+  concluded exactly that). §2.3 settles that the browser build does not *leak*; it says
+  nothing about that ceiling, which is a capacity limit and is measured separately in
+  docs/59.
