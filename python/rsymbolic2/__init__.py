@@ -3,7 +3,15 @@
 The search engine is a C++ core (shared with the R package) exposed through a thin
 pybind11 bridge. The public entry point is :func:`symbolic_regression`, whose default
 arguments are byte-for-byte identical to PySR's documented defaults — only the
-*implementation* (a dependency-free C++ engine, no Julia runtime) differs.
+*implementation* (a dependency-free C++ engine, no Julia runtime) differs. It returns a
+:class:`SymbolicRegressionResult`, which carries the Pareto front and the
+``predict``/``latex``/``sympy``/``plot`` accessors. :class:`SymbolicRegressor` is the
+same search behind an estimator-shaped ``fit``/``predict``/``score`` object, for code
+written against ``PySRRegressor``; scikit-learn is not a dependency.
+
+``help()`` on any of the three documents every parameter and attribute in full; the
+tutorial, the worked examples and the algorithm description live in the repository
+README (https://github.com/ToshihiroIguchi/rsymbolic2#readme).
 
 Example
 -------

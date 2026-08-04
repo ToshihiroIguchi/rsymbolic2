@@ -35,3 +35,8 @@ head(residuals(res))
 }
 
 }
+\seealso{
+\code{\link{residuals.rsymbolic2}} for the same values as deviations
+  from \code{y}, and \code{\link{predict.rsymbolic2}} to evaluate the fit on
+  new data.
+}

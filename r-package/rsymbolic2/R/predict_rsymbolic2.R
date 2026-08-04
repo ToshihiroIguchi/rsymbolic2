@@ -6,8 +6,10 @@
 #'
 #' Evaluate a fitted expression returned by \code{\link{symbolic_regression}}
 #' on new input data. By default the recommended (Pareto "best") expression is
-#' used; see the \code{which} argument to evaluate the lowest-loss expression or
-#' any other member of the Pareto front.
+#' used; see the \code{expression} argument to evaluate the lowest-loss
+#' expression or any other member of the Pareto front. Called without
+#' \code{newdata} it returns the fitted values, as \code{predict()} does for
+#' every other R model object.
 #'
 #' The expression is evaluated using R's standard arithmetic operators and math
 #' functions.  These agree with the guarded operators used during training on the
@@ -48,6 +50,12 @@
 #'
 #' @return Numeric vector of predicted values, one per row of \code{newdata}.
 #'
+#' @seealso \code{\link{fitted.rsymbolic2}} and
+#'   \code{\link{residuals.rsymbolic2}} for the training data,
+#'   \code{\link{plot.rsymbolic2}} (\code{type = "fit"}) to see the same
+#'   predictions against the observations, and \code{\link{symbolic_regression}}
+#'   for the fit itself.
+#'
 #' @examples
 #' \donttest{
 #' X <- matrix(seq(-3, 3, length.out = 20), ncol = 1)
@@ -84,6 +92,10 @@ predict.rsymbolic2 <- function(object, newdata, expression = NULL, ...) {
 #'
 #' @return Numeric vector of fitted values, one per training observation.
 #'
+#' @seealso \code{\link{residuals.rsymbolic2}} for the same values as deviations
+#'   from \code{y}, and \code{\link{predict.rsymbolic2}} to evaluate the fit on
+#'   new data.
+#'
 #' @examples
 #' \donttest{
 #' X <- matrix(seq(-3, 3, length.out = 20), ncol = 1)
@@ -107,6 +119,18 @@ fitted.rsymbolic2 <- function(object, expression = NULL, ...) {
 #' @inheritParams fitted.rsymbolic2
 #'
 #' @return Numeric vector of residuals, one per training observation.
+#'
+#' @seealso \code{\link{fitted.rsymbolic2}} for the fitted values themselves,
+#'   and \code{\link{predict.rsymbolic2}} to evaluate the fit on new data.
+#'
+#' @examples
+#' \donttest{
+#' X <- matrix(seq(-3, 3, length.out = 20), ncol = 1)
+#' y <- 2 * X[, 1] + 1
+#' res <- symbolic_regression(X, y, population_size = 200L, generations = 40L,
+#'                            seed = 1L)
+#' summary(residuals(res))
+#' }
 #'
 #' @export
 residuals.rsymbolic2 <- function(object, expression = NULL, ...) {

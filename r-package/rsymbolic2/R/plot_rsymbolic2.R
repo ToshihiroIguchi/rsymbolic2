@@ -64,6 +64,11 @@
 #' @return A \code{ggplot2} plot object, returned invisibly.
 #'   The plot is also printed as a side effect.
 #'
+#' @seealso \code{\link{predict.rsymbolic2}} for the values \code{type = "fit"}
+#'   draws, \code{\link{as.data.frame.rsymbolic2}} for the front behind
+#'   \code{type = "pareto"}, and \code{\link{symbolic_regression}} for the fit
+#'   itself.
+#'
 #' @examples
 #' \donttest{
 #' X <- matrix(seq(-3, 3, length.out = 20), ncol = 1)

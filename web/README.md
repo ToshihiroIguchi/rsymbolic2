@@ -5,6 +5,9 @@ Part of rsymbolic2, Copyright 2026 Toshihiro Iguchi.
 
 # rsymbolic2 web GUI (static site)
 
+**Live: <https://toshihiroiguchi.github.io/rsymbolic2/>** — deployed from `web/app/` by
+the Actions workflow described under [Deployment](#deployment).
+
 A browser front end for rsymbolic2 that runs the **same C++ symbolic-regression engine**
 as the R and Python packages, compiled to WebAssembly. It is a **static site** — no
 backend server — so it can be hosted on GitHub Pages or opened from any static file host.

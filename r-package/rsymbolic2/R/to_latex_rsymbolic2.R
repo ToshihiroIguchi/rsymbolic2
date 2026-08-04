@@ -29,6 +29,11 @@ to_latex <- function(x, ...) UseMethod("to_latex")
 #'   \code{x$feature_names} when set; pass an explicit vector to override, or
 #'   \code{character(0)} to force the \code{x_{i}} form.
 #'
+#' @seealso \code{\link{to_sympy.rsymbolic2}} for the SymPy-parseable rendering
+#'   of the same expressions, \code{x$pareto_front$latex_simplified} for the
+#'   display-simplified form, and \code{\link{predict.rsymbolic2}} to evaluate a
+#'   fit (these renderings are for display only).
+#'
 #' @examples
 #' \donttest{
 #' X <- matrix(seq(-3, 3, length.out = 20), ncol = 1)

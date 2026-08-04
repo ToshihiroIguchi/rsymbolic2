@@ -28,6 +28,7 @@ flowchart LR
 
 ## Table of contents
 
+- [Try it in the browser (no install)](#try-it-in-the-browser-no-install)
 - [Quickstart (Google Colab)](#quickstart-google-colab-no-local-setup)
 - [What is symbolic regression?](#what-is-symbolic-regression)
 - [Installation](#installation)
@@ -44,6 +45,26 @@ flowchart LR
 - [PySR default parity](#pysr-default-parity)
 - [References](#references)
 - [License](#license)
+
+---
+
+## Try it in the browser (no install)
+
+**<https://toshihiroiguchi.github.io/rsymbolic2/>** — the same C++ engine compiled to
+WebAssembly, running entirely in your browser: load a CSV (or one of the built-in
+examples), pick the target column and the operators, and watch the Pareto front fill in.
+Nothing is uploaded — the search runs on your machine — and the page hands back a ready
+R or Python snippet that reproduces the run in the packages.
+
+It is a **demonstration front end**, not the library: it is single-threaded with a fixed
+128 MB heap, so roughly 10,000 cells (rows × fitted columns) run comfortably and large
+tables are sampled down; and it highlights the parsimony elbow (`model_selection =
+"score"`) rather than PySR's `best`, which is the one place the GUI is allowed to differ
+from the packages — the *search* is the same PySR-parity search. Details, measured limits
+and the build in [`web/README.md`](web/README.md).
+
+For real work — more data, more threads, longer runs — install the Python or R package
+below.
 
 ---
 
@@ -344,6 +365,15 @@ X_new <- matrix(c(0, 1, -2), ncol = 1)
 predict(result, X_new)         # ≈ c(-1.3, 1.2, 8.7)
 ```
 
+The fit keeps its training data (`keep_data = TRUE`, as `lm()` keeps its model frame),
+so the usual R vocabulary works with no data passed back:
+
+```r
+fitted(result)                 # predictions on the training X
+residuals(result)              # y - fitted(result)
+predict(result)                # same as fitted(result)
+```
+
 **Formula interface (optional).** Instead of a matrix and vector you can fit from a
 data frame with an R formula, the idiomatic `lm()`-style call:
 
@@ -365,13 +395,16 @@ effect — the constant offset, if any, is found by the search.
 
 ```r
 plot(result)                                     # complexity vs. loss, best point highlighted
-plot(result, type = "fit", newdata = X, y = y)   # fitted curve over the observed scatter
+plot(result, type = "fit")                       # fitted curve over the training scatter
+plot(result, type = "fit", newdata = X, y = y)   # ...or against any other data
 plot(result, type = "tree")                      # the equation's structure as a syntax tree
 ```
 
-The result stores no training data (only `n_obs`/`sst`, which give R²), so the fit
-view takes `newdata` and `y` back — pass the training data to inspect the fit, or
-held-out data to inspect generalisation.
+The fit view draws against the stored training data when given none; pass **both**
+`newdata` and `y` to inspect generalisation on held-out data instead. Fit with
+`keep_data = FALSE` for very large inputs — the object then carries no training data,
+and `fitted()`, `residuals()`, `predict(result)` and the no-argument fit plot say so
+rather than guessing.
 
 ---
 
@@ -473,6 +506,10 @@ semantics: outside its domain each returns **`NaN`**, never a substituted finite
 - `pow(x, y)` → `NaN` where the result would be undefined (a negative base with a
   fractional exponent, or `0` to a negative power).
 
+The rest are unguarded, as in SymbolicRegression.jl: `div` and `inv` on a zero
+denominator, and `exp`/`sinh`/`cosh` on a large argument, produce an infinity instead —
+which the loss guard rejects the same way.
+
 The `NaN` is the mechanism, not a hazard to be defended against: it makes the candidate's
 loss non-finite, which is precisely how the search **rejects** that candidate. Returning a
 substituted `0` instead — which this project did before [`docs/69`](docs/69_safe_operator_semantics.md)
@@ -512,13 +549,18 @@ tunable constants seeded at that value. Off by default; see
 
 The Python `symbolic_regression(...)` and R `symbolic_regression(...)` take the same
 parameters with the same defaults (Python uses snake_case keyword arguments; R uses the
-same names). **Every default below equals PySR's documented default** — see
-[PySR default parity](#pysr-default-parity).
+same names). **Every default below reproduces PySR's documented default behaviour** — see
+[PySR default parity](#pysr-default-parity). The few rows with no PySR counterpart
+(`n_threads`, and the language-specific `variable_names` / `keep_data`) say so, and none
+of them changes the search. Options that deliberately go beyond parity are in the
+[second table](#opt-in-options-every-one-off-by-default); both languages document every
+parameter in full at `help(symbolic_regression)` / `?symbolic_regression`.
 
 | Parameter | Default | Meaning (PySR name) |
 |-----------|---------|---------------------|
 | `population_size` | `27` | Candidates per island (`population_size`). |
 | `n_populations` | `31` | Parallel island populations (`populations`). |
+| `n_threads` | `None` / `NULL` | OpenMP worker threads; `None` uses every core (capped at `n_populations`). Pure wall-clock knob — the island model is bit-deterministic across thread counts, so this never changes the result. No PySR counterpart (PySR sets threads through Julia). |
 | `generations` | `2800` | Evolution generations; `population_size` steps each (maps to PySR `niterations`×`ncycles_per_iteration`). |
 | `tournament_size` | `15` | Tournament size (`tournament_selection_n`). |
 | `tournament_selection_p` | `0.982` | Probabilistic tournament strength (`tournament_selection_p`). |
@@ -526,6 +568,7 @@ same names). **Every default below equals PySR's documented default** — see
 | `unary_ops` | `neg, exp, log, sin, cos` | Allowed unary operators (shared problem input). |
 | `max_nodes` | `30` | Max expression size (`maxsize`). |
 | `max_depth` | `30` | Max tree depth (`maxdepth`). |
+| `warmup_maxsize_by` | `0.0` | Fraction of the run over which the size cap ramps from 3 up to `max_nodes` (`warmup_maxsize_by`); `0` = no ramp. |
 | `crossover_probability` | `0.0259` | Crossover vs. mutation (`crossover_probability`). |
 | `parsimony` | `0.0` | Fixed linear complexity penalty (`parsimony`; off by default). |
 | `adaptive_parsimony_scaling` | `1040.0` | Frequency-adaptive complexity pressure (`adaptive_parsimony_scaling`). |
@@ -535,7 +578,6 @@ same names). **Every default below equals PySR's documented default** — see
 | `mutation_weights` | `None` | Override relative mutation-kind weights (`MutationWeights`). |
 | `model_selection` | `"best"` | Which Pareto member is `recommended` (`model_selection`). |
 | `weights` | `None` | Per-point weights for weighted least squares (`weights`). |
-| `macro_ops` | `None` | Opt-in user-defined operators: single-argument templates over the primitive operators, e.g. `{"gauss": "exp(neg(square(x)))"}`, expanded into the tree when it grows ([docs/57](docs/57_macro_operators.md)). No PySR equivalent that avoids a runtime language. |
 | `batching` | `False` | Score evolution/optimisation on a random `batch_size`-row subsample per iteration for large datasets (`batching`); the hall of fame and result stay full-data. |
 | `batch_size` | `50` | Rows sampled per iteration when `batching` is on (`batch_size`). |
 | `early_stop_condition` | `0.0` | Extra early-stop loss threshold (`early_stop_condition`). |
@@ -548,11 +590,39 @@ same names). **Every default below equals PySR's documented default** — see
 | `variable_names` | `None` | *(Python)* Display-only names for the columns of `X`; overrides a DataFrame's column names and is the only way to name a plain array's columns. R uses `colnames(X)` or the formula. |
 | `keep_data` | `TRUE` | *(R)* Store the training `X`/`y` on the result, which is what makes `fitted()`, `residuals()`, `predict(fit)` and `plot(fit, type = "fit")` work — as `lm()` keeps its model frame. `FALSE` for very large inputs. |
 
+### Opt-in options (every one off by default)
+
+Two kinds sit here: PySR features that are off in PySR too (the unit arguments), and
+rsymbolic2's own extensions, which have no PySR counterpart. **Each defaults to the value
+that reproduces PySR's behaviour**, so leaving them alone keeps the default-parity
+comparison exact; turning one on is the only thing that changes the search.
+
+| Parameter | Default | Meaning |
+|-----------|---------|---------|
+| `macro_ops` | `None` | User-defined operators: single-argument templates over the primitives, e.g. `{"gauss": "exp(neg(square(x)))"}`, expanded into the tree when it grows ([docs/57](docs/57_macro_operators.md)). See [User-defined operators](#user-defined-operators-macro-operators). |
+| `linear_scaling` | `False` | Keijzer (2003) linear scaling: score every candidate by the error of its best affine transform `a·f(x) + b`, `a`/`b` solved in closed form, so the search only has to find the *shape*. The fitted `a`/`b` are materialised into the returned expression (which can then exceed `max_nodes` by up to 4 nodes). Incompatible with the unit arguments below ([docs/50](docs/50_linear_scaling_screen.md)). |
+| `strong_simplify` | `False` | Apply the display simplifier *during* the search, adopting a rewrite only when it is strictly smaller and stays inside the enabled operator set ([docs/55](docs/55_search_time_strong_simplification_screen.md)). |
+| `eval_cache` | `False` | Memoise repeated evaluations of evaluation-identical trees. Speed only: results, `n_evals` and the `max_evals` budget are bit-identical either way; ignored under `batching` ([docs/49](docs/49_eval_accounting_and_cache.md)). |
+| `X_units` | `None` | Units of each column of `X` (e.g. `"m/s^2"`, `"kg"`, `"1"`), enabling dimensional analysis (PySR `X_units`). |
+| `y_units` | `None` | Unit of `y`; needs `X_units` (PySR `y_units`). |
+| `dimensional_constraint_penalty` | `None` | Loss penalty for a dimensionally inconsistent expression (PySR `dimensional_constraint_penalty`, effective default `1000`). Inert without the unit arguments. |
+| `dimensionless_constants_only` | `False` | Treat fitted constants as dimensionless during dimensional analysis (PySR `dimensionless_constants_only`). |
+
+Raising `generations` is the other sanctioned accuracy lever — it costs compute linearly
+and helps only on budget-limited problems, so it is a knob, not a default
+([docs/44](docs/44_high_accuracy_phase0_screen.md),
+[docs/47](docs/47_dimensional_analysis_feynman_screen.md)). Measured screens for the
+options above live in `docs/`; the two units options were measured as **no accuracy gain**
+on Feynman (docs/47) and are kept for problems where the constraint is known to be right.
+
 **Result object.** Both languages return: `expression` (lowest-loss formula), `loss`,
 `complexity`, `recommended` (Pareto pick), `best_index`, `n_features`, `n_obs`/`sst` (which
 give R²), and `pareto_front` — one entry per member carrying `complexity`, `loss`, `score`,
-and the `expression` / `latex` / `sympy` renderings plus their `*_simplified` forms.
-Python exposes `.predict()`, `.latex()`, `.sympy()`, `.get_best()`, `.to_pandas()`,
+and the `expression` / `latex` / `sympy` renderings plus their `*_simplified` forms. Also
+`feature_names` (display-only column labels; the expression strings stay `x0, x1, …`) and
+the evaluation accounting `n_evals` / `eval_counts`, which is deterministic for a fixed
+seed and is what `max_evals` budgets. Python exposes `.predict()`, `.latex()`,
+`.sympy()`, `.get_best()`, `.to_pandas()`,
 `.plot()` and `print(result)`; R provides the S3 `predict()`, `fitted()`, `residuals()`,
 `print()`, `summary()`, `as.data.frame()` and `plot()` methods plus `to_latex()` /
 `to_sympy()`.
@@ -574,6 +644,20 @@ Neither language dummy-codes categorical inputs or drops rows with missing value
 refuse, naming the column and the fix. Encoding and row selection are decisions worth
 making visibly, and a dummy-coded column the user did not choose only enlarges the
 search space.
+
+**Degenerate data** ([docs/80](docs/80_invalid_data_handling.md)). Data with no
+defensible reading is **refused**, naming the argument: an `X` with no columns, an
+all-zero `weights` vector (every candidate would tie at a perfect loss). Data the search
+can run on but cannot say anything about is **warned about and still fitted**: a constant
+`y` (zero variance, so R² is undefined), a constant feature column, and a `y` whose sum
+of squares overflows to non-finite. The warnings name the column and the fix.
+
+**Large datasets.** Every candidate evaluation walks every row, so cost scales with rows ×
+fitted columns. Below roughly 10,000 rows nothing special is needed; above that an
+unbatched call emits an advisory warning pointing at `batching`, which caps each
+iteration's evaluation at `batch_size` rows while the hall of fame, the early-stop test
+and the reported result stay on the full data. It changes which candidates get explored,
+never the accuracy attributed to a returned model.
 
 **Estimator-shaped Python wrapper.** `SymbolicRegressor` wraps `symbolic_regression()`
 in a `fit`/`predict`/`score`/`get_params`/`set_params` object, so code written against

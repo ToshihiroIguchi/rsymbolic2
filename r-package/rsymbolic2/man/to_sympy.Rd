@@ -71,5 +71,7 @@ to_sympy(res, variable_names = "t")            # x0 -> t
 }
 \seealso{
 \code{x$pareto_front$sympy_simplified} for the same rendering of the
-  display-simplified form (what \code{print()} and \code{summary()} show).
+  display-simplified form (what \code{print()} and \code{summary()} show),
+  \code{\link{to_latex.rsymbolic2}} for the LaTeX rendering, and
+  \code{\link{predict.rsymbolic2}} to evaluate a fit.
 }

@@ -51,6 +51,10 @@ format_feature_legend <- function(feature_names, n_features = NULL) {
 #'
 #' @return \code{x}, invisibly.
 #'
+#' @seealso \code{\link{summary.rsymbolic2}} for the full front with per-member
+#'   scores and R-squared, and \code{\link{symbolic_regression}} for the fit
+#'   itself.
+#'
 #' @examples
 #' \donttest{
 #' X <- matrix(seq(-3, 3, length.out = 20), ncol = 1)

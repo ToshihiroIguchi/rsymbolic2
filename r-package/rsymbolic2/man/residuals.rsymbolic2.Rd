@@ -24,3 +24,17 @@ Numeric vector of residuals, one per training observation.
 The training response minus the fitted values, which requires the fit to have
 been made with \code{keep_data = TRUE} (the default).
 }
+\examples{
+\donttest{
+X <- matrix(seq(-3, 3, length.out = 20), ncol = 1)
+y <- 2 * X[, 1] + 1
+res <- symbolic_regression(X, y, population_size = 200L, generations = 40L,
+                           seed = 1L)
+summary(residuals(res))
+}
+
+}
+\seealso{
+\code{\link{fitted.rsymbolic2}} for the fitted values themselves,
+  and \code{\link{predict.rsymbolic2}} to evaluate the fit on new data.
+}

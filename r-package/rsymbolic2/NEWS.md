@@ -1,5 +1,15 @@
 # rsymbolic2 0.1.0.9000 (development)
 
+Documentation. No code changed.
+
+- `?predict.rsymbolic2` pointed at a `which` argument that does not exist (it is
+  `expression`), and said nothing about the no-`newdata` form that now returns the
+  fitted values.
+- Every help page now carries a `\seealso` section, so `?symbolic_regression` leads to
+  the methods that work on the fit and each method leads back. `?rsymbolic2` names the
+  entry point.
+- `?residuals.rsymbolic2` gained an example of its own.
+
 Regression-object conventions (docs/81). The search is untouched; these are all
 interface changes.
 

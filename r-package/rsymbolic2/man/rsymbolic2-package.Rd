@@ -9,12 +9,19 @@
 Discovers mathematical expressions that fit data using a steady-state genetic programming algorithm with Levenberg-Marquardt constant optimization. The search engine is implemented in C++ and exposed through a single R function. The default configuration and search behaviour are matched to the documented defaults of 'PySR' (Cranmer, 2023, \doi{10.48550/arXiv.2305.01582}) and 'SymbolicRegression.jl'; this package is an independent re-implementation and is not affiliated with or endorsed by those projects. See the NOTICE file for attribution.
 }
 \seealso{
-Useful links:
-\itemize{
-  \item \url{https://github.com/ToshihiroIguchi/rsymbolic2}
-  \item Report bugs at \url{https://github.com/ToshihiroIguchi/rsymbolic2/issues}
-}
+\code{\link{symbolic_regression}} is the package's entry point: it
+  runs the search and returns a fit that \code{\link{print.rsymbolic2}},
+  \code{\link{summary.rsymbolic2}}, \code{\link{plot.rsymbolic2}},
+  \code{\link{predict.rsymbolic2}}, \code{\link{fitted.rsymbolic2}},
+  \code{\link{residuals.rsymbolic2}}, \code{\link{as.data.frame.rsymbolic2}},
+  \code{\link{to_latex}} and \code{\link{to_sympy}} all work on.
 
+  Useful links:
+  \itemize{
+    \item \url{https://github.com/ToshihiroIguchi/rsymbolic2}
+    \item Report bugs at
+      \url{https://github.com/ToshihiroIguchi/rsymbolic2/issues}
+  }
 }
 \author{
 \strong{Maintainer}: Toshihiro Iguchi \email{toshihiro.iguchi.mail@gmail.com}

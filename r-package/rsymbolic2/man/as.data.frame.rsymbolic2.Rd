@@ -37,3 +37,7 @@ as.data.frame(res)
 }
 
 }
+\seealso{
+\code{\link{summary.rsymbolic2}}, which reports the same front with
+  R-squared and prints it, and \code{\link{plot.rsymbolic2}} for the chart.
+}

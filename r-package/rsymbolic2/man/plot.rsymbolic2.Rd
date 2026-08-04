@@ -100,3 +100,9 @@ plot(res, type = "tree")                     # structure of the recommended expr
 }
 
 }
+\seealso{
+\code{\link{predict.rsymbolic2}} for the values \code{type = "fit"}
+  draws, \code{\link{as.data.frame.rsymbolic2}} for the front behind
+  \code{type = "pareto"}, and \code{\link{symbolic_regression}} for the fit
+  itself.
+}

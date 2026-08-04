@@ -39,8 +39,10 @@ Numeric vector of predicted values, one per row of \code{newdata}.
 \description{
 Evaluate a fitted expression returned by \code{\link{symbolic_regression}}
 on new input data. By default the recommended (Pareto "best") expression is
-used; see the \code{which} argument to evaluate the lowest-loss expression or
-any other member of the Pareto front.
+used; see the \code{expression} argument to evaluate the lowest-loss
+expression or any other member of the Pareto front. Called without
+\code{newdata} it returns the fitted values, as \code{predict()} does for
+every other R model object.
 }
 \details{
 The expression is evaluated using R's standard arithmetic operators and math
@@ -68,4 +70,11 @@ predict(res, X_new)                                # recommended (default)
 predict(res, X_new, expression = res$expression)  # lowest-loss expression
 }
 
+}
+\seealso{
+\code{\link{fitted.rsymbolic2}} and
+  \code{\link{residuals.rsymbolic2}} for the training data,
+  \code{\link{plot.rsymbolic2}} (\code{type = "fit"}) to see the same
+  predictions against the observations, and \code{\link{symbolic_regression}}
+  for the fit itself.
 }

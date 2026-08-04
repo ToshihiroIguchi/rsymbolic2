@@ -58,3 +58,9 @@ summary(res)
 }
 
 }
+\seealso{
+\code{\link{print.rsymbolic2}} for the compact view,
+  \code{\link{as.data.frame.rsymbolic2}} for the same front as a tidy data
+  frame, \code{\link{plot.rsymbolic2}} for it as a chart, and
+  \code{\link{symbolic_regression}} for the fit itself.
+}

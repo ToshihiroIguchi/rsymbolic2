@@ -31,3 +31,8 @@ print(res)
 }
 
 }
+\seealso{
+\code{\link{summary.rsymbolic2}} for the full front with per-member
+  scores and R-squared, and \code{\link{symbolic_regression}} for the fit
+  itself.
+}

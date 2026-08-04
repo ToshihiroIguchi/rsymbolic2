@@ -20,6 +20,9 @@
 #'   member returned as \code{recommended}), and \code{expression}, one row per
 #'   Pareto-front member in increasing complexity.
 #'
+#' @seealso \code{\link{summary.rsymbolic2}}, which reports the same front with
+#'   R-squared and prints it, and \code{\link{plot.rsymbolic2}} for the chart.
+#'
 #' @examples
 #' \donttest{
 #' X <- matrix(seq(-3, 3, length.out = 20), ncol = 1)

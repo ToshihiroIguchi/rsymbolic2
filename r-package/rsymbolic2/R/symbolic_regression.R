@@ -391,6 +391,14 @@
 #'       the caller's data frame.}
 #'   }
 #'
+#' @seealso The methods that work on the returned fit:
+#'   \code{\link{predict.rsymbolic2}} (and \code{\link{fitted.rsymbolic2}} /
+#'   \code{\link{residuals.rsymbolic2}} for the training data kept by
+#'   \code{keep_data}), \code{\link{print.rsymbolic2}},
+#'   \code{\link{summary.rsymbolic2}}, \code{\link{as.data.frame.rsymbolic2}},
+#'   \code{\link{plot.rsymbolic2}}, and \code{\link{to_latex.rsymbolic2}} /
+#'   \code{\link{to_sympy.rsymbolic2}} for display-only renderings.
+#'
 #' @examples
 #' \donttest{
 #' # Single-variable linear: y = 2.5*x + 1.7

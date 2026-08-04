@@ -51,3 +51,9 @@ to_latex(res, index = seq_len(nrow(res$pareto_front)))  # whole front
 }
 
 }
+\seealso{
+\code{\link{to_sympy.rsymbolic2}} for the SymPy-parseable rendering
+  of the same expressions, \code{x$pareto_front$latex_simplified} for the
+  display-simplified form, and \code{\link{predict.rsymbolic2}} to evaluate a
+  fit (these renderings are for display only).
+}
