@@ -7,7 +7,7 @@
 
 `R CMD check --as-cran` produced no ERRORs and no WARNINGs.
 
-Two NOTEs remain, both benign:
+One NOTE remains:
 
 * checking CRAN incoming feasibility ... NOTE
   Maintainer: 'Toshihiro Iguchi <toshihiro.iguchi.mail@gmail.com>'
@@ -15,12 +15,9 @@ Two NOTEs remain, both benign:
 
   Expected for a first submission.
 
-* checking top-level files ... NOTE
-  Files 'README.md' or 'NEWS.md' cannot be checked without 'pandoc' being installed.
-
-  Environment-specific: 'pandoc' is not installed on the local Windows test
-  machine. This NOTE does not occur on the CRAN check machines, which provide
-  pandoc. 'NEWS.md' is valid CommonMark.
+An earlier "Files 'README.md' or 'NEWS.md' cannot be checked without 'pandoc'"
+NOTE no longer appears: pandoc is installed on the test machine, and both files
+check cleanly.
 
 Additional NOTEs observed only on Ubuntu 24.04 with the apt-packaged R 4.3.3
 (not on CRAN's build machines, which use R-project.org builds):
