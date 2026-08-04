@@ -1,13 +1,17 @@
 ## Test environments
 
 - Windows 11 x64 (build 26200), R 4.6.0, Rtools45 (GCC 14.3.0, UCRT)
-- Ubuntu LTS, R release (planned re-check before submission)
+- Ubuntu 24.04 (WSL2), R 4.3.3 (Ubuntu apt build)
 
 ## R CMD check results
 
-`R CMD check --as-cran` produced no ERRORs and no WARNINGs.
+`R CMD check --as-cran` produced no ERRORs and no WARNINGs on either platform.
+Tests and examples (including `--run-donttest`) pass on both.
 
-One NOTE remains:
+On Windows the check is clean with no NOTEs. Both local runs were made with the
+CRAN incoming feasibility check disabled, since this machine cannot reach CRAN;
+on CRAN's machines that check is expected to produce the usual first-submission
+NOTE:
 
 * checking CRAN incoming feasibility ... NOTE
   Maintainer: 'Toshihiro Iguchi <toshihiro.iguchi.mail@gmail.com>'
@@ -15,12 +19,10 @@ One NOTE remains:
 
   Expected for a first submission.
 
-An earlier "Files 'README.md' or 'NEWS.md' cannot be checked without 'pandoc'"
-NOTE no longer appears: pandoc is installed on the test machine, and both files
-check cleanly.
-
-Additional NOTEs observed only on Ubuntu 24.04 with the apt-packaged R 4.3.3
-(not on CRAN's build machines, which use R-project.org builds):
+On Ubuntu 24.04 with the apt-packaged R 4.3.3, three NOTEs appear. All three are
+properties of that test machine rather than of the package, and none is expected
+on CRAN's build machines (which use R-project.org builds and have network
+access):
 
 * checking compilation flags used ... NOTE
   Compilation used the following non-portable flag(s):
@@ -32,11 +34,17 @@ Additional NOTEs observed only on Ubuntu 24.04 with the apt-packaged R 4.3.3
   with R-project.org's Ubuntu binaries (which CRAN uses).
 
 * checking installed package size ... NOTE
-  installed size is 17.9Mb
+  installed size is 7.9Mb
+    libs 7.7Mb
 
-  The size is due to the compiled C++ object code of the OpenMP island-model
-  search engine. The engine depends only on the C++ standard library; no
-  third-party C++ library and no large data files are included.
+  The size is the compiled C++ object code of the OpenMP island-model search
+  engine. The engine depends only on the C++ standard library; no third-party
+  C++ library and no large data files are included.
+
+* checking for future file timestamps ... NOTE
+  unable to verify current time
+
+  The test machine has no access to the time server this check queries.
 
 ## Licensing and attribution
 
