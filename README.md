@@ -874,14 +874,28 @@ Benchmarks used to evaluate the engine (see [`docs/`](docs/)):
 
 ## License
 
-**Apache License 2.0.** See [`LICENSE`](LICENSE) for the full text and
-[`NOTICE`](NOTICE) for attribution.
+**Apache License 2.0.** See [`LICENSE`](LICENSE) for the full text, [`NOTICE`](NOTICE)
+for attribution, and [`THIRD_PARTY_NOTICES.txt`](THIRD_PARTY_NOTICES.txt) for the
+license texts of the third-party components. All three ship with every distribution —
+the R package (`inst/`), the Python wheel, and the web GUI (linked from its footer) —
+so a recipient of any one of them has the complete set without needing this repository.
 
 rsymbolic2's default settings and search behaviour are an independent
 re-implementation matched to the documented defaults of **PySR** and
-**SymbolicRegression.jl** (both Apache-2.0, © Miles Cranmer); attribution is given in
-`NOTICE` per Apache License 2.0 §4. rsymbolic2 is not affiliated with or endorsed by
-those projects.
+**SymbolicRegression.jl** (both Apache-2.0, © 2020 Miles Cranmer); attribution is given
+in `NOTICE` per Apache License 2.0 §4. It is **not** a clean-room re-implementation —
+the upstream sources were read while it was written, and a few short functional
+passages (chiefly the protected-operator domain guards of `Operators.jl`) were
+transcribed rather than re-derived, which `NOTICE` states and the C++ files themselves
+record per §4(b). Both projects are under the same license, so this is permitted;
+it is written down rather than left to be discovered.
+
+rsymbolic2 is not affiliated with or endorsed by those projects. The Apache License
+grants no trademark rights (§6): "PySR" and "SymbolicRegression.jl" appear here only
+to identify whose defaults are reproduced and which upstream setting each parameter
+corresponds to.
 
 The engine depends only on the C++ standard library. The language bindings use `cpp11`
-(R; MIT) and `pybind11` (Python; BSD-3) — see `NOTICE`.
+(R; MIT) and `pybind11` (Python; BSD-3); the web GUI additionally ships KaTeX (MIT),
+Chart.js (MIT) and the Emscripten runtime (MIT/NCSA). Full texts in
+`THIRD_PARTY_NOTICES.txt`.

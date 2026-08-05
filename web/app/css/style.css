@@ -205,6 +205,26 @@ body.running.determinate .app-header .progress::before {
 .gutter:hover { background: var(--border); }
 .gutter.dragging { background: var(--accent); }
 
+/* Legal footer (docs/84). `flex: none` so it keeps its one line whatever the layout above
+   does: .layout is the flex:1 element that absorbs the remaining height, so the footer is
+   pinned to the bottom of the shell on wide viewports and simply follows the content once
+   the 1100px rule releases the page to natural scroll. Deliberately quiet — small, muted,
+   no panel background — because it is a permanent obligation, not a call to action, and
+   nothing in it should compete with the Run button or the result cards. */
+.app-footer {
+  flex: none;
+  display: flex; flex-wrap: wrap; gap: 0.25rem 1rem;
+  align-items: baseline; justify-content: space-between;
+  padding: 0.4rem 0.75rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted); font-size: 0.75rem; line-height: 1.5;
+}
+.app-footer a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.app-footer a:hover { color: var(--text); }
+/* On a narrow viewport the two spans stack; the disclaimer keeps its own line rather than
+   being squeezed to a 3-word column beside the links. */
+.footer-disclaimer { flex: 1 1 22rem; }
+
 /* Fallbacks: on narrow OR short viewports the bounded shell would cramp, so release it to
    natural page scroll. The header stays sticky (its own rule), keeping Run/Stop visible. The
    grid collapses to one column, so the drag gutter is removed there. */
@@ -879,6 +899,7 @@ body.running #results-area #pareto-card.live .live-trace {
   }
   body.has-print-report .app-header,
   body.has-print-report .layout,
+  body.has-print-report .app-footer,
   body.has-print-report dialog { display: none !important; }
   body.has-print-report #print-report { display: block; }
 

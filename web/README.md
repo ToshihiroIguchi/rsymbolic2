@@ -308,3 +308,39 @@ One-time repository setting: **Settings → Pages → Build and deployment → S
 cross-origin-isolation (COOP/COEP) headers are needed because the build is
 single-threaded, so plain Pages hosting suffices; the same `web/app/` directory can
 also be copied to any other static host.
+
+## Licensing of the published site
+
+The site is a **redistribution**, not just a demo page: a visitor receives
+rsymbolic2's own Apache-2.0 WebAssembly build together with KaTeX, Chart.js and the
+Emscripten runtime. So `web/app/` carries its own copies of `LICENSE.txt`,
+`NOTICE.txt` and `THIRD_PARTY_NOTICES.txt` (verbatim copies of the repository root
+files), and the page footer links to all three. Nobody visiting the site has the
+repository, so a link back to GitHub would not discharge the obligation — and the
+minified KaTeX files, unlike Chart.js, ship with no copyright header of their own,
+which is what makes reproducing the notice here mandatory rather than polite.
+
+Two CI gates keep this honest: `license-sync.yml` byte-compares every distribution
+copy against the repository root on each push, and `deploy-pages.yml` repeats the
+three `web/app` comparisons *inside the publish job*, where a failure can actually
+stop the deployment. When you add a vendored library to `web/app/vendor/`, add its
+license text to `THIRD_PARTY_NOTICES.txt` in the same commit; the byte comparison
+will not catch an omission, only a divergence. See `docs/84` for the full audit.
+
+The footer also carries the non-affiliation statement. The UI names PySR several
+dozen times, and the page has to be able to answer on its own what that relationship
+is: nominative use of the name, no endorsement, no trademark rights granted
+(Apache-2.0 §6).
+
+### Updating a vendored library
+
+`vendor/katex.min.js` and `vendor/katex.min.css` carry a one-line MIT banner that
+**upstream's minified files do not have** — it was added here because a file copied out
+of this directory would otherwise travel with no notice at all. Re-apply it after any
+KaTeX upgrade, and update the version in the banner. `chart.umd.js` needs nothing: it
+keeps its own upstream banner.
+
+The banner is belt-and-braces. `THIRD_PARTY_NOTICES.txt` is the load-bearing mechanism,
+so losing the banner during an upgrade is untidy rather than a compliance regression —
+but forgetting to add the new library to `THIRD_PARTY_NOTICES.txt` *is* one, and no CI
+check can see it (`docs/84` §5.5).

@@ -48,6 +48,18 @@ jobs:
           source ./emsdk/emsdk_env.sh
           bash web/wasm/build.sh
 
+      # Licensing gate (docs/84). web/app is what gets published, so it carries its own
+      # copies of LICENSE / NOTICE / THIRD_PARTY_NOTICES.txt -- the site has to be
+      # self-contained, and the footer links to them by relative path. Copies drift; a
+      # drifted copy is worse than none, because it looks authoritative while being stale.
+      # This fails the deploy rather than shipping a notice that no longer matches the
+      # repository root.
+      - name: Check the published license files match the repository root
+        run: |
+          cmp LICENSE web/app/LICENSE.txt
+          cmp NOTICE web/app/NOTICE.txt
+          cmp THIRD_PARTY_NOTICES.txt web/app/THIRD_PARTY_NOTICES.txt
+
       # Correctness gate: recovery + determinism (and Python cross-check,
       # best-effort -- it skips itself when the Python package isn't
       # importable, which is expected in this CI environment). Node is

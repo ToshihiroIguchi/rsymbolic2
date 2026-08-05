@@ -56,6 +56,13 @@ writes no files and changes no `options()`, `par()` or working directory.
 - `License: Apache License 2.0` is canonical (`tools:::analyze_license()` reports both
   standardizable and canonical); attribution to PySR / SymbolicRegression.jl lives in
   `inst/NOTICE` per Apache-2.0 §4.
+
+  **Superseded in part by `docs/84`.** The licensing audit added
+  `inst/APACHE-LICENSE-2.0.txt` (the license text itself, which the tarball did not
+  previously carry) and `inst/THIRD_PARTY_NOTICES.txt` (cpp11's MIT notice, which the
+  installed shared library needs), rewrote `inst/NOTICE`, and extended the licensing
+  section of `cran-comments.md`. The `License:` field is unchanged, and `--as-cran`
+  still reports the same NOTEs as it did before the audit.
 - Title is in title case; the Description field is 546 characters and does not open with
   the package name.
 - `\value` is present on every exported function's help page, and every page now carries

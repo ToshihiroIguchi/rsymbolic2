@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: Apache-2.0
+# Part of rsymbolic2, Copyright 2026 Toshihiro Iguchi.
+#
+# rsymbolic2 ships from four places -- the repository, the R package, the Python
+# wheel and the static web GUI -- and each has to carry its own copy of the license
+# and attribution files, because a recipient of one of them never sees the other
+# three (docs/84). Copies drift, and a drifted notice is worse than a missing one:
+# it looks authoritative while naming the wrong copyright holder or omitting a
+# component that was added since.
+#
+# This job is the thing that stops that. It is a byte comparison, not a lint: the
+# distribution copies must be verbatim, so `cmp` is the whole specification.
+#
+# deploy-pages.yml repeats the three web/app comparisons on purpose. Workflows fail
+# independently, so a red run here would NOT stop that workflow from publishing the
+# site; the copy inside the publish job is the one that can actually block it.
+name: License file sync
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # NOTICE and THIRD_PARTY_NOTICES.txt go everywhere. The Apache-2.0 text goes
+      # everywhere that a recipient could otherwise end up without it: the R package
+      # (installed from a tarball that would otherwise contain no license text) and
+      # the web GUI (a website; nobody there has the repository). The Python wheel
+      # gets LICENSE through pyproject.toml's wheel.license-files, from the file
+      # checked here.
+      #
+      # The R copy is named APACHE-LICENSE-2.0.txt, not LICENSE: inst/ installs at the
+      # package top level, and `R CMD check --as-cran` NOTEs a top-level file named
+      # LICENSE that DESCRIPTION does not reference (docs/84 §5.3). The explicit name
+      # also cannot be mistaken for the CRAN convention where a LICENSE file carries
+      # terms ADDITIONAL to the declared license -- there are none here.
+      - name: Distribution copies must match the repository root
+        run: |
+          cmp LICENSE              python/LICENSE
+          cmp NOTICE               python/NOTICE
+          cmp THIRD_PARTY_NOTICES.txt python/THIRD_PARTY_NOTICES.txt
+
+          cmp LICENSE              r-package/rsymbolic2/inst/APACHE-LICENSE-2.0.txt
+          cmp NOTICE               r-package/rsymbolic2/inst/NOTICE
+          cmp THIRD_PARTY_NOTICES.txt r-package/rsymbolic2/inst/THIRD_PARTY_NOTICES.txt
+
+          cmp LICENSE              web/app/LICENSE.txt
+          cmp NOTICE               web/app/NOTICE.txt
+          cmp THIRD_PARTY_NOTICES.txt web/app/THIRD_PARTY_NOTICES.txt
+
+      # The web GUI is served as files, so the footer's links are only as good as the
+      # paths in them. A renamed copy would 404 silently on a page whose whole job
+      # here is to hand the visitor a license text.
+      - name: The web GUI footer must link to files that exist
+        run: |
+          for f in $(grep -oE 'href="[A-Z_]+\.txt"' web/app/index.html | cut -d'"' -f2); do
+            test -f "web/app/$f" || { echo "web/app/index.html links missing file: $f"; exit 1; }
+          done

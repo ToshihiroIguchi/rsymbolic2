@@ -568,6 +568,35 @@
       </section>
     </main>
 
+    <!-- Legal footer. Not decoration: this page is a redistribution. It ships rsymbolic2's
+         own Apache-2.0 WebAssembly build plus KaTeX, Chart.js and the Emscripten runtime,
+         and the minified KaTeX files carry no copyright header of their own, so without
+         these three links a visitor receives the code with no license text and no notice
+         at all (docs/84). The files are served from this directory, so the links work the
+         same on GitHub Pages and under web/serve.py. The non-affiliation sentence sits
+         here rather than only in the repository README because the UI above says "PySR"
+         several dozen times, and the page has to be able to answer, on its own, what that
+         relationship is: nominative use, no endorsement (Apache-2.0 §6). -->
+    <footer class="app-footer">
+      <span>
+        <strong>rsymbolic2</strong> &mdash; Apache-2.0.
+        <a href="LICENSE.txt" target="_blank" rel="noopener">License</a> &middot;
+        <a href="NOTICE.txt" target="_blank" rel="noopener">Notice</a> &middot;
+        <a href="THIRD_PARTY_NOTICES.txt" target="_blank" rel="noopener">Third-party licenses</a> &middot;
+        <a href="https://github.com/ToshihiroIguchi/rsymbolic2" target="_blank" rel="noopener">Source</a>
+      </span>
+      <span class="footer-disclaimer">
+        An independent re-implementation whose defaults match PySR / SymbolicRegression.jl
+        (Apache-2.0, &copy; 2020 Miles Cranmer). Not affiliated with or endorsed by them.
+        <!-- Literally true and worth saying where a first-time visitor about to drop a
+             CSV can see it: the search runs in a Worker in this tab, every asset is
+             same-origin (no CDN), and the app makes no fetch/XHR/WebSocket/beacon call
+             of any kind. Whoever edits this page: that last clause is a factual claim
+             about the code, so adding any outbound request means deleting it. -->
+        The search runs entirely in this browser &mdash; your data is never uploaded.
+      </span>
+    </footer>
+
     <!-- Full-data preview, opened by clicking the data summary line. A native <dialog> (top
          layer, Esc closes it natively); read-only by design — manual cell editing was
          considered and rejected, pasting a corrected table (Ctrl+V anywhere) covers

@@ -72,11 +72,25 @@ access):
 
 The package is released under the Apache License 2.0. Its default settings and
 search behaviour are an independent re-implementation matched to the documented
-defaults of 'PySR' and 'SymbolicRegression.jl' (both Apache-2.0); attribution to
-those projects (copyright Miles Cranmer) is provided in `inst/NOTICE` per Apache
-License 2.0 Section 4. The package is not affiliated with or endorsed by them.
+defaults of 'PySR' and 'SymbolicRegression.jl' (both Apache-2.0, copyright 2020
+Miles Cranmer); attribution is provided in `inst/NOTICE` per Apache License 2.0
+Section 4, which also records the extent of the derivation (Section 4(b)) and
+the position on the upstream names (Section 6: nominative use only). The
+package is not affiliated with or endorsed by those projects.
+
+`License: Apache License 2.0` is the standardizable form and needs no
+`| file LICENSE` clause, since R ships the license text in `share/licenses`.
+The full text is nevertheless installed as `inst/APACHE-LICENSE-2.0.txt`, so a
+recipient of the tarball alone has the license this package's derivation depends
+on. It is deliberately not named `LICENSE`: that name is reserved by convention
+for terms *additional* to the declared license, and this file is an unmodified
+copy of Apache-2.0, not an addition to it.
+
 The C++ engine depends only on the C++ standard library; `LinkingTo: cpp11`
-(MIT-licensed, header-only) is the only build-time dependency.
+(MIT-licensed, header-only) is the only build-time dependency. cpp11's headers
+are not redistributed in this tarball, but they are compiled into the installed
+shared library, so cpp11's MIT notice is reproduced in
+`inst/THIRD_PARTY_NOTICES.txt`.
 
 ## Reverse dependencies
 

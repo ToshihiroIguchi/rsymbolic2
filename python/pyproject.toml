@@ -47,7 +47,10 @@ testpaths = ["tests"]
 # The Python package lives next to this file; the compiled _core extension is
 # installed into it by CMake (see CMakeLists.txt).
 wheel.packages = ["rsymbolic2"]
-# Ship the Apache-2.0 license text and the attribution NOTICE in the wheel.
-wheel.license-files = ["LICENSE", "NOTICE"]
+# Ship the Apache-2.0 license text, the attribution NOTICE, and the third-party license
+# texts in the wheel. THIRD_PARTY_NOTICES.txt is not optional paperwork: the wheel's
+# compiled _core module contains pybind11-derived code, and pybind11's BSD-3 clause 2
+# requires a binary redistribution to reproduce its notice (docs/84).
+wheel.license-files = ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.txt"]
 cmake.version = ">=3.20"
 minimum-version = "0.8"

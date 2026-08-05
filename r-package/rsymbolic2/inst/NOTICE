@@ -2,7 +2,7 @@ rsymbolic2
 Copyright 2026 Toshihiro Iguchi
 
 This product includes software developed by Toshihiro Iguchi.
-Licensed under the Apache License, Version 2.0.
+Licensed under the Apache License, Version 2.0 (see the LICENSE file).
 
 -------------------------------------------------------------------------------
 Attribution for derived design (Apache License 2.0, Section 4)
@@ -18,7 +18,7 @@ which are licensed under the Apache License, Version 2.0:
     https://github.com/MilesCranmer/PySR
 
   * SymbolicRegression.jl
-    Copyright Miles Cranmer and the SymbolicRegression.jl contributors
+    Copyright 2020 Miles Cranmer
     https://github.com/MilesCranmer/SymbolicRegression.jl
 
 The above copyright notices are reproduced here pursuant to Section 4(c) of the
@@ -28,14 +28,54 @@ defaults; the implementation (a Julia-free C++ core, a self-contained
 Levenberg-Marquardt constant optimiser, and OpenMP island parallelism) is the
 original work of this project.
 
+Extent of the derivation, stated explicitly (Section 4(b)). rsymbolic2 was NOT
+written as a clean-room re-implementation: the upstream sources above were read
+while it was written. Most of the C++ core is an independent expression of the
+same algorithm, but a few short, purely functional passages were transcribed
+from SymbolicRegression.jl rather than re-derived -- most notably the protected
+("safe") operator domain guards of src/Operators.jl (safe_log, safe_sqrt,
+safe_pow), whose exact branch structure is behaviourally load bearing. Those
+C++ files carry a per-file notice naming the upstream function they mirror and
+describing how this version differs, which is how this project satisfies
+Section 4(b)'s requirement that modified files carry prominent notices of
+change. Both projects are under the same license, so this derivation is
+permitted; this paragraph records it rather than leaving it to be discovered.
+
+-------------------------------------------------------------------------------
+Trademarks (Apache License 2.0, Section 6)
+-------------------------------------------------------------------------------
+
 rsymbolic2 is NOT affiliated with, endorsed by, or sponsored by PySR,
 SymbolicRegression.jl, or their authors.
+
+The Apache License, Version 2.0 grants no trademark rights (Section 6). "PySR"
+and "SymbolicRegression.jl" appear in this project's documentation, user
+interface and API reference only nominatively -- that is, to identify the
+projects whose documented defaults rsymbolic2 reproduces, and to tell a reader
+which upstream setting a given rsymbolic2 setting corresponds to. They are not
+used as, or as part of, the name of this project or of any distribution of it,
+and no sponsorship or endorsement is claimed or implied.
 
 -------------------------------------------------------------------------------
 Third-party components
 -------------------------------------------------------------------------------
 
-  * cpp11 (R bindings only) - MIT              https://github.com/r-lib/cpp11
-  * OpenMP runtime (optional, for parallelism) https://www.openmp.org
-
 The symbolic-regression engine itself depends only on the C++ standard library.
+The language bindings, and the browser demonstration front end, redistribute or
+compile in the third-party components listed below. Their full license texts are
+reproduced in THIRD_PARTY_NOTICES.txt, which accompanies every distribution of
+rsymbolic2.
+
+  Component            Version   License   Present in
+  ------------------------------------------------------------------------
+  cpp11                0.5.5     MIT       R package (compiled into the
+                                           installed shared library)
+  pybind11             3.0.4     BSD-3     Python wheels (compiled into the
+                                           installed extension module)
+  Emscripten runtime   6.0.2     MIT/NCSA  web GUI (vendor/rsymbolic2.js and
+                                           vendor/rsymbolic2.wasm)
+  KaTeX                0.16.11   MIT       web GUI (vendor/katex.min.js,
+                                           vendor/katex.min.css, vendor/fonts/)
+  Chart.js             4.4.4     MIT       web GUI (vendor/chart.umd.js)
+  OpenMP runtime       -         -         optional, supplied by the compiler
+                                           toolchain; not redistributed here
