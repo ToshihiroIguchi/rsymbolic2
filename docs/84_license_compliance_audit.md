@@ -8,10 +8,13 @@ in a browser with KaTeX and Chart.js still rendering, no console errors, and the
 links resolving at both desktop and 375 px width. No legal advice — this is an
 engineering audit of what the project distributes and what the licenses on that material
 require.
-**Change:** `NOTICE` (all copies), `THIRD_PARTY_NOTICES.txt` (new), `LICENSE` copies for
-the R package and the web GUI, `README.md`, `web/README.md`, `web/app/index.html`
-footer, `web/app/css/style.css`, `python/pyproject.toml`,
-`.github/workflows/license-sync.yml` (new), `.github/workflows/deploy-pages.yml`.
+**Change:** `NOTICE` and its two distribution copies; `THIRD_PARTY_NOTICES.txt` (new,
+plus three copies); `r-package/rsymbolic2/inst/APACHE-LICENSE-2.0.txt` and
+`web/app/LICENSE.txt` (new copies of the Apache text); an MIT banner restored to
+`web/app/vendor/katex.min.{js,css}`; `web/app/index.html` footer and
+`web/app/css/style.css`; `python/pyproject.toml`; `README.md`, `web/README.md`,
+`r-package/rsymbolic2/cran-comments.md`, `docs/83`;
+`.github/workflows/license-sync.yml` (new) and `.github/workflows/deploy-pages.yml`.
 **No code change. Search behaviour is untouched on every platform.**
 
 ## 1. Why this audit, and what it is actually about
@@ -26,7 +29,7 @@ Two questions have to be kept apart, because they have different answers:
 1. **May rsymbolic2 exist at all, given how closely it follows PySR?** — Yes, and not
    marginally.
 2. **Are we discharging the obligations that come with that, and with everything else we
-   ship?** — Mostly, but there were four real gaps.
+   ship?** — Mostly, but there were five gaps (§4), four of them substantive.
 
 ## 2. Prior art: how permissive-license disputes actually go wrong
 
@@ -151,6 +154,12 @@ precision, not repair — §5.2 and §5.3.
 ### 4.1 KaTeX redistributed with no copyright notice anywhere — **the real one**
 
 `web/app/vendor/` ships `katex.min.js`, `katex.min.css` and 19 `KaTeX_*.woff2` fonts.
+Fixed two ways: the notice is reproduced in `THIRD_PARTY_NOTICES.txt` (the load-bearing
+part), and a one-line MIT banner is prepended to the two minified files so a copy taken
+out of this directory still travels with its notice. The banner is the belt-and-braces
+half and will be lost on the next KaTeX upgrade unless re-applied — `web/README.md`
+says so.
+
 The upstream minified artifacts **carry no license banner** (unlike `chart.umd.js`, which
 keeps its `/*! Chart.js v4.4.4 ... MIT */` header), and nothing else in `web/app/` named
 KaTeX either. The site is public at
