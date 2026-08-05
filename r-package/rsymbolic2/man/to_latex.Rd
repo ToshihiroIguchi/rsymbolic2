@@ -40,15 +40,13 @@ using the plain \code{expression} strings.
 
 }}
 \examples{
-\donttest{
 X <- matrix(seq(-3, 3, length.out = 20), ncol = 1)
 y <- 2 * X[, 1]^2 - 1
 res <- symbolic_regression(X, y, unary_ops = c("square"),
                            population_size = 200L, generations = 40L,
-                           seed = 1L)
+                           seed = 1L, n_threads = 2L)
 to_latex(res)                                  # recommended member
 to_latex(res, index = seq_len(nrow(res$pareto_front)))  # whole front
-}
 
 }
 \seealso{

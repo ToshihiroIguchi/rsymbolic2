@@ -490,22 +490,22 @@ non-finite value in \code{X} or \code{y}, and a non-numeric or factor input.
 }
 
 \examples{
-\donttest{
 # Single-variable linear: y = 2.5*x + 1.7
+# (n_threads = 2 keeps the example within CRAN's two-core policy; it affects
+# speed only -- the island model is bit-deterministic across thread counts.)
 X <- matrix(seq(-5, 5, length.out = 20), ncol = 1)
 y <- 2.5 * X[, 1] + 1.7
 res <- symbolic_regression(X, y, unary_ops = character(0),
                            population_size = 200L, generations = 40L,
-                           seed = 42L)
+                           seed = 42L, n_threads = 2L)
 cat(res$expression, "\n")
 
 # Same fit through the formula interface
 df <- data.frame(z = X[, 1], y = y)
 res2 <- symbolic_regression(y ~ z, data = df, unary_ops = character(0),
                             population_size = 200L, generations = 40L,
-                            seed = 42L)
+                            seed = 42L, n_threads = 2L)
 cat(res2$expression, "\n")
-}
 
 }
 \seealso{

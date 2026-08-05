@@ -53,15 +53,13 @@ to_sympy <- function(x, ...) UseMethod("to_sympy")
 #'   \code{\link{predict.rsymbolic2}} to evaluate a fit.
 #'
 #' @examples
-#' \donttest{
 #' X <- matrix(seq(-3, 3, length.out = 20), ncol = 1)
 #' y <- 2 * X[, 1]^2 - 1
 #' res <- symbolic_regression(X, y, unary_ops = c("square"),
 #'                            population_size = 200L, generations = 40L,
-#'                            seed = 1L)
+#'                            seed = 1L, n_threads = 2L)
 #' to_sympy(res)                                  # recommended member
 #' to_sympy(res, variable_names = "t")            # x0 -> t
-#' }
 #'
 #' @export
 to_sympy.rsymbolic2 <- function(x, index = NULL, variable_names = NULL, ...) {

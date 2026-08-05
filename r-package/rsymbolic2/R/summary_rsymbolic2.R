@@ -41,13 +41,11 @@
 #'   \code{\link{symbolic_regression}} for the fit itself.
 #'
 #' @examples
-#' \donttest{
 #' X <- matrix(seq(-3, 3, length.out = 20), ncol = 1)
 #' y <- sin(X[, 1]) + X[, 1]^2
 #' res <- symbolic_regression(X, y, population_size = 200L,
-#'                            generations = 40L, seed = 1L)
+#'                            generations = 40L, seed = 1L, n_threads = 2L)
 #' summary(res)
-#' }
 #'
 #' @export
 summary.rsymbolic2 <- function(object, ...) {

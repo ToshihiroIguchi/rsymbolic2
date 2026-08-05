@@ -46,6 +46,28 @@ access):
 
   The test machine has no access to the time server this check queries.
 
+## Policy points a reviewer usually asks about
+
+* **Two cores.** The search is OpenMP-parallel and defaults to every core, so the
+  checks cap it explicitly: every example passes `n_threads = 2L`, and
+  `tests/testthat.R` sets `OMP_NUM_THREADS = 2` before the package is loaded.
+  The island model is bit-deterministic across thread counts, so the cap changes
+  only how fast a check runs, never its result.
+
+* **Examples are executable.** No example uses `\donttest{}` or `\dontrun{}`.
+  Each runs in well under a second (0.08-0.75s elapsed on the Windows test
+  machine, with `--run-donttest` no longer applicable). The examples that draw
+  use ggplot2, a suggested package, and are guarded by
+  `requireNamespace("ggplot2", quietly = TRUE)`.
+
+* **Console output from compiled code** goes through `REprintf()`, never
+  `printf`/`std::cout`, and is one line per epoch at the default `verbosity = 1`
+  (which matches the reference implementation's default). `verbosity = 0`
+  silences it.
+
+* The package writes no files, and changes no `options()`, `par()` or working
+  directory. Its only side effect is the plot a `plot()` call draws.
+
 ## Licensing and attribution
 
 The package is released under the Apache License 2.0. Its default settings and

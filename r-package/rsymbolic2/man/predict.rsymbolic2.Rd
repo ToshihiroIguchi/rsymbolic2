@@ -60,15 +60,13 @@ Pareto-front member usually is -- yields the same value for every row; it is
 recycled to \code{nrow(newdata)} so the returned length is always one per row.
 }
 \examples{
-\donttest{
 X <- matrix(seq(-3, 3, length.out = 20), ncol = 1)
 y <- 2 * X[, 1]^2 - 1
 res <- symbolic_regression(X, y, population_size = 200L, generations = 40L,
-                           seed = 1L)
+                           seed = 1L, n_threads = 2L)
 X_new <- matrix(seq(-1, 1, length.out = 5), ncol = 1)
 predict(res, X_new)                                # recommended (default)
 predict(res, X_new, expression = res$expression)  # lowest-loss expression
-}
 
 }
 \seealso{

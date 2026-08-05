@@ -6,3 +6,7 @@
 ^src/.*\.so$
 ^\.git$
 ^\.gitignore$
+# Graphics device left behind by a local test/example run in the source tree. It is
+# git-ignored, so only R CMD build would ever have picked it up -- and shipping it to
+# CRAN is exactly the kind of stray file a submission gets sent back for.
+Rplots\.pdf$

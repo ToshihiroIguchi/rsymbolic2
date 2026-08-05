@@ -22,13 +22,12 @@ loss). For the full front with per-member scores use
 \code{\link{summary.rsymbolic2}}.
 }
 \examples{
-\donttest{
 X <- matrix(seq(-3, 3, length.out = 20), ncol = 1)
 y <- 2.5 * X[, 1] + 1.7
 res <- symbolic_regression(X, y, unary_ops = character(0),
-                           population_size = 200L, generations = 40L, seed = 1L)
+                           population_size = 200L, generations = 40L,
+                           seed = 1L, n_threads = 2L)
 print(res)
-}
 
 }
 \seealso{

@@ -57,15 +57,13 @@
 #'   for the fit itself.
 #'
 #' @examples
-#' \donttest{
 #' X <- matrix(seq(-3, 3, length.out = 20), ncol = 1)
 #' y <- 2 * X[, 1]^2 - 1
 #' res <- symbolic_regression(X, y, population_size = 200L, generations = 40L,
-#'                            seed = 1L)
+#'                            seed = 1L, n_threads = 2L)
 #' X_new <- matrix(seq(-1, 1, length.out = 5), ncol = 1)
 #' predict(res, X_new)                                # recommended (default)
 #' predict(res, X_new, expression = res$expression)  # lowest-loss expression
-#' }
 #'
 #' @export
 predict.rsymbolic2 <- function(object, newdata, expression = NULL, ...) {
@@ -97,14 +95,12 @@ predict.rsymbolic2 <- function(object, newdata, expression = NULL, ...) {
 #'   new data.
 #'
 #' @examples
-#' \donttest{
 #' X <- matrix(seq(-3, 3, length.out = 20), ncol = 1)
 #' y <- 2 * X[, 1] + 1
 #' res <- symbolic_regression(X, y, population_size = 200L, generations = 40L,
-#'                            seed = 1L)
+#'                            seed = 1L, n_threads = 2L)
 #' head(fitted(res))
 #' head(residuals(res))
-#' }
 #'
 #' @export
 fitted.rsymbolic2 <- function(object, expression = NULL, ...) {
@@ -124,13 +120,11 @@ fitted.rsymbolic2 <- function(object, expression = NULL, ...) {
 #'   and \code{\link{predict.rsymbolic2}} to evaluate the fit on new data.
 #'
 #' @examples
-#' \donttest{
 #' X <- matrix(seq(-3, 3, length.out = 20), ncol = 1)
 #' y <- 2 * X[, 1] + 1
 #' res <- symbolic_regression(X, y, population_size = 200L, generations = 40L,
-#'                            seed = 1L)
+#'                            seed = 1L, n_threads = 2L)
 #' summary(residuals(res))
-#' }
 #'
 #' @export
 residuals.rsymbolic2 <- function(object, expression = NULL, ...) {

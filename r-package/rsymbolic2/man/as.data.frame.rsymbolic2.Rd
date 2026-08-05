@@ -28,13 +28,11 @@ tidy data frame, the R counterpart of the Python interface's
 \code{.to_pandas()}. Useful for further analysis, sorting, or export.
 }
 \examples{
-\donttest{
 X <- matrix(seq(-3, 3, length.out = 20), ncol = 1)
 y <- 2 * X[, 1]^2 - 1
 res <- symbolic_regression(X, y, population_size = 200L,
-                           generations = 40L, seed = 1L)
+                           generations = 40L, seed = 1L, n_threads = 2L)
 as.data.frame(res)
-}
 
 }
 \seealso{

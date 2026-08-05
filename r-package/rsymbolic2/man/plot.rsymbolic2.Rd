@@ -89,14 +89,16 @@ held-out data, to inspect generalisation.  Supplying both without naming
 Requires the \pkg{ggplot2} package.
 }
 \examples{
-\donttest{
 X <- matrix(seq(-3, 3, length.out = 20), ncol = 1)
 y <- sin(X[, 1]) + X[, 1]^2
 res <- symbolic_regression(X, y, population_size = 200L,
-                           generations = 40L, seed = 1L)
-plot(res)                                  # Pareto front
-plot(res, type = "fit", newdata = X, y = y)  # fitted curve over the data
-plot(res, type = "tree")                     # structure of the recommended expression
+                           generations = 40L, seed = 1L, n_threads = 2L)
+
+# ggplot2 is a suggested package, so draw only when it is available.
+if (requireNamespace("ggplot2", quietly = TRUE)) {
+  plot(res)                     # Pareto front
+  plot(res, type = "fit")       # fitted curve over the training data
+  plot(res, type = "tree")      # structure of the recommended expression
 }
 
 }

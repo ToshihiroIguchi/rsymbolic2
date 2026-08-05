@@ -24,13 +24,11 @@
 #'   R-squared and prints it, and \code{\link{plot.rsymbolic2}} for the chart.
 #'
 #' @examples
-#' \donttest{
 #' X <- matrix(seq(-3, 3, length.out = 20), ncol = 1)
 #' y <- 2 * X[, 1]^2 - 1
 #' res <- symbolic_regression(X, y, population_size = 200L,
-#'                            generations = 40L, seed = 1L)
+#'                            generations = 40L, seed = 1L, n_threads = 2L)
 #' as.data.frame(res)
-#' }
 #'
 #' @export
 as.data.frame.rsymbolic2 <- function(x, ..., score = TRUE) {
