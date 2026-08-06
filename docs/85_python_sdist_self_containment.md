@@ -114,7 +114,12 @@ behaviour of those tests.
 - **The sdist's own `tests/` are shipped but not what was run.** Both runs exercised the
   repository's `python/tests` against the sdist-installed package, which is the same test
   code; nothing runs the tarball's copy in isolation.
-- **Nothing checks that `CORE_CPP` still matches `standalone/CMakeLists.txt` and the R
-  package's Makevars.** Those three lists have always had to agree by hand; this change
-  reduces the count from three places to three places, it does not fix it. A new core
-  `.cpp` still has to be added in each.
+- **Nothing checks that `CORE_CPP` still matches `standalone/CMakeLists.txt`.** Two
+  hand-maintained lists of the same file set, and adding a core `.cpp` to one and not the
+  other is silent until something fails to link. This change did not create that
+  duplication and does not fix it.
+
+  The R package is *not* a third list: `Makevars` sets flags only and R compiles every
+  `.cpp` in `src/`, so a new core file is picked up there automatically. That asymmetry
+  is the trap — the build that needs no edit is the one most likely to be tested first,
+  which is how a missing entry in the other two would get past a developer.
