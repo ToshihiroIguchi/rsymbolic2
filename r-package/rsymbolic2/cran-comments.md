@@ -8,10 +8,9 @@
 `R CMD check --as-cran` produced no ERRORs and no WARNINGs on either platform.
 Tests and examples (including `--run-donttest`) pass on both.
 
-On Windows the check is clean with no NOTEs. Both local runs were made with the
-CRAN incoming feasibility check disabled, since this machine cannot reach CRAN;
-on CRAN's machines that check is expected to produce the usual first-submission
-NOTE:
+Both local runs were made with the CRAN incoming feasibility check disabled,
+since this machine cannot reach CRAN; on CRAN's machines that check is expected
+to produce the usual first-submission NOTE:
 
 * checking CRAN incoming feasibility ... NOTE
   Maintainer: 'Toshihiro Iguchi <toshihiro.iguchi.mail@gmail.com>'
@@ -19,10 +18,23 @@ NOTE:
 
   Expected for a first submission.
 
-On Ubuntu 24.04 with the apt-packaged R 4.3.3, three NOTEs appear. All three are
-properties of that test machine rather than of the package, and none is expected
-on CRAN's build machines (which use R-project.org builds and have network
-access):
+Every other NOTE seen locally is a property of the test machine rather than of
+the package, and none is expected on CRAN's build machines (which use
+R-project.org builds, have network access, and have the checking tools
+installed).
+
+Both platforms report one NOTE from the manual check, for the same reason in two
+guises -- the tool that check wants is absent, so it skips a step and says so:
+
+* checking HTML version of manual ... NOTE
+  Skipping checking math rendering: package 'V8' unavailable       (Windows)
+  Skipping checking HTML validation: no command 'tidy' found       (Ubuntu)
+
+  Nothing about the manual is reported as wrong; the checker is reporting what
+  it could not run. Windows is otherwise clean: 1 NOTE in total.
+
+On Ubuntu 24.04 with the apt-packaged R 4.3.3, three further NOTEs appear
+(4 in total):
 
 * checking compilation flags used ... NOTE
   Compilation used the following non-portable flag(s):
