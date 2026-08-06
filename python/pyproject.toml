@@ -47,6 +47,14 @@ testpaths = ["tests"]
 # The Python package lives next to this file; the compiled _core extension is
 # installed into it by CMake (see CMakeLists.txt).
 wheel.packages = ["rsymbolic2"]
+# An sdist must build without the rest of the repository, and the shared C++ core lives
+# above this directory (in r-package/, where CRAN requires it to be). sdist.include
+# cannot reach a parent path -- verified, it is accepted and silently does nothing -- so
+# CMake is run before the sdist's files are collected and stages the core into
+# _core_src/, which these two lines then pick up. CMakeLists.txt has the full reasoning;
+# docs/85 has the alternatives that were rejected.
+sdist.cmake = true
+sdist.include = ["_core_src/**"]
 # Ship the Apache-2.0 license text, the attribution NOTICE, and the third-party license
 # texts in the wheel. THIRD_PARTY_NOTICES.txt is not optional paperwork: the wheel's
 # compiled _core module contains pybind11-derived code, and pybind11's BSD-3 clause 2

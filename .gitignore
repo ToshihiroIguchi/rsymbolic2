@@ -17,6 +17,12 @@ r-package/rsymbolic2/src-i386/
 r-package/rsymbolic2/*.tar.gz
 r-package/rsymbolic2/rsymbolic2.Rcheck/
 
+# The shared C++ core, staged into the Python project by python/CMakeLists.txt while an
+# sdist is being built. Generated, never edited: the source of truth stays in
+# r-package/rsymbolic2/src/. Committing it would be the duplicated-engine-in-git outcome
+# the staging exists to avoid (docs/85).
+python/_core_src/
+
 # Editor / IDE
 .vscode/
 .idea/
