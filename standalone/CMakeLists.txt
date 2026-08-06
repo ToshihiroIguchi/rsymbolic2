@@ -4,29 +4,25 @@
 # directory is the single source of truth for all non-R code. This file
 # references it directly; it does not duplicate or copy any sources.
 #
+# Which .cpp files make up the core is stated once in cmake/CoreSources.cmake,
+# shared with the Python and WebAssembly builds. rsymbolic2_core_sources()
+# checks that list against the directory before expanding it, so a core file
+# added to src/ (which the R build picks up with no edit at all) stops this
+# configure step instead of failing at link time (docs/86).
+#
 # Benchmark-only code (problems.hpp, runner.hpp, runner.cpp) lives here
 # in standalone/benchmarks/ and is not distributed in the R package.
 
 set(CORE_SRC "${CMAKE_SOURCE_DIR}/r-package/rsymbolic2/src")
 set(BENCH_DIR "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks")
 
+include("${CMAKE_SOURCE_DIR}/cmake/CoreSources.cmake")
+rsymbolic2_core_sources("${CORE_SRC}" CORE_SOURCES)
+
 # rsymbolic2_core: shared algorithmic core — identical to what the R package
 # compiles via Makevars. No third-party C++ dependency: the constant optimizer is
 # the self-contained self-LM (pure C++/STL).
-add_library(rsymbolic2_core
-    ${CORE_SRC}/platform_libm.cpp
-    ${CORE_SRC}/random_restart_optimizer.cpp
-    ${CORE_SRC}/self_lm_optimizer.cpp
-    ${CORE_SRC}/optimizer_factory.cpp
-    ${CORE_SRC}/random_tree.cpp
-    ${CORE_SRC}/mutation.cpp
-    ${CORE_SRC}/crossover.cpp
-    ${CORE_SRC}/hall_of_fame.cpp
-    ${CORE_SRC}/simplify.cpp
-    ${CORE_SRC}/display_simplify.cpp
-    ${CORE_SRC}/egraph.cpp
-    ${CORE_SRC}/evolutionary_search.cpp
-)
+add_library(rsymbolic2_core ${CORE_SOURCES})
 target_include_directories(rsymbolic2_core PUBLIC ${CORE_SRC})
 target_compile_features(rsymbolic2_core PUBLIC cxx_std_17)
 

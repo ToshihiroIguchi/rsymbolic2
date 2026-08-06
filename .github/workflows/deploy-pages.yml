@@ -17,6 +17,10 @@ on:
     paths:
       - "web/**"
       - "r-package/rsymbolic2/src/**"
+      # The WASM build compiles the core list defined here, and the check inside it is
+      # what catches a core .cpp that was added to src/ but not to the list. Without
+      # this path a change confined to the list would not rebuild the published module.
+      - "cmake/**"
 
 permissions:
   contents: read

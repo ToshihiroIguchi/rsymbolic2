@@ -85,9 +85,10 @@ Three details that are load bearing:
   created.
 - **The copy is explicit, not a glob.** The first attempt copied the directory whole and
   produced an sdist containing `cpp11.cpp`, `rsymbolic2_r.cpp`, `Makevars`, and the `.o`
-  files left in `src/` by a local R build. The `.cpp` list is now named once in
-  `CORE_CPP` and consumed twice — by the staging loop and by `pybind11_add_module` — so
-  the set that ships and the set that compiles cannot drift.
+  files left in `src/` by a local R build. The `.cpp` list is now named once and consumed
+  twice — by the staging loop and by `pybind11_add_module` — so the set that ships and the
+  set that compiles cannot drift. (It was a local `CORE_CPP` here; `docs/86` moved it to
+  `RSYMBOLIC2_CORE_CPP` in `cmake/CoreSources.cmake`, shared with the other builds.)
 - **The checkout wins when both exist.** A developer always compiles
   `r-package/rsymbolic2/src`, never a stale staged copy; `_core_src` is used only where
   there is no `../r-package`, which is precisely the unpacked sdist.
@@ -114,12 +115,15 @@ behaviour of those tests.
 - **The sdist's own `tests/` are shipped but not what was run.** Both runs exercised the
   repository's `python/tests` against the sdist-installed package, which is the same test
   code; nothing runs the tarball's copy in isolation.
-- **Nothing checks that `CORE_CPP` still matches `standalone/CMakeLists.txt`.** Two
-  hand-maintained lists of the same file set, and adding a core `.cpp` to one and not the
-  other is silent until something fails to link. This change did not create that
-  duplication and does not fix it.
+- ~~**Nothing checks that `CORE_CPP` still matches `standalone/CMakeLists.txt`.**~~
+  **Fixed in `docs/86`.** The list (four hand-written copies, counting the two in
+  `web/wasm/`) is now stated once in `cmake/CoreSources.cmake` and checked against the
+  `.cpp` files actually in `src/`, so a missing entry stops the configure step instead of
+  failing to link. `python/CMakeLists.txt` consumes that list for both the staging copy
+  and the extension target, and the sdist carries a copy of it beside the staged sources.
 
   The R package is *not* a third list: `Makevars` sets flags only and R compiles every
   `.cpp` in `src/`, so a new core file is picked up there automatically. That asymmetry
   is the trap — the build that needs no edit is the one most likely to be tested first,
-  which is how a missing entry in the other two would get past a developer.
+  which is how a missing entry in the other two would get past a developer. `docs/86`
+  does not remove the asymmetry, only the silence.

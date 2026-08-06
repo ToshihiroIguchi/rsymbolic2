@@ -23,25 +23,21 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
-# The shared algorithmic core (identical list to standalone/CMakeLists.txt and
-# python/CMakeLists.txt). CORE_SRC is the single source of truth; nothing is duplicated.
+# The shared algorithmic core. CORE_SRC is the single source of truth for the sources
+# themselves and cmake/CoreSources.cmake for the list of them, shared with the
+# standalone and Python builds; nothing is duplicated. The list is checked against the
+# directory before it is expanded, so a core file added to src/ stops this configure
+# step rather than producing a WASM module missing part of the engine (docs/86).
 set(CORE_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../r-package/rsymbolic2/src")
 
-add_executable(rsymbolic2
-    ${CMAKE_CURRENT_SOURCE_DIR}/rsymbolic2_wasm.cpp
-    ${CORE_SRC}/platform_libm.cpp
-    ${CORE_SRC}/random_restart_optimizer.cpp
-    ${CORE_SRC}/self_lm_optimizer.cpp
-    ${CORE_SRC}/optimizer_factory.cpp
-    ${CORE_SRC}/random_tree.cpp
-    ${CORE_SRC}/mutation.cpp
-    ${CORE_SRC}/crossover.cpp
-    ${CORE_SRC}/hall_of_fame.cpp
-    ${CORE_SRC}/simplify.cpp
-    ${CORE_SRC}/display_simplify.cpp
-    ${CORE_SRC}/egraph.cpp
-    ${CORE_SRC}/evolutionary_search.cpp
-)
+include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/CoreSources.cmake")
+rsymbolic2_core_sources("${CORE_SRC}" CORE_SOURCES)
+
+# The embind bridge, named once: both targets below compile exactly the same sources
+# and differ only in their link options.
+set(WASM_BRIDGE "${CMAKE_CURRENT_SOURCE_DIR}/rsymbolic2_wasm.cpp")
+
+add_executable(rsymbolic2 ${WASM_BRIDGE} ${CORE_SOURCES})
 target_include_directories(rsymbolic2 PRIVATE ${CORE_SRC})
 # NOTE: RTTI must stay ON — embind uses typeid internally for type registration, so
 # -fno-rtti would break the bindings. Exceptions are required (the unit parser / optimizer
@@ -81,22 +77,7 @@ set_target_properties(rsymbolic2 PROPERTIES
 # so the parity/smoke test (web/wasm/test/parity_test.cjs) can require() it directly —
 # the web,worker ES6 artifact above does not load under Node. Same engine, same seed =>
 # identical results; this target exists only to run that check in CI/dev, not to ship.
-set(CORE_SRCS
-    ${CMAKE_CURRENT_SOURCE_DIR}/rsymbolic2_wasm.cpp
-    ${CORE_SRC}/platform_libm.cpp
-    ${CORE_SRC}/random_restart_optimizer.cpp
-    ${CORE_SRC}/self_lm_optimizer.cpp
-    ${CORE_SRC}/optimizer_factory.cpp
-    ${CORE_SRC}/random_tree.cpp
-    ${CORE_SRC}/mutation.cpp
-    ${CORE_SRC}/crossover.cpp
-    ${CORE_SRC}/hall_of_fame.cpp
-    ${CORE_SRC}/simplify.cpp
-    ${CORE_SRC}/display_simplify.cpp
-    ${CORE_SRC}/egraph.cpp
-    ${CORE_SRC}/evolutionary_search.cpp
-)
-add_executable(rsymbolic2_node ${CORE_SRCS})
+add_executable(rsymbolic2_node ${WASM_BRIDGE} ${CORE_SOURCES})
 target_include_directories(rsymbolic2_node PRIVATE ${CORE_SRC})
 target_compile_options(rsymbolic2_node PRIVATE -O3 -fexceptions)
 target_link_options(rsymbolic2_node PRIVATE
