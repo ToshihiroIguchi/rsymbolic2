@@ -34,6 +34,10 @@
 #include <vector>
 
 #if defined(_WIN32)
+// windows.h defines min/max as macros unless this is set, which turns every later
+// std::min / std::numeric_limits<T>::max in the core headers into a syntax error.
+// MinGW happened not to trip over it; MSVC does (error C2589).
+#  define NOMINMAX
 #  include <windows.h>
 static double process_cpu_seconds() {
     FILETIME c, e, k, u;

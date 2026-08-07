@@ -7,6 +7,7 @@
 // reference engine.
 
 #include <cstdio>
+#include <limits>
 #include <optional>
 #include <vector>
 
@@ -156,7 +157,9 @@ void test_penalty_helper() {
     CHECK(add_dim_penalty(2.0, violating, on) == 2.0 + 1000.0 * 42.0);
     CHECK(add_dim_penalty(2.0, clean, on) == 2.0);
     // Non-finite loss is passed through unchanged (kInf handling upstream).
-    const double inf = 1.0 / 0.0;
+    // Not 1.0 / 0.0: division by zero is undefined behaviour, and a compiler is
+    // entitled to reject it in a constant expression -- MSVC does (error C2124).
+    const double inf = std::numeric_limits<double>::infinity();
     CHECK(add_dim_penalty(inf, violating, on) == inf);
 }
 

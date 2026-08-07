@@ -145,11 +145,17 @@ jobs:
           python -m pip install scikit-build-core pybind11
           python -c "import scikit_build_core.build as b; print(b.build_sdist('dist'))"
 
+      # The tarball is addressed by its exact version, never by a glob. The decoy above
+      # is deliberately named like a real leftover -- rsymbolic2-0.0.1.tar.gz -- so
+      # `rsymbolic2-*.tar.gz` matches it too, and the first bring-up run duly failed
+      # with "gzip: stdin: not in gzip format" while reading the decoy.
       - name: The sdist must carry the core and none of the build output
         shell: bash
         run: |
+          ver=$(python -c "import tomllib; print(tomllib.load(open('python/pyproject.toml','rb'))['project']['version'])")
+          echo "SDIST_VERSION=$ver" >> "$GITHUB_ENV"
           members=$(dirname "$PWD")/members.txt
-          tar tzf python/dist/rsymbolic2-*.tar.gz > "$members"
+          tar tzf "python/dist/rsymbolic2-$ver.tar.gz" > "$members"
           echo "members: $(wc -l < "$members")"
 
           if grep -E '/(dist|build|_skbuild|\.pytest_cache)/' "$members"; then
@@ -177,19 +183,20 @@ jobs:
         shell: bash
         run: |
           set -e
+          tarball=rsymbolic2-$SDIST_VERSION.tar.gz
           sd=$(dirname "$PWD")/sdtest
           mkdir -p "$sd"
-          cp python/dist/rsymbolic2-*.tar.gz "$sd/"
+          cp "python/dist/$tarball" "$sd/"
           cd "$sd"
-          tar xzf rsymbolic2-*.tar.gz
+          tar xzf "$tarball"
 
           python -m venv venv
           if [ -x venv/Scripts/python.exe ]; then py="$sd/venv/Scripts/python.exe"; else py="$sd/venv/bin/python"; fi
           "$py" -m pip install --upgrade pip
-          "$py" -m pip install rsymbolic2-*.tar.gz
+          "$py" -m pip install "$tarball"
           "$py" -m pip install pytest
 
-          cd "$sd"/rsymbolic2-*/
+          cd "$sd/rsymbolic2-$SDIST_VERSION"
           # Asserted rather than trusted: the extracted tree contains a rsymbolic2/
           # holding only __init__.py, so a run that imported from there would fail
           # confusingly instead of reporting that it had tested the wrong thing.
