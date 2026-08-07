@@ -102,8 +102,10 @@ jobs:
       # From the repository root, never from python/: that directory's rsymbolic2/
       # holds only __init__.py, and shadowing site-packages with it produces a bare
       # "No module named rsymbolic2._core" that reads like a broken build (docs/74).
+      # -rs prints the reason for every skip. A skip that nobody reads is how the
+      # sympy gap above stayed invisible; the log should always say what did not run.
       - name: Test
-        run: python -m pytest python/tests -q
+        run: python -m pytest python/tests -q -rs
 
   # -------------------------------------------------------------------------------
   # The source distribution, as a user of a PyPI sdist would receive it.
@@ -218,7 +220,7 @@ jobs:
           # conftest.py strips that entry, which is the mechanism being relied on and so
           # is left to work on its own.
           "$py" -I -c "import rsymbolic2, sys; p = rsymbolic2.__file__; print(p); sys.exit(0 if 'site-packages' in p else 1)"
-          "$py" -m pytest tests -q
+          "$py" -m pytest tests -q -rs
 
   # -------------------------------------------------------------------------------
   # The R package, through R CMD check --as-cran -- the same command docs/83 uses to
