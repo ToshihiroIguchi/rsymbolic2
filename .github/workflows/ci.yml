@@ -200,7 +200,14 @@ jobs:
           # Asserted rather than trusted: the extracted tree contains a rsymbolic2/
           # holding only __init__.py, so a run that imported from there would fail
           # confusingly instead of reporting that it had tested the wrong thing.
-          "$py" -c "import rsymbolic2, sys; p = rsymbolic2.__file__; print(p); sys.exit(0 if 'site-packages' in p else 1)"
+          #
+          # -I is what makes this a probe of the INSTALL rather than of the directory it
+          # runs in: `python -c` puts the working directory on sys.path[0], which here is
+          # the extracted tree, so without it the probe reliably imports the very thing
+          # it exists to rule out. pytest does not need the flag -- the tarball's own
+          # conftest.py strips that entry, which is the mechanism being relied on and so
+          # is left to work on its own.
+          "$py" -I -c "import rsymbolic2, sys; p = rsymbolic2.__file__; print(p); sys.exit(0 if 'site-packages' in p else 1)"
           "$py" -m pytest tests -q
 
   # -------------------------------------------------------------------------------
