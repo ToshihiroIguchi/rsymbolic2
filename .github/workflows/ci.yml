@@ -92,11 +92,17 @@ jobs:
       # job did exactly that: 108 passed where the local loop gets 116, a gap that looked
       # like nothing. docs/81 records the same pattern hiding verification before.
       #
+      # scikit-learn is here for the same reason: test_input_conventions.py checks the
+      # estimator contract docs/81 settled, and without it that check silently is not
+      # made. With all four present this job collects and passes the same 116 tests the
+      # local loop does -- equality with the local run is the property being kept, not
+      # a particular number.
+      #
       # The sdist job deliberately does NOT install these; see the note there.
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pandas matplotlib sympy pytest
+          python -m pip install pandas matplotlib sympy scikit-learn pytest
           python -m pip install ./python
 
       # From the repository root, never from python/: that directory's rsymbolic2/
