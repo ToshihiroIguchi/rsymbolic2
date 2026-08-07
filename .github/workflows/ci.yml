@@ -1,0 +1,247 @@
+# SPDX-License-Identifier: Apache-2.0
+# Part of rsymbolic2, Copyright 2026 Toshihiro Iguchi.
+#
+# Build and test every shipped artefact on both mandatory platforms.
+#
+# Until this file existed, the only workflows were the licensing gate and the web GUI
+# deploy. The C++ core, the R package and the Python package were verified entirely by
+# hand, at milestones, by one person on one machine. That is fine for iterating and
+# unacceptable for releasing: CLAUDE.md's bar for "done" is that a change builds and
+# passes on Windows 11 AND Ubuntu LTS, and a bar nothing measures is a bar nobody can
+# be shown to have cleared.
+#
+# The jobs below are deliberately the same checks the local loop already runs, not a
+# new and different suite -- their value is that they run every time and on a machine
+# with no developer state on it. Where a job asserts something subtle, the step says
+# what and why, because a green tick that nobody can interpret is not evidence.
+#
+# What is NOT here, and where it lives instead:
+#   - the WebAssembly build and its parity test -> deploy-pages.yml, which has the
+#     pinned emsdk and is the workflow that publishes the thing being tested;
+#   - the licensing gate -> license-sync.yml (and again inside the deploy job);
+#   - benchmarks (Feynman recovery and friends) -> they take hours and are evidence for
+#     decisions, not a merge gate.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch makes an in-flight run obsolete. The exception is
+# master, where a completed run is a record of that commit's state and is worth keeping.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+jobs:
+  # -------------------------------------------------------------------------------
+  # The shared C++ core, through the standalone harness. This is the layer both
+  # language packages compile, so it fails fastest and most informatively.
+  # -------------------------------------------------------------------------------
+  core:
+    name: C++ core (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      # cmake/CoreSources.cmake checks its list against the .cpp files actually in
+      # src/ during this step, so a core file added without being listed stops here
+      # rather than failing at link time (docs/86).
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      # Windows runners use the multi-config Visual Studio generator, so ctest needs
+      # to be told which configuration to run; passing -C on Linux is harmless.
+      - name: Test
+        working-directory: build
+        run: ctest --output-on-failure -C Release
+
+  # -------------------------------------------------------------------------------
+  # The Python package, installed the way a user installs it from a clone.
+  # -------------------------------------------------------------------------------
+  python:
+    name: Python (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # pandas and matplotlib are optional extras. They are installed so the tests that
+      # depend on them actually run: without them those tests skip, and a suite that
+      # reports "passed" while skipping the interface it is testing is the failure mode
+      # docs/81 records (a module-level importorskip silently killing verification).
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pandas matplotlib pytest
+          python -m pip install ./python
+
+      # From the repository root, never from python/: that directory's rsymbolic2/
+      # holds only __init__.py, and shadowing site-packages with it produces a bare
+      # "No module named rsymbolic2._core" that reads like a broken build (docs/74).
+      - name: Test
+        run: python -m pytest python/tests -q
+
+  # -------------------------------------------------------------------------------
+  # The source distribution, as a user of a PyPI sdist would receive it.
+  #
+  # This is the job that would have caught both defects docs/88 records: an sdist that
+  # shipped whatever the last local build had left in python/dist, and a tests/
+  # directory that shipped in every tarball and had never once been executed.
+  # -------------------------------------------------------------------------------
+  sdist:
+    name: Python sdist (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # Plant leftovers first. Without them this job would build a clean sdist on a
+      # clean runner and prove nothing about the exclusion -- the check would pass
+      # because there was nothing to exclude, which is exactly how the original defect
+      # stayed hidden on Windows (docs/88 §1).
+      - name: Plant build output the sdist must not ship
+        shell: bash
+        run: |
+          mkdir -p python/dist python/build python/_skbuild python/.pytest_cache
+          echo "leftover from an earlier build" > python/dist/rsymbolic2-0.0.1.tar.gz
+          echo decoy > python/build/DECOY.txt
+          echo decoy > python/_skbuild/DECOY.txt
+          echo decoy > python/.pytest_cache/DECOY.txt
+
+      # The backend is called directly rather than through `python -m build`, matching
+      # the documented local procedure. sdist.cmake = true means this also runs the
+      # CMake configure that stages the shared core into _core_src/.
+      - name: Build the sdist
+        shell: bash
+        working-directory: python
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install scikit-build-core pybind11
+          python -c "import scikit_build_core.build as b; print(b.build_sdist('dist'))"
+
+      - name: The sdist must carry the core and none of the build output
+        shell: bash
+        run: |
+          members=$(dirname "$PWD")/members.txt
+          tar tzf python/dist/rsymbolic2-*.tar.gz > "$members"
+          echo "members: $(wc -l < "$members")"
+
+          if grep -E '/(dist|build|_skbuild|\.pytest_cache)/' "$members"; then
+            echo "FAIL: the sdist swallowed local build output (docs/88)"; exit 1
+          fi
+
+          # The mirror image of the same defect: an sdist that excludes too much and
+          # ships the binding without the engine it binds to (docs/85).
+          grep -q '_core_src/evolutionary_search.cpp' "$members" \
+            || { echo "FAIL: the staged C++ core is missing from the sdist"; exit 1; }
+          grep -q '_core_src/CoreSources.cmake' "$members" \
+            || { echo "FAIL: the core source list did not travel with the staged sources"; exit 1; }
+          grep -q 'tests/test_rsymbolic2.py' "$members" \
+            || { echo "FAIL: the sdist carries no tests"; exit 1; }
+
+      # Everything below happens OUTSIDE the repository, with build isolation ON, so pip
+      # fetches the build requirements itself. A tarball that only builds next to its own
+      # checkout is not a source distribution.
+      #
+      # The paths are derived from $PWD rather than $RUNNER_TEMP or $GITHUB_WORKSPACE:
+      # under bash those two hold Windows-style paths on a Windows runner, and $PWD is
+      # POSIX on both. Install and test are one step for the same reason -- nothing has
+      # to be handed between steps.
+      - name: Install from the tarball and run the tarball's own tests
+        shell: bash
+        run: |
+          set -e
+          sd=$(dirname "$PWD")/sdtest
+          mkdir -p "$sd"
+          cp python/dist/rsymbolic2-*.tar.gz "$sd/"
+          cd "$sd"
+          tar xzf rsymbolic2-*.tar.gz
+
+          python -m venv venv
+          if [ -x venv/Scripts/python.exe ]; then py="$sd/venv/Scripts/python.exe"; else py="$sd/venv/bin/python"; fi
+          "$py" -m pip install --upgrade pip
+          "$py" -m pip install rsymbolic2-*.tar.gz
+          "$py" -m pip install pytest
+
+          cd "$sd"/rsymbolic2-*/
+          # Asserted rather than trusted: the extracted tree contains a rsymbolic2/
+          # holding only __init__.py, so a run that imported from there would fail
+          # confusingly instead of reporting that it had tested the wrong thing.
+          "$py" -c "import rsymbolic2, sys; p = rsymbolic2.__file__; print(p); sys.exit(0 if 'site-packages' in p else 1)"
+          "$py" -m pytest tests -q
+
+  # -------------------------------------------------------------------------------
+  # The R package, through R CMD check --as-cran -- the same command docs/83 uses to
+  # judge CRAN readiness, so a regression against it shows up here and not on a
+  # reviewer's machine.
+  # -------------------------------------------------------------------------------
+  r-package:
+    name: R package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    env:
+      # Neither runner should try to reach CRAN for the incoming-feasibility check;
+      # docs/83 disables it locally for the same reason and records that CRAN's own
+      # machines will emit the ordinary "New submission" NOTE.
+      _R_CHECK_CRAN_INCOMING_: false
+      # CRAN's repository policy allows a check no more than two simultaneous threads,
+      # and the search defaults to every core. The island model is bit-deterministic
+      # across thread counts (docs/37), so this changes how fast the check runs and
+      # nothing about what it computes.
+      OMP_NUM_THREADS: 2
+      # Run the searches that tests/testthat guards with skip_on_cran(). They are the
+      # slow tests and also the ones that actually exercise the engine; skipping them
+      # would leave the most important behaviour unautomated. This makes the run a
+      # superset of what CRAN executes, never a subset.
+      NOT_CRAN: true
+    steps:
+      - uses: actions/checkout@v7
+
+      # Windows gets Rtools with this: R on Windows is built with MinGW/UCRT, not MSVC
+      # (CLAUDE.md, Platform Constraints), and the package compiles C++17.
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          working-directory: r-package/rsymbolic2
+          extra-packages: any::rcmdcheck
+
+      - uses: r-lib/actions/check-r-package@v2
+        with:
+          working-directory: r-package/rsymbolic2
+          args: 'c("--as-cran", "--no-manual")'
+          # NOTEs are expected and explained in cran-comments.md (installed size, and
+          # on Debian-packaged R a compiler flag it injects). Failing on them would
+          # make this job red for properties of the runner.
+          error-on: '"warning"'
