@@ -11,7 +11,8 @@ is a change to a published version.
 |---|---|
 | Windows 11, R 4.6.0, Rtools45 (GCC 14.3.0, UCRT) | `R CMD check --as-cran` → **Status: OK** (no NOTEs) |
 | Ubuntu 24.04 (WSL2), R 4.3.3 (apt build) | `R CMD check --as-cran` → **3 NOTEs**, 0 ERRORs, 0 WARNINGs |
-| **R-devel (win-builder / R-hub)** | **not run — deferred by decision, see §4** |
+| **R-devel, Windows Server 2022 (GitHub Actions)** | `R CMD check --as-cran` → **Status: OK** (no NOTEs), see §4 |
+| **R-devel, Ubuntu 24.04 (GitHub Actions)** | `R CMD check --as-cran` → **Status: OK** (no NOTEs), see §4 |
 
 Both local runs disable the CRAN incoming feasibility check
 (`_R_CHECK_CRAN_INCOMING_=false`), because neither machine can reach CRAN. On CRAN's own
@@ -77,22 +78,49 @@ writes no files and changes no `options()`, `par()` or working directory.
   reads correctly. The version stays `0.1.0` — a `.9000` development suffix marks changes
   since a *released* version, and there is none.
 
-## 4. The deferred step: R-devel
+## 4. The deferred step: R-devel — **done (2026-08-07)**
 
 Both local environments run a **release** R. CRAN expects a package to check on
-**R-devel** as well, and the usual way to get that is one upload to win-builder:
+**R-devel** as well, and this was the one known-open item on the checklist; everything
+else in this document was already measured.
 
-```r
-devtools::check_win_devel("r-package/rsymbolic2")
-```
+It was deferred on 2026-08-05 because the usual route is
+`devtools::check_win_devel()`, which uploads the tarball to an external service and
+returns its result by email — an action belonging to the moment of submission rather
+than to hardening. That reasoning applied to win-builder specifically, not to the
+question. Once `ci.yml` existed (`docs/89`), a better route was available:
+`.github/workflows/r-devel.yml` runs `R CMD check --as-cran` against R-devel on both
+mandatory platforms, in infrastructure already trusted, with the result readable
+directly instead of arriving by mail. It uploads nothing to anyone.
 
-This is **not run yet, by decision** (2026-08-05): it uploads the tarball to an external
-service and returns its result by email to the maintainer address in `DESCRIPTION`, so it
-belongs to the moment the submission is actually being made, not to the hardening work
-above. It is the one known-open item on this checklist; everything else in this document
-is measured.
+| environment | result |
+|---|---|
+| Windows Server 2022 x64, R-devel (2026-08-06 r90366 ucrt) | **Status: OK** — 0 NOTEs |
+| Ubuntu 24.04, R-devel (2026-06-21 r90185) | **Status: OK** — 0 NOTEs |
 
-R-devel could still surface things a release R cannot — a new check (`--as-cran` gains
-checks between R versions), a stricter compiler default, or a deprecation warning in a
-suggested package. Treat §1's "Status: OK" as "clean on release R", not as "clean on
-CRAN".
+Both with `_R_CHECK_CRAN_INCOMING_=false` (no route to CRAN from a runner) and
+`NOT_CRAN=true`, so the searches `skip_on_cran()` guards ran too:
+`[ FAIL 0 | WARN 0 | SKIP 0 | PASS 409 ]` on each.
+
+Two things worth noting rather than glossing:
+
+- The result is **cleaner than release R on Ubuntu**, which `docs/83` §1 recorded with
+  three NOTEs. Those were properties of Debian's packaging of R (an injected
+  `-mno-omit-leaf-frame-pointer`, the installed size, and no route to a time server),
+  not of the package, and the runner's R-devel has none of them. Under R-devel the
+  installed-size check reports `INFO` rather than `NOTE`.
+- The workflow runs **weekly** as well as on demand, so a breaking change in R-devel is
+  found while there is time to react, not at the moment of submission.
+
+§1's "Status: OK" can now be read as clean on release R *and* on R-devel, on both
+platforms. What it still does not include is CRAN's own incoming-feasibility check,
+which no environment outside CRAN can run and which is expected to emit the ordinary
+`New submission` NOTE.
+
+### win-builder: still not run, and no longer load-bearing
+
+A win-builder upload would add a fourth data point from CRAN's own Windows machine. The
+GitHub runner uses the CRAN-built R-devel binary with Rtools, so it is close but not the
+identical host. It remains sensible to do **as part of preparing the actual submission**,
+where the emailed result is a natural artefact — it is no longer the thing standing
+between here and knowing whether the package survives R-devel.

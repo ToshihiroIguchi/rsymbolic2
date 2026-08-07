@@ -2,11 +2,19 @@
 
 - Windows 11 x64 (build 26200), R 4.6.0, Rtools45 (GCC 14.3.0, UCRT)
 - Ubuntu 24.04 (WSL2), R 4.3.3 (Ubuntu apt build)
+- Windows Server 2022 x64, **R-devel** (2026-08-06 r90366 ucrt), Rtools (GitHub Actions)
+- Ubuntu 24.04, **R-devel** (2026-06-21 r90185) (GitHub Actions)
+- Windows Server 2022 and Ubuntu 24.04, R 4.6.x release (GitHub Actions, every push)
 
 ## R CMD check results
 
-`R CMD check --as-cran` produced no ERRORs and no WARNINGs on either platform.
-Tests and examples (including `--run-donttest`) pass on both.
+`R CMD check --as-cran` produced no ERRORs and no WARNINGs on any of them.
+Tests and examples (including `--run-donttest`) pass on all.
+
+On both R-devel platforms the result was **Status: OK** with no NOTEs, and the
+package's own test suite reported 0 failures across 409 assertions with none
+skipped (the checks are run with `NOT_CRAN=true`, so the longer search tests
+that `skip_on_cran()` guards are also executed).
 
 Both local runs were made with the CRAN incoming feasibility check disabled,
 since this machine cannot reach CRAN; on CRAN's machines that check is expected
