@@ -112,9 +112,13 @@ behaviour of those tests.
 
 ## 6. Residual
 
-- **The sdist's own `tests/` are shipped but not what was run.** Both runs exercised the
+- ~~**The sdist's own `tests/` are shipped but not what was run.** Both runs exercised the
   repository's `python/tests` against the sdist-installed package, which is the same test
-  code; nothing runs the tarball's copy in isolation.
+  code; nothing runs the tarball's copy in isolation.~~
+  **Closed in `docs/88`.** The tarball's own `tests/` have now been run on both platforms
+  against a venv install made from a tarball outside the repository — 86 passed, 24
+  skipped on each, with `rsymbolic2.__file__` confirmed to resolve inside the venv's
+  `site-packages`. Running them on *every* change is CI work and is not claimed here.
 - ~~**Nothing checks that `CORE_CPP` still matches `standalone/CMakeLists.txt`.**~~
   **Fixed in `docs/86`.** The list (four hand-written copies, counting the two in
   `web/wasm/`) is now stated once in `cmake/CoreSources.cmake` and checked against the

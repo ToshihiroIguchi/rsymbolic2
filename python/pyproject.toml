@@ -55,6 +55,18 @@ wheel.packages = ["rsymbolic2"]
 # docs/85 has the alternatives that were rejected.
 sdist.cmake = true
 sdist.include = ["_core_src/**"]
+# The repository root .gitignore already excludes python/build, python/dist and
+# python/_skbuild -- but the sdist build cannot see it. scikit-build-core collects the
+# sdist by walking from THIS directory and reads only the .gitignore files at or below
+# it, so every rule the root file writes about python/ is invisible here, and there is
+# no python/.gitignore. The result was an sdist that shipped whatever a previous local
+# build had left behind, including an older tarball from python/dist. (The tarball
+# currently being written escapes by accident: tarfile.add() skips the archive's own
+# file. Nothing protects the earlier ones.)
+#
+# So the rules are restated here, where they are in scope. Keep them in step with the
+# python/ entries in the root .gitignore; docs/88 has the measurement.
+sdist.exclude = ["/build/**", "/dist/**", "/_skbuild/**", "/.pytest_cache/**"]
 # Ship the Apache-2.0 license text, the attribution NOTICE, and the third-party license
 # texts in the wheel. THIRD_PARTY_NOTICES.txt is not optional paperwork: the wheel's
 # compiled _core module contains pybind11-derived code, and pybind11's BSD-3 clause 2

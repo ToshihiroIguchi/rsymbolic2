@@ -121,3 +121,11 @@ a property of the packaging config, and it was not chased further. Practical for
 `python/dist/` before building an sdist, and prefer the Windows-built tarball, until
 someone pins down why the two disagree. Nothing published today is affected — there is no
 PyPI release yet.
+
+> **Corrected in `docs/88`.** It was not environment-specific, and the packaging config
+> was exactly where the cause was: scikit-build-core collects the sdist by walking from
+> `python/` and reads only the `.gitignore` files at or below it, so the root file's
+> `python/dist/` rule was never in scope on *either* platform. The Windows rebuild looked
+> clean because the documented procedure deletes `python/dist/` first. Fixed with
+> `sdist.exclude` in `pyproject.toml`; the "prefer the Windows-built tarball" advice above
+> is obsolete.
