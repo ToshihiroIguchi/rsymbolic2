@@ -1,0 +1,71 @@
+# SPDX-License-Identifier: Apache-2.0
+# Part of rsymbolic2, Copyright 2026 Toshihiro Iguchi.
+#
+# R CMD check --as-cran against the DEVELOPMENT version of R.
+#
+# docs/83 §4 recorded this as the one deferred step before the CRAN question can be
+# answered: both local environments and the ci.yml r-package job run a *release* R,
+# and CRAN checks a package on R-devel. A package that passes on release R and fails
+# on R-devel is a package CRAN will reject, and there is no way to learn that from a
+# release-R check.
+#
+# Kept out of ci.yml on purpose. It is slow -- R-devel has no binary package repository,
+# so every dependency compiles from source -- and it answers a release question rather
+# than a "did this change break anything" question. Running it on every push would tax
+# the ordinary loop for information the ordinary loop does not use.
+#
+# This is a CHECK, not a submission. Nothing here uploads anything anywhere.
+name: R-devel
+
+on:
+  workflow_dispatch:
+  # Weekly, so a breaking change in R-devel is found while there is time to react to it
+  # rather than at the moment of submission. Monday 03:00 UTC.
+  schedule:
+    - cron: "0 3 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: R-devel (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    env:
+      # Neither runner can reach CRAN for the incoming-feasibility check; docs/83
+      # disables it locally for the same reason.
+      _R_CHECK_CRAN_INCOMING_: false
+      # CRAN's repository policy allows a check no more than two simultaneous threads.
+      OMP_NUM_THREADS: 2
+      # Run the searches guarded by skip_on_cran(), as ci.yml does: they are the tests
+      # that actually exercise the engine, and a compiler change in R-devel would show
+      # up there first.
+      NOT_CRAN: true
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: "devel"
+          # No public RSPM: it serves binaries built for release R, which R-devel cannot
+          # load. Dependencies have to come from source here, and that is the point --
+          # cpp11 compiling against R-devel's headers is part of what is being checked.
+          use-public-rspm: false
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          working-directory: r-package/rsymbolic2
+          extra-packages: any::rcmdcheck
+
+      - uses: r-lib/actions/check-r-package@v2
+        with:
+          working-directory: r-package/rsymbolic2
+          args: 'c("--as-cran", "--no-manual")'
+          # NOTEs are expected and explained in cran-comments.md (installed size, and on
+          # a Debian-packaged R a compiler flag it injects). Failing on them would make
+          # this red for properties of the runner rather than of the package.
+          error-on: '"warning"'
