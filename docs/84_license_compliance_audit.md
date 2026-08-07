@@ -278,6 +278,14 @@ a new library is vendored into `web/app/vendor/` and its license text is not add
 `THIRD_PARTY_NOTICES.txt`, CI stays green. `web/README.md` says so where a person adding
 a vendored library will read it.
 
+> **Superseded by `docs/87`.** Both workflows now call
+> `scripts/check_license_files.sh` instead of carrying hand-written `cmp` lines. The
+> omission gap described in the paragraph above is closed: the comparison set is
+> discovered with `git ls-files` rather than listed, every file under
+> `web/app/vendor/` must be named in `THIRD_PARTY_NOTICES.txt`, and the KaTeX banner
+> and its version are checked. The two-workflow duplication is unchanged and still
+> intentional, for the reason given above.
+
 ## 6. What was checked and found clean
 
 - **No upstream source files are redistributed.** No vendored copy of PySR or
@@ -310,8 +318,13 @@ a vendored library will read it.
   wanted, the branch tables could be re-derived from the *documented* semantics — but
   `docs/69` §4.1 records that doing this by reasoning rather than transcription is exactly
   how the last bug survived, so behaviour-first transcription is kept.
-- **Omission-blindness in CI (§5.5).** Adding a vendored library without its notice passes
-  every automated check. Convention and the `web/README.md` note are the only guard.
+- ~~**Omission-blindness in CI (§5.5).** Adding a vendored library without its notice
+  passes every automated check. Convention and the `web/README.md` note are the only
+  guard.~~ **Closed in `docs/87`.** A file redistributed from `web/app/vendor/` without an
+  entry naming it now fails both workflows, and so does a lost or version-stale KaTeX
+  banner. What remains hand-maintained is one short list of *distributions* (not of file
+  pairs), used only to require completeness; a new distribution's copies are compared from
+  the moment they are committed either way.
 - **Nothing here is legal advice.** It is an engineering audit against the text of the
   licenses. The facts it rests on — that both upstreams are Apache-2.0 with the copyright
   line quoted in §3.1, and which files ship where — are verifiable from the repository and

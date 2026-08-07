@@ -21,6 +21,14 @@ on:
       # what catches a core .cpp that was added to src/ but not to the list. Without
       # this path a change confined to the list would not rebuild the published module.
       - "cmake/**"
+      # The licensing gate below is this script compared against these three files. A
+      # change to either side has to re-run the gate: the site is a redistribution, and
+      # a root notice edited without the published copy following it must block the
+      # deploy rather than leave the site serving the older text.
+      - "scripts/check_license_files.sh"
+      - "LICENSE"
+      - "NOTICE"
+      - "THIRD_PARTY_NOTICES.txt"
 
 permissions:
   contents: read
@@ -58,11 +66,14 @@ jobs:
       # drifted copy is worse than none, because it looks authoritative while being stale.
       # This fails the deploy rather than shipping a notice that no longer matches the
       # repository root.
-      - name: Check the published license files match the repository root
-        run: |
-          cmp LICENSE web/app/LICENSE.txt
-          cmp NOTICE web/app/NOTICE.txt
-          cmp THIRD_PARTY_NOTICES.txt web/app/THIRD_PARTY_NOTICES.txt
+      #
+      # The same script runs in license-sync.yml. Running it here as well is what makes
+      # it able to stop a release: workflows fail independently, so a red run there would
+      # not hold up this one. It runs AFTER the WASM build above, so the vendored
+      # rsymbolic2.js / rsymbolic2.wasm it checks are the artefacts about to be published
+      # rather than the committed ones.
+      - name: Licensing gate
+        run: sh scripts/check_license_files.sh
 
       # Correctness gate: recovery + determinism (and Python cross-check,
       # best-effort -- it skips itself when the Python package isn't

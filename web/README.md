@@ -320,12 +320,18 @@ repository, so a link back to GitHub would not discharge the obligation — and 
 minified KaTeX files, unlike Chart.js, ship with no copyright header of their own,
 which is what makes reproducing the notice here mandatory rather than polite.
 
-Two CI gates keep this honest: `license-sync.yml` byte-compares every distribution
-copy against the repository root on each push, and `deploy-pages.yml` repeats the
-three `web/app` comparisons *inside the publish job*, where a failure can actually
-stop the deployment. When you add a vendored library to `web/app/vendor/`, add its
-license text to `THIRD_PARTY_NOTICES.txt` in the same commit; the byte comparison
-will not catch an omission, only a divergence. See `docs/84` for the full audit.
+One script keeps this honest — `scripts/check_license_files.sh`, run by `license-sync.yml`
+on every push and again by `deploy-pages.yml` *inside the publish job*, where a failure can
+actually stop the deployment. Run it yourself before pushing:
+
+```bash
+sh scripts/check_license_files.sh
+```
+
+Besides byte-comparing the distribution copies against the repository root, it requires
+every file under `web/app/vendor/` to be named in `THIRD_PARTY_NOTICES.txt` — so adding a
+vendored library without its notice now fails CI instead of passing silently. See
+`docs/84` for the full audit and `docs/87` for how the check is built.
 
 The footer also carries the non-affiliation statement. The UI names PySR several
 dozen times, and the page has to be able to answer on its own what that relationship
@@ -337,10 +343,12 @@ is: nominative use of the name, no endorsement, no trademark rights granted
 `vendor/katex.min.js` and `vendor/katex.min.css` carry a one-line MIT banner that
 **upstream's minified files do not have** — it was added here because a file copied out
 of this directory would otherwise travel with no notice at all. Re-apply it after any
-KaTeX upgrade, and update the version in the banner. `chart.umd.js` needs nothing: it
-keeps its own upstream banner.
+KaTeX upgrade, and update the version in it. `chart.umd.js` needs nothing: it keeps its
+own upstream banner.
 
-The banner is belt-and-braces. `THIRD_PARTY_NOTICES.txt` is the load-bearing mechanism,
-so losing the banner during an upgrade is untidy rather than a compliance regression —
-but forgetting to add the new library to `THIRD_PARTY_NOTICES.txt` *is* one, and no CI
-check can see it (`docs/84` §5.5).
+You do not have to remember either step. `scripts/check_license_files.sh` fails if a
+KaTeX banner is missing, if the two files disagree on the version, or if the version in
+the banner is not the one `THIRD_PARTY_NOTICES.txt` records — and, for any vendored
+library, if the file is redistributed without an entry naming it. Adding the license text
+to `THIRD_PARTY_NOTICES.txt` in the same commit is still the rule; it is now enforced
+rather than merely asked for.
