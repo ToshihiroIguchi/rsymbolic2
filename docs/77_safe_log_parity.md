@@ -134,10 +134,15 @@ so only the guard is added, not a different libm.
 
 ## 6. Residual and not done
 
-- **Ubuntu verification** had not been run when this document was written. The change is
+- ~~**Ubuntu verification** had not been run when this document was written. The change is
   pure C++ with no platform-specific code and the digest is unchanged on Windows, so no
   divergence is expected, but the project's "done on both platforms" bar is not met until
-  it is run.
+  it is run.~~
+  **Closed by `docs/89`.** `ci.yml` builds and runs `ctest` on `ubuntu-latest` on every
+  push, and the guard's tests are inside it — `test_tree_eval.cpp` asserts
+  `std::isnan(rsymbolic::log(0.0))` and `test_soa_eval.cpp` covers the SoA twin of the
+  same case. So the Ubuntu half is no longer a thing anyone has to remember to run; it is
+  30/30 on every commit.
 - **`log`'s derivative at the boundary** is NaN along with the value, matching the `sqrt`
   convention. SR.jl/ForwardDiff would carry its own convention here; as with `safe_pow`
   (`docs/69` §7) this only steers the constant optimiser on a candidate that is already

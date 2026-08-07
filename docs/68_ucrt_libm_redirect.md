@@ -289,6 +289,16 @@ at all — only tests and benchmarks. The existing SoA test never exercises a ne
 argument, which is why it was not caught. Left for a separate decision, because closing it
 either way changes what `evaluate<double>` returns.
 
+> **Closed, and not by this decision — `docs/69` had already made it moot.** That rework
+> replaced the out-of-domain convention wholesale (0 → NaN, matching SR.jl), and in doing
+> so put every path on the same `rsymbolic::sqrt`. `tree.hpp` now says so at the top of
+> `apply_unary`: *"no `using std::sqrt`. Sqrt resolves to `rsymbolic::sqrt` — the
+> `safe_sqrt`"*. The scalar path, the SoA path and `dual.hpp` agree, so `soa_eval.hpp`'s
+> bit-identity claim is true again and the separate decision this paragraph asked for is
+> not needed. `test_soa_eval.cpp::test_sqrt_negative` is the case that had been missing.
+> Verified during the `docs/90` sweep; the paragraph above is left in place because it
+> described the code accurately when written.
+
 ## 11. Reproduction
 
 ```
