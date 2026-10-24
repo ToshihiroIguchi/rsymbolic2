@@ -39,8 +39,15 @@ function macroLines(cfg, open, entry, close) {
 // answer) and are OFF by default. A snippet that dropped them would not reproduce the run,
 // so each is emitted only when it differs from the shipped default. The argument names are
 // identical in R, Python and the WASM bridge, so one table serves both snippets.
-function optInLines(cfg, fmtArg) {
+function optInLines(cfg, fmtArg, extras) {
   const out = [];
+  // The search constants the snippet does not name by default. A value moved off its shipped
+  // (PySR-parity) default is part of what produced the result, so it is written out; one at
+  // its default stays implicit, which keeps the common snippet short. `extras` maps argument
+  // name -> shipped default (main.js derives it from DEFAULTS, so there is one table).
+  Object.keys(extras || {}).forEach((k) => {
+    if (cfg[k] !== extras[k]) out.push(fmtArg(k, cfg[k]));
+  });
   if (cfg.batching) {
     out.push(fmtArg("batching", true));
     out.push(fmtArg("batch_size", cfg.batch_size));
@@ -68,7 +75,7 @@ function samplingNote(sampling, comment) {
 
 // A Python snippet reproducing the run (unary/binary ops + the non-default numeric knobs
 // most users touch; the rest stay at PySR-parity defaults).
-export function pythonCall(cfg, sampling = null) {
+export function pythonCall(cfg, sampling = null, extras = null) {
   return [
     ...samplingNote(sampling, "#"),
     "from rsymbolic2 import symbolic_regression",
@@ -79,18 +86,18 @@ export function pythonCall(cfg, sampling = null) {
     ...macroLines(cfg, "    macro_ops={", (n, b) => `${q(n)}: ${q(b)}`, "},"),
     `    population_size=${cfg.population_size}, n_populations=${cfg.n_populations},`,
     `    generations=${cfg.generations}, max_nodes=${cfg.max_nodes}, seed=${cfg.seed},`,
-    ...optInLines(cfg, (k, v) => `    ${k}=${v === true ? "True" : v},`),
+    ...optInLines(cfg, (k, v) => `    ${k}=${v === true ? "True" : v},`, extras),
     ")",
     "print(res)",
   ].join("\n");
 }
 
 // An R snippet reproducing the run.
-export function rCall(cfg, sampling = null) {
+export function rCall(cfg, sampling = null, extras = null) {
   const rvec = (list) => "c(" + list.map((s) => `"${s}"`).join(", ") + ")";
   // The last argument line must not carry a trailing comma, so the opt-ins (when present)
   // take over that duty from the seed line.
-  const optIns = optInLines(cfg, (k, v) => `  ${k} = ${v === true ? "TRUE" : v}`);
+  const optIns = optInLines(cfg, (k, v) => `  ${k} = ${v === true ? "TRUE" : v}`, extras);
   const fixed = `  generations = ${cfg.generations}, max_nodes = ${cfg.max_nodes}, ` +
                 `seed = ${cfg.seed}`;
   return [

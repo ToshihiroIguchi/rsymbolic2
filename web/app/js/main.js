@@ -219,6 +219,13 @@ const DEFAULTS = {
 // cannot see from where they clicked.
 const CHECKBOX_DEFAULTS = { batching: false };
 
+// The DEFAULTS entries the exported R/Python snippets do NOT always spell out (export.js names
+// these five itself), as argument name -> shipped value. A snippet emits one only when the run
+// moved it, so a modified constant can no longer drop out of the code that "reproduces" the run.
+const SNIPPET_ALWAYS = new Set(["generations", "n_populations", "population_size", "max_nodes", "seed", "batch_size"]);
+const SNIPPET_EXTRAS = Object.fromEntries(
+  Object.keys(DEFAULTS).filter((id) => !SNIPPET_ALWAYS.has(id)).map((id) => [id, DEFAULTS[id].value]));
+
 const state = {
   sourceTable: null, // { columns, rows } exactly as parsed
   table: null, // the table actually fitted — sourceTable, or a sample of it
@@ -228,7 +235,9 @@ const state = {
   targetIndex: -1,
   featureIndices: [],
   result: null, // last WASM result
-  config: null, // last config used
+  config: null, // config of the displayed result
+  pending: null, // matrices/names/sample/config of the run in flight; committed by onResult()
+  runConfig: null, // config of the run in flight (progress display)
   X: null,
   y: null,
   featureNames: null,
@@ -1322,11 +1331,16 @@ function useShippedDefaults() {
   $("eval_cache").checked = false;
   syncBatchingDependants();
   $("settings-restored").hidden = true;
+  syncRowPolicyIfShapeChanged(); // Populations may have moved back, which moves the row ceiling
 }
 
 // --- Run --------------------------------------------------------------------------
 function run() {
   if (!state.table) return;
+  // One run at a time. The Run button and Ctrl+Enter already check this, but the empty-state
+  // button calls run() directly and stays visible until the first snapshot arrives, so a
+  // second click launched a second run and leaked the first one's timer.
+  if (document.body.classList.contains('running')) return;
   state.targetIndex = parseInt($("target-select").value, 10);
   state.featureIndices = currentFeatureIndices();
   if (state.featureIndices.length === 0) {
@@ -1354,17 +1368,6 @@ function run() {
     return;
   }
   const { X, y } = toMatrix(state.table, state.targetIndex, state.featureIndices);
-  state.X = X;
-  state.y = y;
-  state.featureNames = state.featureIndices.map((j) => state.table.columns[j]);
-  // Snapshot the target name with the matrices: the target <select> can change after the
-  // run, but the displayed result must keep the names it was fitted with.
-  state.targetName = state.table.columns[state.targetIndex];
-  // Snapshotted with the matrices for the same reason: the sampling controls can move after
-  // the run, but the exported snippet must describe the data this result was fitted on.
-  state.sampling = isSampled()
-    ? { fitted: state.table.rows.length, total: state.sourceTable.rows.length, seed: SAMPLE_SEED }
-    : null;
   const config = readConfig();
   // Name-level macro problems are caught here rather than costing the user a launched run;
   // a bad macro BODY is reported by the engine itself, through the normal error path.
@@ -1380,7 +1383,25 @@ function run() {
     setStatus(settingProblem);
     return;
   }
-  state.config = config;
+  // Everything a displayed result is read against (the matrices the charts and predict() use,
+  // the column names, the sample and the config the snippets are generated from) is staged
+  // here and committed by onResult(), not written into `state` now. A run that is stopped or
+  // fails leaves the PREVIOUS result on screen, and that result must keep describing the run
+  // that produced it: the target/feature/settings controls have already moved by then, so
+  // overwriting these at launch made the old front be evaluated on the new run's columns.
+  // Names and sample are snapshotted for the same reason as before: the controls can move
+  // after the run, but the displayed result must keep what it was fitted with.
+  state.pending = {
+    X,
+    y,
+    featureNames: state.featureIndices.map((j) => state.table.columns[j]),
+    targetName: state.table.columns[state.targetIndex],
+    sampling: isSampled()
+      ? { fitted: state.table.rows.length, total: state.sourceTable.rows.length, seed: SAMPLE_SEED }
+      : null,
+    config,
+  };
+  state.runConfig = config; // what the progress display measures against while the run is in flight
 
   // The restore notice is an arrival disclosure: once a run is launched the user has seen the
   // panel and committed to it. The Settings summary's "modified" marker carries on saying that
@@ -1523,6 +1544,17 @@ function onResult(result, elapsed) {
   // can only ever fail silently, which is what the idle case is supposed to do.
   finishRun();
   retireWorker();
+  // Commit the staged run (see run()). A result can only arrive for the run that staged it.
+  Object.assign(state, {
+    X: state.pending.X,
+    y: state.pending.y,
+    featureNames: state.pending.featureNames,
+    targetName: state.pending.targetName,
+    sampling: state.pending.sampling,
+    config: state.pending.config,
+    selectedIndex: null,
+  });
+  state.pending = null;
   state.result = result;
   // Compact completion chip: elapsed time and the configured generation budget, e.g.
   // "0.57s | generations: 2800". Use config.generations (what the Settings summary shows), not
@@ -1698,6 +1730,7 @@ function setRunButton(running) {
 // printed within 200 ms of it — and because with a wall-clock timeout the bar has to keep
 // advancing between snapshots, which a snapshot-driven bar cannot do (docs/79).
 function startTimer() {
+  stopTimer(); // never leave a previous interval running
   state.t0 = performance.now();
   state.timer = setInterval(tick, 200);
 }
@@ -1754,7 +1787,7 @@ function progressFraction() {
 }
 
 function timeoutSeconds() {
-  const t = state.config ? Number(state.config.timeout_seconds) : 0;
+  const t = state.runConfig ? Number(state.runConfig.timeout_seconds) : 0;
   return Number.isFinite(t) && t > 0 ? t : 0;
 }
 
@@ -1799,8 +1832,8 @@ function announceMilestone(frac) {
 // divides by it (2800/100 = 28) and closely otherwise; the clamp keeps a rounding artefact
 // from printing 2801/2800 on the last epoch.
 function generationProgress() {
-  if (!(state.totalEpochs > 0) || !state.config) return null;
-  const total = Number(state.config.generations);
+  if (!(state.totalEpochs > 0) || !state.runConfig) return null;
+  const total = Number(state.runConfig.generations);
   if (!Number.isFinite(total) || total <= 0) return null;
   const per = total / state.totalEpochs;
   return { gen: Math.min(total, Math.round(state.epoch * per)), total, per: Math.round(per) };
@@ -2028,10 +2061,10 @@ function wireExport() {
     }
   });
   $("copy-python").addEventListener("click", () => {
-    if (state.config) copyText(pythonCall(state.config, state.sampling));
+    if (state.config) copyText(pythonCall(state.config, state.sampling, SNIPPET_EXTRAS));
   });
   $("copy-r").addEventListener("click", () => {
-    if (state.config) copyText(rCall(state.config, state.sampling));
+    if (state.config) copyText(rCall(state.config, state.sampling, SNIPPET_EXTRAS));
   });
   $("download-csv").addEventListener("click", () => {
     if (state.result) downloadText("rsymbolic2_pareto.csv", paretoCsv(state.result.pareto_front), "text/csv");
@@ -2133,8 +2166,8 @@ function reportContext() {
     run: state.run,
     evalCounts: { n_evals: res.n_evals, ...(res.eval_counts || {}) },
     snippets: {
-      python: pythonCall(state.config, state.sampling),
-      r: rCall(state.config, state.sampling),
+      python: pythonCall(state.config, state.sampling, SNIPPET_EXTRAS),
+      r: rCall(state.config, state.sampling, SNIPPET_EXTRAS),
     },
   };
 }
@@ -2234,6 +2267,20 @@ function metric(k, v) { return `<span class="k">${k}</span><span>${v}</span>`; }
 function modalOpen() {
   return document.querySelector("dialog[open]") !== null;
 }
+// Run `fn` when the backdrop of a modal <dialog> is clicked: only the <dialog> element itself is
+// hit outside the modal box. The press must ALSO have started on the backdrop. A click event is
+// dispatched to the common ancestor of where the button went down and where it came up, so
+// selecting text in an input and releasing outside the box fires a click on the dialog — which
+// closed the settings dialog and discarded what was being typed.
+function onBackdropClick(dialog, fn) {
+  let pressedOnBackdrop = false;
+  dialog.addEventListener("pointerdown", (e) => { pressedOnBackdrop = e.target === dialog; });
+  dialog.addEventListener("click", (e) => {
+    if (e.target === dialog && pressedOnBackdrop) fn();
+    pressedOnBackdrop = false;
+  });
+}
+
 // Escapes for BOTH text and attribute contexts (renderTable puts expressions in a title=""),
 // so the quote characters are part of the set even though today's callers cannot produce them.
 function esc(s) {
@@ -2360,10 +2407,7 @@ function init() {
     document.body.classList.toggle("editing-data");
   });
   $("preview-close").addEventListener("click", () => $("preview-dialog").close());
-  // Backdrop click closes: only the <dialog> element itself is hit outside the modal box.
-  $("preview-dialog").addEventListener("click", (e) => {
-    if (e.target === $("preview-dialog")) $("preview-dialog").close();
-  });
+  onBackdropClick($("preview-dialog"), () => $("preview-dialog").close());
 
   // Sampling controls. Both re-derive the fitted table from the parsed source, so the size
   // can be raised and lowered without reloading the file.
@@ -2402,9 +2446,7 @@ function init() {
     e.preventDefault();
     closeSettings(false);
   });
-  $("settings-dialog").addEventListener("click", (e) => {
-    if (e.target === $("settings-dialog")) closeSettings(false);
-  });
+  onBackdropClick($("settings-dialog"), () => closeSettings(false));
 
   wireExport();
 

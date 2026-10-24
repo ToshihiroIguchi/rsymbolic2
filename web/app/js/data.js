@@ -15,18 +15,27 @@ export function parseTable(text) {
     .filter((l) => l.trim().length > 0);
   if (lines.length === 0) throw new Error("No data found.");
 
-  const first = lines[0];
-  let splitter;
-  if (first.includes(",")) splitter = (l) => splitCsvLine(l, ",");
-  else if (first.includes("\t")) splitter = (l) => splitCsvLine(l, "\t");
-  else if (first.includes(";")) splitter = (l) => splitCsvLine(l, ";");
-  else splitter = (l) => l.trim().split(/\s+/);
+  // Delimiter: whichever of tab, semicolon and comma occurs most OUTSIDE double quotes on the
+  // first line (ties go to tab, then semicolon, then comma). "Contains a comma" alone misread a
+  // semicolon-separated file whose header or values use a decimal comma.
+  const unquoted = lines[0].replace(/"[^"]*"/g, "");
+  const count = (ch) => unquoted.split(ch).length - 1;
+  let delim = null;
+  let best = 0;
+  for (const ch of ["\t", ";", ","]) {
+    if (count(ch) > best) { best = count(ch); delim = ch; }
+  }
+  const splitter = delim
+    ? (l) => splitCsvLine(l, delim)
+    : (l) => l.trim().split(/\s+/);
 
   const table = lines.map(splitter);
   const ncol = table[0].length;
 
-  // Header row if the first row is non-numeric in at least one cell; else synthesize.
-  const firstRowNumeric = table[0].every((c) => isNumeric(c));
+  // Header row if the first row holds at least one non-numeric cell; else synthesize. A blank
+  // cell is not evidence of a header: a first data row with one missing value used to be
+  // swallowed as the header and its numbers renamed into column names.
+  const firstRowNumeric = table[0].every((c) => c.trim() === "" || isNumeric(c));
   let columns;
   let dataRows;
   if (firstRowNumeric) {
@@ -86,7 +95,9 @@ function splitCsvLine(line, delim) {
 function isNumeric(s) {
   if (s === undefined || s === null) return false;
   const t = String(s).trim();
-  if (t === "") return false;
+  // Plain decimal notation only. Number() alone also accepts "0x10", "0b11" and "0o7", which
+  // are text in a data file, not numbers.
+  if (!/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(t)) return false;
   return Number.isFinite(Number(t));
 }
 
